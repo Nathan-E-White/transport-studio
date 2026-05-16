@@ -15,3 +15,17 @@ The goal is to provide game-engine-like authoring and visualization for transpor
 ## Big architectural rule
 
 Editor scene, render scene, compiled simulation problem, and result stream are separate concepts.
+
+
+## Frontend beef-up pass
+
+The studio shell now includes:
+
+- game-editor-style mode switcher
+- project tree with scene stats and entity summaries
+- richer inspector panel
+- viewport HUD and overlay toggles
+- bottom dock with run/tally/track/diagnostic tabs
+- improved R3F scene styling, beam guides, tally overlays, and event markers
+
+This is still a prototype UI: editing controls and the worker-backed run loop are next.
