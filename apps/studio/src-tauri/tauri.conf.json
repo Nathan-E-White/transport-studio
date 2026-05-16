@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Transport Studio",
+  "version": "0.0.0",
+  "identifier": "com.transportstudio.app",
+  "build": {
+    "beforeDevCommand": "bun dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "bun build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Transport Studio",
+        "width": 1400,
+        "height": 900
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@transport/studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@transport/domain": "workspace:*",
+    "@transport/shared": "workspace:*",
+    "@transport/transport-visual": "workspace:*",
+    "@transport/validation": "workspace:*",
+    "@vitejs/plugin-react": "latest",
+    "@react-three/drei": "latest",
+    "@react-three/fiber": "latest",
+    "@theatre/core": "latest",
+    "@theatre/r3f": "latest",
+    "@tauri-apps/api": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "three": "latest",
+    "zustand": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/three": "latest",
+    "typescript": "^5.8.0"
+  }
+}
