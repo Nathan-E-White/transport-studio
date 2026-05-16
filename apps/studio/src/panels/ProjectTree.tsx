@@ -16,47 +16,47 @@ const groups: readonly { kind: SceneEntity["kind"]; label: string; icon: string 
 
 export function ProjectTree({ project, selectedEntityId, onSelect, stats }: ProjectTreeProps) {
   return (
-      <section className="panel project-panel">
-        <div className="panel-header">
-          <div>
-            <h2>{project.name}</h2>
-            <p className="muted compact">{project.metadata.physicsModelVersion}</p>
-          </div>
-          <button className="icon-button" title="Project settings">⚙</button>
+    <section className="panel project-panel">
+      <div className="panel-header">
+        <div>
+          <h2>{project.name}</h2>
+          <p className="muted compact">{project.metadata.physicsModelVersion}</p>
         </div>
+        <button className="icon-button" title="Project settings">⚙</button>
+      </div>
 
-        <div className="stat-grid">
-          <Stat label="geom" value={stats.geometry} />
-          <Stat label="mat" value={stats.materials} />
-          <Stat label="src" value={stats.sources} />
-          <Stat label="tally" value={stats.tallies} />
-        </div>
+      <div className="stat-grid">
+        <Stat label="geom" value={stats.geometry} />
+        <Stat label="mat" value={stats.materials} />
+        <Stat label="src" value={stats.sources} />
+        <Stat label="tally" value={stats.tallies} />
+      </div>
 
-        <div className="asset-search">Search entities…</div>
+      <div className="asset-search">Search entities…</div>
 
-        {groups.map((group) => {
-          const entities = project.scene.entities.filter((entity) => entity.kind === group.kind);
-          return (
-              <div className="tree-group" key={group.kind}>
-                <h3><span>{group.icon}</span>{group.label}<em>{entities.length}</em></h3>
-                {entities.map((entity) => (
-                    <button
-                        className={entity.id === selectedEntityId ? "tree-item selected" : "tree-item"}
-                        key={entity.id}
-                        onClick={() => onSelect(entity.id)}
-                    >
-                      <span className={`entity-dot ${kindClass(entity.kind)}`} />
-                      <span className="tree-item-main">
+      {groups.map((group) => {
+        const entities = project.scene.entities.filter((entity) => entity.kind === group.kind);
+        return (
+          <div className="tree-group" key={group.kind}>
+            <h3><span>{group.icon}</span>{group.label}<em>{entities.length}</em></h3>
+            {entities.map((entity) => (
+              <button
+                className={entity.id === selectedEntityId ? "tree-item selected" : "tree-item"}
+                key={entity.id}
+                onClick={() => onSelect(entity.id)}
+              >
+                <span className={`entity-dot ${kindClass(entity.kind)}`} />
+                <span className="tree-item-main">
                   <strong>{entity.name}</strong>
                   <small>{describeEntity(entity)}</small>
                 </span>
-                      <span className="tree-visibility">{entity.visible ? "◉" : "○"}</span>
-                    </button>
-                ))}
-              </div>
-          );
-        })}
-      </section>
+                <span className="tree-visibility">{entity.visible ? "◉" : "○"}</span>
+              </button>
+            ))}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
