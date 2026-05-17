@@ -120,6 +120,8 @@ export interface Diagnostic {
   readonly entityId?: EntityId;
 }
 
+
+// noinspection JSUnusedGlobalSymbols
 export interface ResultStore {
   readonly runId: RunId;
   readonly status: "idle" | "running" | "paused" | "completed" | "failed";
