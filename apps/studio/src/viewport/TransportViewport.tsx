@@ -33,16 +33,6 @@ export function TransportViewport({
             <pointLight position={[-8, 3, 0]} intensity={1.8} color="#00e5ff"/>
             <Grid args={[34, 34]} cellSize={1} sectionSize={5} fadeDistance={42} fadeStrength={1.8}/>
 
-      {project.scene.entities.map((entity) => (
-        <EntityMesh
-          key={entity.id}
-          entity={entity}
-          selected={entity.id === selectedEntityId}
-          onSelect={onSelect}
-          showTallies={showTallies}
-          mode={mode}
-        />
-      ))}
             {project.scene.entities.map((entity) => (
                 <EntityMesh
                     key={entity.id}
@@ -62,11 +52,6 @@ export function TransportViewport({
     );
 }
 
-function EntityMesh({ entity, selected, onSelect, showTallies, mode }: { readonly entity: SceneEntity; readonly selected: boolean; readonly onSelect: (id: string) => void; readonly showTallies: boolean; readonly mode: EditorMode }) {
-  const p = entity.transform.position;
-  const s = entity.transform.scale;
-  const position: [number, number, number] = [p.x, p.y, p.z];
-  const scale: [number, number, number] = [s.x, s.y, s.z];
 function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
     readonly entity: SceneEntity;
     readonly selected: boolean;
