@@ -8,8 +8,12 @@
   ],
   "scripts": {
     "dev": "bun --filter @transport/studio dev",
-    "build": "bun --filter '*' build",
+    "build": "bun run typecheck && bun --filter '*' build",
+    "build:packages": "bun --filter './packages/*' build",
+    "build:apps": "bun --filter './apps/*' build",
     "typecheck": "bun --filter '*' typecheck",
+    "typecheck:packages": "bun --filter './packages/*' typecheck",
+    "typecheck:apps": "bun --filter './apps/*' typecheck",
     "lint": "bun --filter '*' lint"
   },
   "devDependencies": {
