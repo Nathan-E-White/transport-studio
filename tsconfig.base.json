@@ -13,6 +13,13 @@
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@transport/domain": ["packages/domain/src/index.ts"],
+      "@transport/domain/*":["packages/domain/src/*"],
+      "@transport/geometry": ["packages/geometry/src/index.ts"],
+      "@transport/geometry/*": ["packages/geometry/src/*"]
+    }
   }
 }
