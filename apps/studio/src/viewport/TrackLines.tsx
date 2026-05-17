@@ -29,7 +29,7 @@ function TrackLine({ track }: { readonly track: TrackSample }) {
             itemSize={3}
           />
         </bufferGeometry>
-        <lineBasicMaterial color={terminal?.type === "absorb" ? "#ff4d6d" : "#f8f7ff"} transparent opacity={0.7} />
+        <lineBasicMaterial color={terminal?.type === "absorb" ? "#ff4d6d" : "#f8f7ff"} transparent={true} opacity={0.7} />
       </line>
       {track.events.map((event, index) => (
         <mesh key={index} position={[event.position.x, event.position.y, event.position.z]}>
