@@ -89,7 +89,13 @@ function getTransformVec(
   entity: SceneEntity,
   key: "position" | "rotation" | "scale",
 ): Vec3Like {
-  return entity.transform?.[key];
+  const xForm: Partial<Record<"position" | "rotation" | "scale", Partial<{
+    readonly x: number;
+    readonly y: number;
+    readonly z: number
+  }> | undefined | null>> | undefined = entity.transform as Partial<Record<"position" | "rotation" | "scale", Vec3Like>> | undefined;
+  //return entity.transform?.[key];
+  return xForm?.[key];
 }
 
 function renderEntitySpecificProperties(entity: SceneEntity) {
