@@ -1,5 +1,6 @@
 import type { Diagnostic, Project, RunConfiguration, TallyDelta, TrackSample } from "@transport/domain";
 
+// noinspection JSUnusedGlobalSymbols
 export type WorkerRequest =
   | { readonly type: "loadProblem"; readonly project: Project }
   | { readonly type: "startRun"; readonly config: RunConfiguration }
@@ -7,6 +8,7 @@ export type WorkerRequest =
   | { readonly type: "resumeRun" }
   | { readonly type: "cancelRun" };
 
+// noinspection JSUnusedGlobalSymbols
 export type WorkerResponse =
   | { readonly type: "problemLoaded"; readonly diagnostics: readonly Diagnostic[] }
   | { readonly type: "runStarted"; readonly runId: string }
