@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ES2022",
     "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -16,10 +20,84 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@transport/domain": ["packages/domain/src/index.ts"],
-      "@transport/domain/*":["packages/domain/src/*"],
-      "@transport/geometry": ["packages/geometry/src/index.ts"],
-      "@transport/geometry/*": ["packages/geometry/src/*"]
+      "@transport/domain": [
+        "packages/domain/src/index.ts"
+      ],
+      "@transport/domain/*": [
+        "packages/domain/src/*"
+      ],
+      "@transport/editor-state": [
+        "packages/editor-state/src/index.ts"
+      ],
+      "@transport/editor-state/*": [
+        "packages/editor-state/src/*"
+      ],
+      "@transport/geometry": [
+        "packages/geometry/src/index.ts"
+      ],
+      "@transport/geometry/*": [
+        "packages/geometry/src/*"
+      ],
+      "@transport/materials": [
+        "packages/materials/src/index.ts"
+      ],
+      "@transport/materials/*": [
+        "packages/materials/src/*"
+      ],
+      "@transport/particles": [
+        "packages/particles/src/index.ts"
+      ],
+      "@transport/particles/*": [
+        "packages/particles/src/*"
+      ],
+      "@transport/project-io": [
+        "packages/project-io/src/index.ts"
+      ],
+      "@transport/project-io/*": [
+        "packages/project-io/src/*"
+      ],
+      "@transport/shared": [
+        "packages/shared/src/index.ts"
+      ],
+      "@transport/shared/*": [
+        "packages/shared/src/*"
+      ],
+      "@transport/sources": [
+        "packages/sources/src/index.ts"
+      ],
+      "@transport/sources/*": [
+        "packages/sources/src/*"
+      ],
+      "@transport/tallies": [
+        "packages/tallies/src/index.ts"
+      ],
+      "@transport/tallies/*": [
+        "packages/tallies/src/*"
+      ],
+      "@transport/transport-visual": [
+        "packages/transport-visual/src/index.ts"
+      ],
+      "@transport/transport-visual/*": [
+        "packages/transport-visual/src/*"
+      ],
+      "@transport/transport-worker": [
+        "packages/transport-worker/src/index.ts"
+      ],
+      "@transport/transport-worker/*": [
+        "packages/transport-worker/src/*"
+      ],
+      "@transport/validation": [
+        "packages/validation/src/index.ts"
+      ],
+      "@transport/validation/*": [
+        "packages/validation/src/*"
+      ],
+      "@transport/viewport": [
+        "packages/viewport/src/index.ts"
+      ],
+      "@transport/viewport/*": [
+        "packages/viewport/src/*"
+      ]
     }
   }
 }
