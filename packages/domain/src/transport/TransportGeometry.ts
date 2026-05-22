@@ -131,7 +131,14 @@ export interface CreatePlaneSurfaceOptions extends CreateSurfaceBaseOptions {
 }
 
 
+
 export interface CreateSphereSurfaceOptions extends CreateSurfaceBaseOptions {
+    readonly center: Vec3;
+    readonly radius: number;
+}
+
+export interface CreateCylindricalSurfaceOptions extends CreateSurfaceBaseOptions {
+    readonly axis: TransportCylinderSurface["axis"];
     readonly center: Vec3;
     readonly radius: number;
 }
@@ -425,12 +432,26 @@ export function createPlaneSurface(options: CreatePlaneSurfaceOptions): Transpor
 }
 
 
+
 export function createSphereSurface(options: CreateSphereSurfaceOptions): TransportSphereSurface {
     return {
         ...createSurfaceBase(options, "sphere-surface"),
         center: options.center,
         radius: options.radius,
     };
+}
+
+export function createCylindricalSurface(options: CreateCylindricalSurfaceOptions): TransportCylinderSurface {
+    return {
+        ...createSurfaceBase(options, "cylinder-surface"),
+        axis: options.axis,
+        center: options.center,
+        radius: options.radius,
+    };
+}
+
+export function createCylinderSurface(options: CreateCylindricalSurfaceOptions): TransportCylinderSurface {
+    return createCylindricalSurface(options);
 }
 
 function createSurfaceBase<K extends TransportSurfaceKind>(

@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  createCylindricalSurface,
   createPlaneSurface,
   createSphereSurface,
   createTransportBox,
@@ -120,6 +121,30 @@ describe("TransportGeometry", () => {
     });
     expect(isTransportBox(box)).toBe(true);
     expect(getTransportEntityLabel(box)).toBe("Box: Shield Box");
+  });
+
+  it("creates cylindrical surfaces", () => {
+    const surface = createCylindricalSurface({
+      id: "cyl-surface-1",
+      name: "Z Cylinder Boundary",
+      axis: "z",
+      center: { x: 0, y: 0, z: 0 },
+      radius: 5,
+      boundaryCondition: "transmission",
+      tags: ["detector-boundary"],
+    });
+
+    expect(surface).toEqual({
+      id: "cyl-surface-1",
+      kind: "cylinder-surface",
+      name: "Z Cylinder Boundary",
+      axis: "z",
+      center: { x: 0, y: 0, z: 0 },
+      radius: 5,
+      transform: undefined,
+      boundaryCondition: "transmission",
+      tags: ["detector-boundary"],
+    });
   });
 
   it("finds entities, surfaces, and regions by id", () => {
