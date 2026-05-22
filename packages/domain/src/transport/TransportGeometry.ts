@@ -124,9 +124,16 @@ export interface CreateSurfaceBaseOptions {
     readonly tags?: readonly string[];
 }
 
+
 export interface CreatePlaneSurfaceOptions extends CreateSurfaceBaseOptions {
     readonly normal: Vec3;
     readonly offset: number;
+}
+
+
+export interface CreateSphereSurfaceOptions extends CreateSurfaceBaseOptions {
+    readonly center: Vec3;
+    readonly radius: number;
 }
 
 
@@ -414,6 +421,15 @@ export function createPlaneSurface(options: CreatePlaneSurfaceOptions): Transpor
         ...createSurfaceBase(options, "plane"),
         normal: options.normal,
         offset: options.offset,
+    };
+}
+
+
+export function createSphereSurface(options: CreateSphereSurfaceOptions): TransportSphereSurface {
+    return {
+        ...createSurfaceBase(options, "sphere-surface"),
+        center: options.center,
+        radius: options.radius,
     };
 }
 
