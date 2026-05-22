@@ -523,6 +523,13 @@ export function createTransportRegion(options: CreateTransportRegionOptions): Tr
     };
 }
 
+export function entityRef(entityId: TransportEntityId): RegionExpression {
+    return {
+        kind: "entity-ref",
+        entityId,
+    };
+}
+
 function createSurfaceBase<K extends TransportSurfaceKind>(
     options: CreateSurfaceBaseOptions,
     kind: K,
