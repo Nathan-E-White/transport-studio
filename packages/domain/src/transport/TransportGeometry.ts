@@ -738,6 +738,18 @@ export function findSurface(
     return geometry.surfaces.find((surface) => surface.id === surfaceId);
 }
 
+export function getRegionID(region: TransportRegion): TransportRegionID {
+    return region.id;
+}
+
+export function getRegionIDs(geometry: TransportGeometry): readonly TransportRegionID[] {
+    return geometry.regions.map((region) => region.id);
+}
+
+export function getRegionIds(geometry: TransportGeometry): readonly TransportRegionID[] {
+    return getRegionIDs(geometry);
+}
+
 export function getGeometryEntityIds(geometry: TransportGeometry): readonly TransportEntityId[] {
     return geometry.entities.map((entity) => entity.id);
 }
