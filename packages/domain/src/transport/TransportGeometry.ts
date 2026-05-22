@@ -185,6 +185,17 @@ export interface TransportRegion {
     readonly tags?: readonly string[];
 }
 
+export interface CreateTransportRegionOptions {
+    readonly id: TransportRegionID;
+    readonly name: string;
+    readonly materialId?: TransportMaterialId;
+    readonly materialID?: TransportMaterialId;
+    readonly expression: RegionExpression;
+    readonly densityOverride?: number;
+    readonly importance?: Partial<Record<"photon" | "neutron" | "electron", number>>;
+    readonly tags?: readonly string[];
+}
+
 export interface RegionAdjacency {
     readonly fromRegionID: TransportRegionID;
     readonly toRegionID: TransportRegionID;
@@ -497,6 +508,18 @@ export function createImplicitSurface(options: CreateImplicitSurfaceOptions): Tr
         ...createSurfaceBase(options, "implicit-surface"),
         expression: options.expression,
         boundingBox: options.boundingBox,
+    };
+}
+
+export function createTransportRegion(options: CreateTransportRegionOptions): TransportRegion {
+    return {
+        id: options.id,
+        name: options.name,
+        materialID: options.materialID ?? options.materialId,
+        expression: options.expression,
+        densityOverride: options.densityOverride ?? 0,
+        importance: options.importance,
+        tags: options.tags,
     };
 }
 
