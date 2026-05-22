@@ -116,6 +116,19 @@ export type TransportSurface =
     | TransportImplicitSurface
     | TransportMeshSurface;
 
+export interface CreateSurfaceBaseOptions {
+    readonly id: TransportSurfaceID;
+    readonly name: string;
+    readonly transform?: Transform3D;
+    readonly boundaryCondition?: SurfaceBoundaryCondition;
+    readonly tags?: readonly string[];
+}
+
+export interface CreatePlaneSurfaceOptions extends CreateSurfaceBaseOptions {
+    readonly normal: Vec3;
+    readonly offset: number;
+}
+
 
 export type SurfaceSense = "positive" | "negative";
 
@@ -394,6 +407,28 @@ function isTransportGeometryEntityArray(
     value: CreateTransportGeometryOptions | readonly TransportGeometryEntity[],
 ): value is readonly TransportGeometryEntity[] {
     return Array.isArray(value);
+}
+
+export function createPlaneSurface(options: CreatePlaneSurfaceOptions): TransportPlaneSurface {
+    return {
+        ...createSurfaceBase(options, "plane"),
+        normal: options.normal,
+        offset: options.offset,
+    };
+}
+
+function createSurfaceBase<K extends TransportSurfaceKind>(
+    options: CreateSurfaceBaseOptions,
+    kind: K,
+): TransportSurfaceBase<K> {
+    return {
+        id: options.id,
+        kind,
+        name: options.name,
+        transform: options.transform,
+        boundaryCondition: options.boundaryCondition,
+        tags: options.tags,
+    };
 }
 
 export function createTransportBox(options: CreateTransportBoxOptions): TransportBox {
