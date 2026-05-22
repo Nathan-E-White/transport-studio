@@ -113,6 +113,7 @@ export type TransportSurface =
     | TransportPlaneSurface
     | TransportSphereSurface
     | TransportCylinderSurface
+    | TransportQuadraticSurface
     | TransportImplicitSurface
     | TransportMeshSurface;
 
@@ -137,10 +138,29 @@ export interface CreateSphereSurfaceOptions extends CreateSurfaceBaseOptions {
     readonly radius: number;
 }
 
+
 export interface CreateCylindricalSurfaceOptions extends CreateSurfaceBaseOptions {
     readonly axis: TransportCylinderSurface["axis"];
     readonly center: Vec3;
     readonly radius: number;
+}
+
+
+export interface CreateQuadraticSurfaceOptions extends CreateSurfaceBaseOptions {
+    readonly coefficients: TransportQuadraticSurface["coefficients"];
+}
+
+export interface CreateMeshSurfaceOptions extends CreateSurfaceBaseOptions {
+    readonly meshID: MeshAssetId;
+    readonly units?: LengthUnit;
+    readonly watertight?: boolean;
+    readonly manifold?: boolean;
+    readonly boundingBox?: AxisAlignedBoundingBox;
+}
+
+export interface CreateImplicitSurfaceOptions extends CreateSurfaceBaseOptions {
+    readonly expression: string;
+    readonly boundingBox?: AxisAlignedBoundingBox;
 }
 
 
@@ -452,6 +472,32 @@ export function createCylindricalSurface(options: CreateCylindricalSurfaceOption
 
 export function createCylinderSurface(options: CreateCylindricalSurfaceOptions): TransportCylinderSurface {
     return createCylindricalSurface(options);
+}
+
+export function createQuadraticSurface(options: CreateQuadraticSurfaceOptions): TransportQuadraticSurface {
+    return {
+        ...createSurfaceBase(options, "quadratic-surface"),
+        coefficients: options.coefficients,
+    };
+}
+
+export function createMeshSurface(options: CreateMeshSurfaceOptions): TransportMeshSurface {
+    return {
+        ...createSurfaceBase(options, "mesh-surface"),
+        meshID: options.meshID,
+        units: options.units ?? "cm",
+        watertight: options.watertight,
+        manifold: options.manifold,
+        boundingBox: options.boundingBox,
+    };
+}
+
+export function createImplicitSurface(options: CreateImplicitSurfaceOptions): TransportImplicitSurface {
+    return {
+        ...createSurfaceBase(options, "implicit-surface"),
+        expression: options.expression,
+        boundingBox: options.boundingBox,
+    };
 }
 
 function createSurfaceBase<K extends TransportSurfaceKind>(
