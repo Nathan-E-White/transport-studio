@@ -716,11 +716,19 @@ export function getRegionSupport(entity: TransportGeometryEntity): RegionSupport
     return dispatchGeometryOps(entity, (ops) => ops.regionSupport);
 }
 
+
 export function findGeometryEntity(
     geometry: TransportGeometry,
     entityId: TransportEntityId,
 ): TransportGeometryEntity | undefined {
     return geometry.entities.find((entity) => entity.id === entityId);
+}
+
+export function findRegion(
+    geometry: TransportGeometry,
+    regionId: TransportRegionID,
+): TransportRegion | undefined {
+    return geometry.regions.find((region) => region.id === regionId);
 }
 
 export function getGeometryEntityIds(geometry: TransportGeometry): readonly TransportEntityId[] {
