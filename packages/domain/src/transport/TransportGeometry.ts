@@ -132,7 +132,6 @@ export interface CreatePlaneSurfaceOptions extends CreateSurfaceBaseOptions {
 }
 
 
-
 export interface CreateSphereSurfaceOptions extends CreateSurfaceBaseOptions {
     readonly center: Vec3;
     readonly radius: number;
@@ -463,7 +462,6 @@ export function createPlaneSurface(options: CreatePlaneSurfaceOptions): Transpor
 }
 
 
-
 export function createSphereSurface(options: CreateSphereSurfaceOptions): TransportSphereSurface {
     return {
         ...createSurfaceBase(options, "sphere-surface"),
@@ -748,6 +746,18 @@ export function getRegionIDs(geometry: TransportGeometry): readonly TransportReg
 
 export function getRegionIds(geometry: TransportGeometry): readonly TransportRegionID[] {
     return getRegionIDs(geometry);
+}
+
+export function getSurfaceID(surface: TransportSurface): TransportSurfaceID {
+    return surface.id;
+}
+
+export function getSurfaceIDs(geometry: TransportGeometry): readonly TransportSurfaceID[] {
+    return geometry.surfaces.map((surface) => surface.id);
+}
+
+export function getSurfaceIds(geometry: TransportGeometry): readonly TransportSurfaceID[] {
+    return getSurfaceIDs(geometry);
 }
 
 export function getGeometryEntityIds(geometry: TransportGeometry): readonly TransportEntityId[] {
