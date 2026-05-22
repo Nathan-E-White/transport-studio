@@ -731,6 +731,13 @@ export function findRegion(
     return geometry.regions.find((region) => region.id === regionId);
 }
 
+export function findSurface(
+    geometry: TransportGeometry,
+    surfaceId: TransportSurfaceID,
+): TransportSurface | undefined {
+    return geometry.surfaces.find((surface) => surface.id === surfaceId);
+}
+
 export function getGeometryEntityIds(geometry: TransportGeometry): readonly TransportEntityId[] {
     return geometry.entities.map((entity) => entity.id);
 }
