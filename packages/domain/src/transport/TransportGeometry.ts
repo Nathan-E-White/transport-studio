@@ -386,6 +386,8 @@ export interface GeometryValidationDiagnostic {
     readonly code: string;
     readonly message: string;
     readonly entityId?: TransportEntityId;
+    readonly surfaceId?: TransportSurfaceID;
+    readonly regionId?: TransportRegionID;
 }
 
 export type VolumeEstimate =
@@ -410,6 +412,8 @@ export type ShapeOps<T extends TransportGeometryEntity> = GeometryEntityOps<T>;
 
 export interface GeometryValidationContext {
     readonly entityIds: ReadonlySet<TransportEntityId>;
+    readonly surfaceIds: ReadonlySet<TransportSurfaceID>;
+    readonly regionIds: ReadonlySet<TransportRegionID>;
 }
 
 export function identityTransportTransform(): Transform3D {
@@ -518,6 +522,54 @@ export function createTransportRegion(options: CreateTransportRegionOptions): Tr
         densityOverride: options.densityOverride ?? 0,
         importance: options.importance,
         tags: options.tags,
+    };
+}
+
+export function halfSpace(surfaceId: TransportSurfaceID, sense: SurfaceSense): RegionExpression {
+    return {
+        kind: "half-space",
+        surfaceId,
+        sense,
+    };
+}
+
+export function regionAnd(children: readonly RegionExpression[]): RegionExpression {
+    return {
+        kind: "and",
+        children,
+    };
+}
+
+export function regionOr(children: readonly RegionExpression[]): RegionExpression {
+    return {
+        kind: "or",
+        children,
+    };
+}
+
+export function regionNot(child: RegionExpression): RegionExpression {
+    return {
+        kind: "not",
+        child,
+    };
+}
+
+export function regionComplement(child: RegionExpression): RegionExpression {
+    return regionNot(child);
+}
+
+export function regionDifference(left: RegionExpression, right: RegionExpression): RegionExpression {
+    return {
+        kind: "difference",
+        left,
+        right,
+    };
+}
+
+export function regionRef(regionId: TransportRegionID): RegionExpression {
+    return {
+        kind: "region-ref",
+        regionId,
     };
 }
 
@@ -771,13 +823,31 @@ export function hasGeometryEntity(
     return findGeometryEntity(geometry, entityId) !== undefined;
 }
 
+export function hasRegion(
+    geometry: TransportGeometry,
+    regionId: TransportRegionID,
+): boolean {
+    return findRegion(geometry, regionId) !== undefined;
+}
+
+export function hasSurface(
+    geometry: TransportGeometry,
+    surfaceId: TransportSurfaceID,
+): boolean {
+    return findSurface(geometry, surfaceId) !== undefined;
+}
+
 export function validateGeometry(geometry: TransportGeometry): readonly GeometryValidationDiagnostic[] {
     const diagnostics: GeometryValidationDiagnostic[] = [];
     const seenIds = new Set<TransportEntityId>();
     const duplicateIds = new Set<TransportEntityId>();
+
     const context: GeometryValidationContext = {
         entityIds: new Set(geometry.entities.map((entity) => entity.id)),
-    };
+        surfaceIds: new Set(geometry.entities.map((surface) => surface.id)),
+        regionIds: new Set(geometry.entities.map((region) => region.id))
+
+    }
 
     for (const entity of geometry.entities) {
         if (seenIds.has(entity.id) && !duplicateIds.has(entity.id)) {
@@ -794,17 +864,181 @@ export function validateGeometry(geometry: TransportGeometry): readonly Geometry
         diagnostics.push(...validateGeometryEntity(entity, context));
     }
 
+    for (const surface of geometry.surfaces) {
+        diagnostics.push(...validateSurface(surface));
+    }
+
+    for (const region of geometry.regions) {
+        diagnostics.push(...validateRegion(region, context));
+    }
+
     return diagnostics;
 }
 
 export function validateGeometryEntity(
     entity: TransportGeometryEntity,
-    context: GeometryValidationContext = {entityIds: new Set([entity.id])},
+    context: GeometryValidationContext = {
+        entityIds: new Set([entity.id]),
+        surfaceIds: new Set(),
+        regionIds: new Set()
+    },
 ): readonly GeometryValidationDiagnostic[] {
     const diagnostics: GeometryValidationDiagnostic[] = [];
 
     diagnostics.push(...validateGeometryEntityBase(entity));
     diagnostics.push(...dispatchGeometryOps(entity, (ops, narrowed) => ops.validate(narrowed, context)));
+
+    return diagnostics;
+}
+
+export function validateSurface(surface: TransportSurface): readonly GeometryValidationDiagnostic[] {
+    const diagnostics: GeometryValidationDiagnostic[] = [];
+
+    if (surface.id.trim().length === 0) {
+        diagnostics.push({
+            level: "error",
+            code: "geometry.surface.id.missing",
+            message: "Surface must have a non-empty id.",
+            surfaceId: surface.id,
+        });
+    }
+
+    if (surface.name.trim().length === 0) {
+        diagnostics.push({
+            level: "error",
+            code: "geometry.surface.name.missing",
+            message: "Surface must have a non-empty name.",
+            surfaceId: surface.id,
+        });
+    }
+
+    if (surface.transform && (!isValidVec3(surface.transform.position) || !isValidVec3(surface.transform.rotation))) {
+        diagnostics.push({
+            level: "error",
+            code: "geometry.surface.transform.invalid",
+            message: `Surface "${surface.name}" has an invalid transform.`,
+            surfaceId: surface.id,
+        });
+    }
+
+    switch (surface.kind) {
+        case "plane":
+            if (!isValidVec3(surface.normal) || vectorMagnitude(surface.normal) === 0 || !Number.isFinite(surface.offset)) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.surface.plane.invalid",
+                    message: `Plane surface "${surface.name}" must have a finite non-zero normal and finite offset.`,
+                    surfaceId: surface.id,
+                });
+            }
+            break;
+
+        case "sphere-surface":
+            if (!isValidVec3(surface.center) || !isPositiveFinite(surface.radius)) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.surface.sphere.invalid",
+                    message: `Sphere surface "${surface.name}" must have a valid center and positive radius.`,
+                    surfaceId: surface.id,
+                });
+            }
+            break;
+
+        case "cylinder-surface":
+            if (!isValidVec3(surface.center) || !isPositiveFinite(surface.radius) || !isValidCylinderAxis(surface.axis)) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.surface.cylinder.invalid",
+                    message: `Cylinder surface "${surface.name}" must have a valid axis, center, and positive radius.`,
+                    surfaceId: surface.id,
+                });
+            }
+            break;
+
+        case "quadratic-surface":
+            if (!areQuadraticCoefficientsFinite(surface.coefficients)) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.surface.quadratic.invalid",
+                    message: `Quadratic surface "${surface.name}" must have finite coefficients.`,
+                    surfaceId: surface.id,
+                });
+            }
+            break;
+
+        case "mesh-surface":
+            if (surface.meshID.trim().length === 0) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.surface.mesh.id.missing",
+                    message: `Mesh surface "${surface.name}" must reference a mesh asset.`,
+                    surfaceId: surface.id,
+                });
+            }
+            validateOptionalSurfaceBoundingBox(surface.boundingBox, surface.id, diagnostics);
+            break;
+
+        case "implicit-surface":
+            if (surface.expression.trim().length === 0) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.surface.implicit.expression.missing",
+                    message: `Implicit surface "${surface.name}" must define an expression.`,
+                    surfaceId: surface.id,
+                });
+            }
+            validateOptionalSurfaceBoundingBox(surface.boundingBox, surface.id, diagnostics);
+            break;
+    }
+
+    return diagnostics;
+}
+
+export function validateRegion(
+    region: TransportRegion,
+    context: GeometryValidationContext,
+): readonly GeometryValidationDiagnostic[] {
+    const diagnostics: GeometryValidationDiagnostic[] = [];
+
+    if (region.id.trim().length === 0) {
+        diagnostics.push({
+            level: "error",
+            code: "geometry.region.id.missing",
+            message: "Region must have a non-empty id.",
+            regionId: region.id,
+        });
+    }
+
+    if (region.name.trim().length === 0) {
+        diagnostics.push({
+            level: "error",
+            code: "geometry.region.name.missing",
+            message: "Region must have a non-empty name.",
+            regionId: region.id,
+        });
+    }
+
+    if (!Number.isFinite(region.densityOverride) || region.densityOverride < 0) {
+        diagnostics.push({
+            level: "error",
+            code: "geometry.region.density.invalid",
+            message: `Region "${region.name}" density override must be finite and non-negative.`,
+            regionId: region.id,
+        });
+    }
+
+    for (const [particle, importance] of Object.entries(region.importance ?? {})) {
+        if (!Number.isFinite(importance) || importance < 0) {
+            diagnostics.push({
+                level: "error",
+                code: "geometry.region.importance.invalid",
+                message: `Region "${region.name}" has invalid ${particle} importance.`,
+                regionId: region.id,
+            });
+        }
+    }
+
+    diagnostics.push(...validateRegionExpression(region.expression, context, region.id));
 
     return diagnostics;
 }
@@ -1181,6 +1415,115 @@ function dispatchGeometryOps<R>(
         case "csg-region":
             return fn(geometryEntityOps["csg-region"], entity);
     }
+}
+
+function validateRegionExpression(
+    expression: RegionExpression,
+    context: GeometryValidationContext,
+    owningRegionId: TransportRegionID,
+): readonly GeometryValidationDiagnostic[] {
+    const diagnostics: GeometryValidationDiagnostic[] = [];
+
+    switch (expression.kind) {
+        case "half-space":
+            if (!context.surfaceIds.has(expression.surfaceId)) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.region.surface.invalid",
+                    message: `Region references missing surface "${expression.surfaceId}".`,
+                    regionId: owningRegionId,
+                    surfaceId: expression.surfaceId,
+                });
+            }
+            break;
+
+        case "and":
+        case "or":
+            if (expression.children.length === 0) {
+                diagnostics.push({
+                    level: "error",
+                    code: `geometry.region.${expression.kind}.children.missing`,
+                    message: `Region ${expression.kind} expression must have at least one child.`,
+                    regionId: owningRegionId,
+                });
+            }
+
+            diagnostics.push(
+                ...expression.children.flatMap((child) =>
+                    validateRegionExpression(child, context, owningRegionId),
+                ),
+            );
+            break;
+
+        case "not":
+            diagnostics.push(...validateRegionExpression(expression.child, context, owningRegionId));
+            break;
+
+        case "difference":
+            diagnostics.push(...validateRegionExpression(expression.left, context, owningRegionId));
+            diagnostics.push(...validateRegionExpression(expression.right, context, owningRegionId));
+            break;
+
+        case "region-ref":
+            if (expression.regionId === owningRegionId) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.region.self_reference",
+                    message: `Region "${owningRegionId}" cannot reference itself.`,
+                    regionId: owningRegionId,
+                });
+            } else if (!context.regionIds.has(expression.regionId)) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.region.ref.invalid",
+                    message: `Region references missing region "${expression.regionId}".`,
+                    regionId: owningRegionId,
+                });
+            }
+            break;
+
+        case "entity-ref":
+            if (!context.entityIds.has(expression.entityId)) {
+                diagnostics.push({
+                    level: "error",
+                    code: "geometry.region.entity.invalid",
+                    message: `Region references missing entity "${expression.entityId}".`,
+                    regionId: owningRegionId,
+                    entityId: expression.entityId,
+                });
+            }
+            break;
+    }
+
+    return diagnostics;
+}
+
+function validateOptionalSurfaceBoundingBox(
+    boundingBox: AxisAlignedBoundingBox | undefined,
+    surfaceId: TransportSurfaceID,
+    diagnostics: GeometryValidationDiagnostic[],
+): void {
+    if (boundingBox !== undefined && !isValidBoundingBox(boundingBox)) {
+        diagnostics.push({
+            level: "error",
+            code: "geometry.surface.bounding_box.invalid",
+            message: "Surface has an invalid bounding box.",
+            surfaceId,
+        });
+    }
+}
+
+function isValidCylinderAxis(axis: TransportCylinderSurface["axis"]): boolean {
+    return axis === "x" || axis === "y" || axis === "z" ||
+        (typeof axis === "object" && isValidVec3(axis) && vectorMagnitude(axis) > 0);
+}
+
+function areQuadraticCoefficientsFinite(coefficients: TransportQuadraticSurface["coefficients"]): boolean {
+    return Object.values(coefficients).every(Number.isFinite);
+}
+
+function vectorMagnitude(value: Vec3): number {
+    return Math.sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
 }
 
 function isValidVec3(value: Vec3): boolean {
