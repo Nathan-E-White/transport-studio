@@ -17,5 +17,9 @@
         "height": 900
       }
     ]
+  },
+  "bundle": {
+    "active": false,
+    "icon": []
   }
 }

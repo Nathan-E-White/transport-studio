@@ -228,7 +228,9 @@ export function validateMaterial(material: TransportMaterial): readonly Material
         }
     }
 
-    if (material.nuclides.length > 0 && getNuclideFractionTotal(material) <= 0) {
+    const nuclideFractionTotal = getNuclideFractionTotal(material);
+
+    if (material.nuclides.length > 0 && (!Number.isFinite(nuclideFractionTotal) || nuclideFractionTotal <= 0)) {
         diagnostics.push({
             level: "error",
             code: "material.nuclides.total.invalid",

@@ -33,7 +33,7 @@ export function TransportViewport({
             <pointLight position={[-8, 3, 0]} intensity={1.8} color="#00e5ff"/>
             <Grid args={[34, 34]} cellSize={1} sectionSize={5} fadeDistance={42} fadeStrength={1.8}/>
 
-            {project.scene.entities.map((entity) => (
+            {project.scene.entities.filter((entity) => entity.visible).map((entity) => (
                 <EntityMesh
                     key={entity.id}
                     entity={entity}

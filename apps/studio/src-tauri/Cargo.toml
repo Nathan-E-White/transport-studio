@@ -1,7 +1,23 @@
 [package]
 name = "transport-studio"
 version = "0.0.0"
-edition = "2021"
+edition = "2024"
+
+[workspace]
+members = [
+    ".",
+    "crates/spacetime-physics",
+    "crates/transport-engine",
+]
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+spacetime-physics = { path = "crates/spacetime-physics" }
 tauri = { version = "2", features = [] }
+transport-engine = { path = "crates/transport-engine" }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+serde_json = "1"

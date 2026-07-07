@@ -1,0 +1,16 @@
+# Path allowlist for propagating the frontend repair delta.
+#
+# The propagation script uses these pathspecs by default so unrelated docs,
+# helper scripts, native backend work, and physics worktree experiments do not
+# get swept into the patch accidentally.
+package.json
+bun.lock
+tsconfig.base.json
+vitest.config.ts
+apps/studio
+packages/domain
+packages/editor-state
+packages/frontend
+packages/shared
+packages/transport-visual
+packages/validation

@@ -29,3 +29,15 @@ The studio shell now includes:
 - improved R3F scene styling, beam guides, tally overlays, and event markers
 
 This is still a prototype UI: editing controls and the worker-backed run loop are next.
+
+## Native Monte Carlo MWE
+
+The minimal native backend slice is intentionally backend-first. The canonical
+input is an `EditorScene` compiled into a `TransportProblem`, then submitted
+through `runNativePhotonSmokeBackend(problem, bridge?)`. In browser-only
+runtimes, the missing bridge is expected to produce `native.bridge.unavailable`;
+the next integration point is a Tauri command or injected
+`NativePhotonSmokeBridge` that returns the existing `NativePhotonSmokePayload`.
+The live React app keeps the toy visual photon run path and now also exposes a
+basic "Run Native MWE" action that exercises the compiled backend boundary and
+surfaces the expected bridge diagnostic until that bridge is real.

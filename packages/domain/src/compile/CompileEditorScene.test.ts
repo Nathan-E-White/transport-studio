@@ -64,12 +64,17 @@ describe("compileEditorScene", () => {
         expect(result.value).toMatchObject({
             id: "scene-1",
             name: "Smoke Test Scene",
+            status: "compiled",
             geometry: {
                 entities: [
                     {
                         id: "box-1",
                         kind: "box",
                         materialId: "mat-water",
+                        transform: {
+                            position: {x: 0, y: 0, z: 0},
+                            rotation: {x: 0, y: 0, z: 0},
+                        },
                     },
                 ],
             },
@@ -77,6 +82,10 @@ describe("compileEditorScene", () => {
                 {
                     id: "mat-water",
                     density: 1,
+                    nuclides: [
+                        {nuclide: "H1", fraction: 2, basis: "atom"},
+                        {nuclide: "O16", fraction: 1, basis: "atom"},
+                    ],
                 },
             ],
             sources: [
@@ -84,17 +93,27 @@ describe("compileEditorScene", () => {
                     id: "src-1",
                     kind: "point-source",
                     strength: 1,
+                    enabled: true,
+                    energy: {kind: "monoenergetic", energyMeV: 1},
                 },
             ],
             tallies: [
                 {
                     id: "tally-1",
+                    kind: "cell-flux",
                     entityId: "box-1",
+                    target: {kind: "entity", entityId: "box-1"},
+                    enabled: true,
                 },
             ],
             settings: {
                 histories: 1_000,
                 seed: 1,
+                particles: ["photon"],
+            },
+            metadata: {
+                sourceSceneId: "scene-1",
+                compilerVersion: "transport-domain-compiler-1",
             },
         });
     });

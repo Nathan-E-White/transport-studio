@@ -7,120 +7,28 @@ import type {
     EditorScene,
     EditorSource,
     EditorSphere,
-    EditorTally
+    EditorTally,
 } from "../editor/EditorScene";
-
-import {Vec3} from "@transport/shared";
-
-
-export type TransportId = string;
-export type TransportEntityId = string;
-export type TransportMaterialId = string;
-export type TransportSourceId = string;
-export type TransportTallyId = string;
-
-export type TransportParticleKind = "photon" | "neutron" | "electron";
-
-export interface TransportVec3 {
-    readonly x: number;
-    readonly y: number;
-    readonly z: number;
-}
-
-export interface TransportProblem {
-    readonly id: TransportId;
-    readonly name: string;
-    readonly geometry: TransportGeometry;
-    readonly materials: readonly TransportMaterial[];
-    readonly sources: readonly TransportSource[];
-    readonly tallies: readonly TransportTally[];
-    readonly settings: TransportRunSettings;
-}
-
-export interface TransportGeometry {
-    readonly entities: readonly TransportGeometryEntity[];
-}
-
-export type TransportGeometryEntity = TransportBox | TransportSphere | TransportCylinder;
-
-export interface TransportGeometryEntityBase {
-    readonly id: TransportEntityId;
-    readonly name: string;
-    readonly materialId: TransportMaterialId;
-    readonly position: TransportVec3;
-    readonly rotation: TransportVec3;
-}
-
-export interface TransportBox extends TransportGeometryEntityBase {
-    readonly kind: "box";
-    readonly size: TransportVec3;
-}
-
-export interface TransportSphere extends TransportGeometryEntityBase {
-    readonly kind: "sphere";
-    readonly radius: number;
-}
-
-export interface TransportCylinder extends TransportGeometryEntityBase {
-    readonly kind: "cylinder";
-    readonly radius: number;
-    readonly height: number;
-}
-
-export interface TransportMaterial {
-    readonly id: TransportMaterialId;
-    readonly name: string;
-    readonly density: number;
-    readonly nuclides: readonly TransportNuclideFraction[];
-}
-
-export interface TransportNuclideFraction {
-    readonly nuclide: string;
-    readonly fraction: number;
-}
-
-export type TransportSource = TransportPointSource | TransportBeamSource;
-
-export interface TransportSourceBase {
-    readonly id: TransportSourceId;
-    readonly name: string;
-    readonly particle: TransportParticleKind;
-    readonly energyMeV: number;
-    readonly strength: number;
-}
-
-export interface TransportPointSource extends TransportSourceBase {
-    readonly kind: "point-source";
-    readonly position: TransportVec3;
-}
-
-export interface TransportBeamSource extends TransportSourceBase {
-    readonly kind: "beam-source";
-    readonly position: TransportVec3;
-    readonly direction: TransportVec3;
-}
-
-export type TransportTally = TransportCellFluxTally | TransportSurfaceCurrentTally;
-
-export interface TransportTallyBase {
-    readonly id: TransportTallyId;
-    readonly name: string;
-    readonly particle: TransportParticleKind;
-    readonly entityId: TransportEntityId;
-}
-
-export interface TransportCellFluxTally extends TransportTallyBase {
-    readonly kind: "cell-flux";
-}
-
-export interface TransportSurfaceCurrentTally extends TransportTallyBase {
-    readonly kind: "surface-current";
-}
-
-export interface TransportRunSettings {
-    readonly histories: number;
-    readonly seed: number;
-}
+import {
+    createTransportBox,
+    createTransportCylinder,
+    createTransportGeometry,
+    createTransportSphere,
+    type TransportGeometryEntity,
+} from "../transport/TransportGeometry";
+import {createTransportMaterial, type TransportMaterial} from "../transport/TransportMaterial";
+import {
+    createBeamSource,
+    createPointSource,
+    type TransportSource,
+} from "../transport/TransportSource";
+import {
+    createCellFluxTally,
+    createTrackLengthTally,
+    type TransportTally,
+} from "../transport/TransportTally";
+import {createTransportProblem, type TransportProblem} from "../transport/TransportProblem";
+import type {Vec3} from "@transport/shared";
 
 export interface CompileResult<T> {
     readonly ok: boolean;
@@ -137,6 +45,7 @@ export interface CompileDiagnostic {
 
 const DEFAULT_SEED = 1;
 const DEFAULT_SOURCE_STRENGTH = 1;
+const COMPILER_VERSION = "transport-domain-compiler-1";
 
 export function compileEditorScene(scene: EditorScene): CompileResult<TransportProblem> {
     const diagnostics: CompileDiagnostic[] = [];
@@ -181,18 +90,24 @@ export function compileEditorScene(scene: EditorScene): CompileResult<TransportP
 
     return {
         ok: true,
-        value: {
+        value: createTransportProblem({
             id: scene.id,
             name: scene.name,
-            geometry: {entities},
+            status: "compiled",
+            geometry: createTransportGeometry({entities}),
             materials,
             sources,
             tallies,
             settings: {
                 histories: scene.settings.histories,
                 seed: scene.settings.seed ?? DEFAULT_SEED,
+                particles: ["photon"],
             },
-        },
+            metadata: {
+                sourceSceneId: scene.id,
+                compilerVersion: COMPILER_VERSION,
+            },
+        }),
         diagnostics,
     };
 }
@@ -201,33 +116,37 @@ function compileMaterial(
     material: EditorMaterial,
     diagnostics: CompileDiagnostic[],
 ): TransportMaterial[] {
-    if (!isFinitePositive(material.density)) {
+    if (!isFiniteNonNegative(material.density)) {
         diagnostics.push({
             level: "error",
             code: "material.density.invalid",
-            message: `Material "${material.name}" must have a positive density before compilation.`,
+            message: `Material "${material.name}" must have a finite non-negative density before compilation.`,
             entityId: material.id,
         });
         return [];
     }
 
-    if (!material.nuclides || material.nuclides.length === 0) {
+    if (material.density > 0 && (!material.nuclides || material.nuclides.length === 0)) {
         diagnostics.push({
             level: "error",
             code: "material.nuclides.missing",
-            message: `Material "${material.name}" must define at least one nuclide fraction.`,
+            message: `Non-void material "${material.name}" must define at least one nuclide fraction.`,
             entityId: material.id,
         });
         return [];
     }
 
     return [
-        {
+        createTransportMaterial({
             id: material.id,
             name: material.name,
             density: material.density,
-            nuclides: material.nuclides,
-        },
+            color: material.color,
+            nuclides: (material.nuclides ?? []).map((nuclide) => ({
+                ...nuclide,
+                basis: "atom",
+            })),
+        }),
     ];
 }
 
@@ -296,15 +215,16 @@ function compileBox(entity: EditorBox, diagnostics: CompileDiagnostic[]): Transp
     }
 
     return [
-        {
+        createTransportBox({
             id: entity.id,
             name: entity.name,
-            kind: "box",
             materialId: entity.materialId!,
-            position: toTransportVec3(entity.transform.position),
-            rotation: toTransportVec3(entity.transform.rotation),
-            size: toTransportVec3(entity.size),
-        },
+            transform: {
+                position: entity.transform.position,
+                rotation: entity.transform.rotation,
+            },
+            size: entity.size,
+        }),
     ];
 }
 
@@ -320,15 +240,16 @@ function compileSphere(entity: EditorSphere, diagnostics: CompileDiagnostic[]): 
     }
 
     return [
-        {
+        createTransportSphere({
             id: entity.id,
             name: entity.name,
-            kind: "sphere",
             materialId: entity.materialId!,
-            position: toTransportVec3(entity.transform.position),
-            rotation: toTransportVec3(entity.transform.rotation),
+            transform: {
+                position: entity.transform.position,
+                rotation: entity.transform.rotation,
+            },
             radius: entity.radius,
-        },
+        }),
     ];
 }
 
@@ -347,16 +268,17 @@ function compileCylinder(
     }
 
     return [
-        {
+        createTransportCylinder({
             id: entity.id,
             name: entity.name,
-            kind: "cylinder",
             materialId: entity.materialId!,
-            position: toTransportVec3(entity.transform.position),
-            rotation: toTransportVec3(entity.transform.rotation),
+            transform: {
+                position: entity.transform.position,
+                rotation: entity.transform.rotation,
+            },
             radius: entity.radius,
             height: entity.height,
-        },
+        }),
     ];
 }
 
@@ -383,15 +305,14 @@ function compileSource(source: EditorSource, diagnostics: CompileDiagnostic[]): 
         }
 
         return [
-            {
+            createPointSource({
                 id: source.id,
                 name: source.name,
-                kind: "point-source",
                 particle: source.particle,
                 energyMeV: source.energyMeV,
                 strength: source.strength ?? DEFAULT_SOURCE_STRENGTH,
-                position: toTransportVec3(source.position),
-            },
+                position: source.position,
+            }),
         ];
     }
 
@@ -413,16 +334,15 @@ function compileBeamSource(
     }
 
     return [
-        {
+        createBeamSource({
             id: source.id,
             name: source.name,
-            kind: "beam-source",
             particle: source.particle,
             energyMeV: source.energyMeV,
             strength: source.strength ?? DEFAULT_SOURCE_STRENGTH,
-            position: toTransportVec3(source.position),
+            position: source.position,
             direction: normalizeVec3(source.direction),
-        },
+        }),
     ];
 }
 
@@ -441,20 +361,37 @@ function compileTally(
         return [];
     }
 
+    if (tally.kind === "surface-current") {
+        diagnostics.push({
+            level: "warning",
+            code: "tally.surface-current.entity-target",
+            message: `Tally "${tally.name}" was compiled as track-length because editor surface tallies do not yet carry surface ids.`,
+            entityId: tally.id,
+        });
+
+        return [
+            createTrackLengthTally({
+                id: tally.id,
+                name: tally.name,
+                particle: tally.particle,
+                entityId: tally.entityId,
+            }),
+        ];
+    }
+
     return [
-        {
+        createCellFluxTally({
             id: tally.id,
             name: tally.name,
-            kind: tally.kind,
             particle: tally.particle,
             entityId: tally.entityId,
-        },
+        }),
     ];
 }
 
 function addDuplicateDiagnostics(
     diagnostics: CompileDiagnostic[],
-    items: readonly { readonly id: string; readonly label: string }[],
+    items: readonly {readonly id: string; readonly label: string}[],
 ): void {
     const seen = new Set<string>();
     const reported = new Set<string>();
@@ -479,11 +416,7 @@ function addDuplicateDiagnostics(
     }
 }
 
-function toTransportVec3(value: Vec3): TransportVec3 {
-    return {x: value.x, y: value.y, z: value.z};
-}
-
-function normalizeVec3(value: Vec3): TransportVec3 {
+function normalizeVec3(value: Vec3): Vec3 {
     const magnitude = vectorMagnitude(value);
     return {
         x: value.x / magnitude,
@@ -502,6 +435,10 @@ function isValidVec3(value: Vec3): boolean {
 
 function isFinitePositive(value: number | undefined): value is number {
     return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isFiniteNonNegative(value: number | undefined): value is number {
+    return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function isPositiveInteger(value: number): boolean {

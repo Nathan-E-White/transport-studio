@@ -129,3 +129,11 @@ export interface ResultStore {
   readonly tracks: readonly TrackSample[];
   readonly diagnostics: readonly Diagnostic[];
 }
+
+export * from "./transport/TransportBackendProtocol";
+export * as TransportGeometryContract from "./transport/TransportGeometry";
+export * as TransportMaterialContract from "./transport/TransportMaterial";
+export * as TransportProblemContract from "./transport/TransportProblem";
+export * as TransportSourceContract from "./transport/TransportSource";
+export * as TransportTallyContract from "./transport/TransportTally";
+export * from "./physics/PhysicsProblem";

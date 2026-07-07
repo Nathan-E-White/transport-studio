@@ -11,6 +11,26 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./compile/CompileEditorScene": {
+      "types": "./src/compile/CompileEditorScene.ts",
+      "import": "./src/compile/CompileEditorScene.ts"
+    },
+    "./editor/EditorScene": {
+      "types": "./src/editor/EditorScene.ts",
+      "import": "./src/editor/EditorScene.ts"
+    },
+    "./transport/TransportGeometry": {
+      "types": "./src/transport/TransportGeometry.ts",
+      "import": "./src/transport/TransportGeometry.ts"
+    },
+    "./transport/TransportProblem": {
+      "types": "./src/transport/TransportProblem.ts",
+      "import": "./src/transport/TransportProblem.ts"
+    },
+    "./physics/PhysicsProblem": {
+      "types": "./src/physics/PhysicsProblem.ts",
+      "import": "./src/physics/PhysicsProblem.ts"
     }
   },
   "scripts": {

@@ -1,4 +1,15 @@
 import type { Diagnostic, Project } from "@transport/domain";
+import {
+  createExperimentReport,
+  fingerprintPhysicsProblem,
+  isResultStale,
+  validatePhysicsProblem,
+  type ExperimentSpec,
+  type PhysicsProblemSpec,
+  type PhysicsValidationReport,
+} from "@transport/domain";
+
+export type { ExperimentSpec, PhysicsProblemSpec, PhysicsValidationReport } from "@transport/domain";
 
 export function validateProject(project: Project): readonly Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
@@ -19,4 +30,20 @@ export function validateProject(project: Project): readonly Diagnostic[] {
   }
 
   return diagnostics;
+}
+
+export function validateExperimentSpec(experiment: ExperimentSpec): PhysicsValidationReport {
+  return validatePhysicsProblem(experiment.problem);
+}
+
+export function reportExperimentSpec(experiment: ExperimentSpec) {
+  return createExperimentReport(experiment);
+}
+
+export function isPhysicsResultStale(problem: PhysicsProblemSpec, resultFingerprint: string): boolean {
+  return isResultStale(problem, resultFingerprint);
+}
+
+export function fingerprintExperimentProblem(problem: PhysicsProblemSpec): string {
+  return fingerprintPhysicsProblem(problem);
 }

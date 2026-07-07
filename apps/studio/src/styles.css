@@ -61,7 +61,7 @@ button { color: inherit; }
 .mode-button { text-transform: capitalize; padding: 7px 10px; color: var(--text-muted); border-color: transparent; background: transparent; }
 .mode-button.active { color: #06101d; background: var(--gold); box-shadow: 0 0 16px rgba(255, 209, 102, 0.24); }
 .toolbar-actions { margin-left: auto; display: flex; gap: 10px; }
-.toolbar button:hover, .tree-item:hover, .bottom-tabs button:hover { background: #223156; }
+.toolbar button:hover, .tree-item:hover, .project-tree-entity-row:hover, .bottom-tabs button:hover { background: #223156; }
 .primary-button { color: #06101d !important; background: linear-gradient(135deg, var(--green), var(--cyan)) !important; font-weight: 800; }
 .icon-button { padding: 7px 9px; }
 
@@ -79,7 +79,9 @@ button { color: inherit; }
 .stat-card strong { display: block; font-size: 1.1rem; }
 .stat-card span { color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; }
 
-.asset-search { color: #65738f; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: rgba(5,8,22,0.38); margin-bottom: 14px; }
+.asset-search { display: grid; gap: 6px; color: #65738f; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: rgba(5,8,22,0.38); margin-bottom: 14px; }
+.asset-search span { font-size: 0.72rem; text-transform: uppercase; }
+.asset-search input, .project-tree-edit input { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: rgba(5,8,22,0.58); color: #edf2ff; padding: 7px 8px; min-width: 0; }
 .tree-group h3 { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 18px 0 8px; }
 .tree-group h3 em { margin-left: auto; font-style: normal; color: #65738f; }
 .tree-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; margin: 7px 0; border: 1px solid var(--line); background: rgba(24,35,61,0.52); color: #edf2ff; border-radius: 14px; padding: 10px; cursor: pointer; }
@@ -99,6 +101,45 @@ button { color: inherit; }
 .tree-item-main strong { font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tree-item-main small { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tree-visibility { color: var(--text-muted); }
+
+.project-tree-create { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 12px; }
+.project-tree-create button, .project-tree-edit button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(24,35,61,0.72);
+  color: #edf2ff;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+.project-tree__groups { display: grid; gap: 10px; }
+.project-tree__empty { color: var(--text-muted); border: 1px solid var(--line); border-radius: 12px; padding: 12px; text-align: center; }
+.project-tree-group { display: grid; gap: 7px; }
+.project-tree-group__heading { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 8px 0 0; }
+.project-tree-group__heading em { margin-left: auto; font-style: normal; color: #65738f; }
+.project-tree-group__rows { display: grid; gap: 7px; }
+.project-tree-group__row-shell { display: grid; gap: 7px; }
+.project-tree-icon { display: inline-grid; place-items: center; width: 18px; height: 18px; color: var(--cyan); }
+.project-tree-entity-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; width: 100%; min-height: 42px; border: 1px solid var(--line); background: rgba(24,35,61,0.52); color: #edf2ff; border-radius: 12px; padding: 8px; cursor: pointer; }
+.project-tree-entity-row--selected { border-color: var(--gold); background: rgba(46,41,78,0.86); box-shadow: inset 0 0 0 1px rgba(255,209,102,0.15); }
+.project-tree-entity-row--hidden { opacity: 0.58; }
+.project-tree-entity-row--not-selectable { cursor: default; }
+.project-tree-entity-row--locked .project-tree-entity-row__label { color: var(--gold); }
+.project-tree-entity-row--excluded .project-tree-entity-row__label { color: var(--text-muted); }
+.project-tree-entity-row__icon { color: var(--blue); text-align: center; }
+.project-tree-entity-row__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 0.9rem; }
+.project-tree-badges, .project-tree-actions { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.project-tree-badge { border: 1px solid var(--line); border-radius: 999px; padding: 2px 6px; font-size: 0.68rem; color: var(--text-muted); background: rgba(255,255,255,0.035); }
+.project-tree-badge--error { color: var(--red); border-color: rgba(255,77,109,0.3); }
+.project-tree-badge--warning { color: var(--gold); border-color: rgba(255,209,102,0.3); }
+.project-tree-action { display: inline-grid; place-items: center; width: 26px; height: 26px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-muted); cursor: pointer; padding: 0; }
+.project-tree-action:hover { color: #edf2ff; border-color: var(--line); background: rgba(255,255,255,0.05); }
+.project-tree-action--pressed { color: var(--cyan); }
+.project-tree-action--danger:hover { color: var(--red); border-color: rgba(255,77,109,0.3); }
+.project-tree-action--disabled { opacity: 0.38; cursor: not-allowed; }
+.project-tree-action__label { display: none; }
+.project-tree-edit { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: rgba(5,8,22,0.42); padding: 10px; }
+.project-tree-edit label { display: grid; gap: 5px; color: var(--text-muted); font-size: 0.76rem; text-transform: uppercase; }
+.project-tree-edit__actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 .entity-title-card { display: flex; gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 18px; padding: 12px; background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)); margin-bottom: 14px; }
 .large-entity-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 16px; color: #06101d; font-size: 1.3rem; font-weight: 900; }

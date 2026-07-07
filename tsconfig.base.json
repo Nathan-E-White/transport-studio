@@ -32,6 +32,12 @@
       "@transport/editor-state/*": [
         "packages/editor-state/src/*"
       ],
+      "@transport/frontend": [
+        "packages/frontend/src/index.ts"
+      ],
+      "@transport/frontend/*": [
+        "packages/frontend/src/*"
+      ],
       "@transport/geometry": [
         "packages/geometry/src/index.ts"
       ],

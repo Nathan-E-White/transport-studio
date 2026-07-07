@@ -1,0 +1,3 @@
+#! /bin/bash -e
+
+bun run "launch:web";

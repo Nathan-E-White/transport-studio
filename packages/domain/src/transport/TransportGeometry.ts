@@ -839,36 +839,62 @@ export function hasSurface(
 
 export function validateGeometry(geometry: TransportGeometry): readonly GeometryValidationDiagnostic[] {
     const diagnostics: GeometryValidationDiagnostic[] = [];
-    const seenIds = new Set<TransportEntityId>();
-    const duplicateIds = new Set<TransportEntityId>();
+    const seenEntityIds = new Set<TransportEntityId>();
+    const duplicateEntityIds = new Set<TransportEntityId>();
+    const seenSurfaceIds = new Set<TransportSurfaceID>();
+    const duplicateSurfaceIds = new Set<TransportSurfaceID>();
+    const seenRegionIds = new Set<TransportRegionID>();
+    const duplicateRegionIds = new Set<TransportRegionID>();
 
     const context: GeometryValidationContext = {
         entityIds: new Set(geometry.entities.map((entity) => entity.id)),
-        surfaceIds: new Set(geometry.entities.map((surface) => surface.id)),
-        regionIds: new Set(geometry.entities.map((region) => region.id))
+        surfaceIds: new Set(geometry.surfaces.map((surface) => surface.id)),
+        regionIds: new Set(geometry.regions.map((region) => region.id))
 
     }
 
     for (const entity of geometry.entities) {
-        if (seenIds.has(entity.id) && !duplicateIds.has(entity.id)) {
+        if (seenEntityIds.has(entity.id) && !duplicateEntityIds.has(entity.id)) {
             diagnostics.push({
                 level: "error",
                 code: "geometry.entity.id.duplicate",
                 message: `Duplicate geometry entity id "${entity.id}" found.`,
                 entityId: entity.id,
             });
-            duplicateIds.add(entity.id);
+            duplicateEntityIds.add(entity.id);
         }
 
-        seenIds.add(entity.id);
+        seenEntityIds.add(entity.id);
         diagnostics.push(...validateGeometryEntity(entity, context));
     }
 
     for (const surface of geometry.surfaces) {
+        if (seenSurfaceIds.has(surface.id) && !duplicateSurfaceIds.has(surface.id)) {
+            diagnostics.push({
+                level: "error",
+                code: "geometry.surface.id.duplicate",
+                message: `Duplicate geometry surface id "${surface.id}" found.`,
+                surfaceId: surface.id,
+            });
+            duplicateSurfaceIds.add(surface.id);
+        }
+
+        seenSurfaceIds.add(surface.id);
         diagnostics.push(...validateSurface(surface));
     }
 
     for (const region of geometry.regions) {
+        if (seenRegionIds.has(region.id) && !duplicateRegionIds.has(region.id)) {
+            diagnostics.push({
+                level: "error",
+                code: "geometry.region.id.duplicate",
+                message: `Duplicate geometry region id "${region.id}" found.`,
+                regionId: region.id,
+            });
+            duplicateRegionIds.add(region.id);
+        }
+
+        seenRegionIds.add(region.id);
         diagnostics.push(...validateRegion(region, context));
     }
 
@@ -1336,7 +1362,7 @@ function validateOptionalApproximateVolume(
     }
 }
 
-function isValidBoundingBox(boundingBox: AxisAlignedBoundingBox): boolean {
+export function isValidBoundingBox(boundingBox: AxisAlignedBoundingBox): boolean {
     return isValidVec3(boundingBox.min)
         && isValidVec3(boundingBox.max)
         && boundingBox.min.x <= boundingBox.max.x
@@ -1344,7 +1370,7 @@ function isValidBoundingBox(boundingBox: AxisAlignedBoundingBox): boolean {
         && boundingBox.min.z <= boundingBox.max.z;
 }
 
-function estimateVoxelRegionVolume(entity: TransportVoxelRegion): VolumeEstimate {
+export function estimateVoxelRegionVolume(entity: TransportVoxelRegion): VolumeEstimate {
     if (entity.approximateVolume !== undefined) {
         return approximateOrUnknown(entity.approximateVolume, "voxel occupancy metadata");
     }
@@ -1372,7 +1398,7 @@ function estimateVoxelRegionVolume(entity: TransportVoxelRegion): VolumeEstimate
     };
 }
 
-function exactVolume(value: number): VolumeEstimate {
+export function exactVolume(value: number): VolumeEstimate {
     if (!Number.isFinite(value) || value < 0) {
         return {kind: "unknown", reason: "invalid geometric dimensions"};
     }
@@ -1380,7 +1406,7 @@ function exactVolume(value: number): VolumeEstimate {
     return {kind: "exact", value};
 }
 
-function approximateOrUnknown(value: number | undefined, method: string): VolumeEstimate {
+export function approximateOrUnknown(value: number | undefined, method: string): VolumeEstimate {
     if (value === undefined) {
         return {kind: "unknown", reason: `volume requires ${method}`};
     }
@@ -1392,7 +1418,7 @@ function approximateOrUnknown(value: number | undefined, method: string): Volume
     return {kind: "approximate", value, method};
 }
 
-function dispatchGeometryOps<R>(
+export function dispatchGeometryOps<R>(
     entity: TransportGeometryEntity,
     fn: <K extends TransportGeometryEntity["kind"]>(
         ops: GeometryEntityOps<Extract<TransportGeometryEntity, { readonly kind: K }>>,
@@ -1518,19 +1544,19 @@ function isValidCylinderAxis(axis: TransportCylinderSurface["axis"]): boolean {
         (typeof axis === "object" && isValidVec3(axis) && vectorMagnitude(axis) > 0);
 }
 
-function areQuadraticCoefficientsFinite(coefficients: TransportQuadraticSurface["coefficients"]): boolean {
+export function areQuadraticCoefficientsFinite(coefficients: TransportQuadraticSurface["coefficients"]): boolean {
     return Object.values(coefficients).every(Number.isFinite);
 }
 
-function vectorMagnitude(value: Vec3): number {
+export function vectorMagnitude(value: Vec3): number {
     return Math.sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
 }
 
-function isValidVec3(value: Vec3): boolean {
+export function isValidVec3(value: Vec3): boolean {
     return Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.z);
 }
 
-function isPositiveVec3(value: Vec3): boolean {
+export function isPositiveVec3(value: Vec3): boolean {
     return isPositiveFinite(value.x) && isPositiveFinite(value.y) && isPositiveFinite(value.z);
 }
 

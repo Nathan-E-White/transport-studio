@@ -5,5 +5,13 @@ dist
 .DS_Store
 target
 src-tauri/target
+apps/studio/src-tauri/gen/
 .idea
 /bun.lock
+/devs/
+coverage/
+playwright-report/
+reports/
+test-results/
+.stryker-tmp/
+stryker.log

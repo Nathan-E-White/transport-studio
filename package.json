@@ -7,19 +7,50 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun --filter @transport/studio dev",
-    "build": "bun run typecheck && bun --filter '*' build",
-    "build:packages": "bun --filter './packages/*' build",
-    "build:apps": "bun --filter './apps/*' build",
-    "typecheck": "bun --filter '*' typecheck",
-    "typecheck:packages": "bun --filter './packages/*' typecheck",
-    "typecheck:apps": "bun --filter './apps/*' typecheck",
-    "lint": "bun --filter '*' lint"
+    "dev": "bun run launch:web",
+    "launch": "bun run launch:native",
+    "launch:web": "bun run --filter @transport/studio dev",
+    "launch:native": "bun run --filter @transport/studio tauri:dev",
+    "launch:native:debug": "bun run --filter @transport/studio tauri:dev:debug",
+    "tauri:dev": "bun run launch:native",
+    "tauri:build": "bun run --filter @transport/studio tauri:build",
+    "build": "bun run typecheck && bun run --filter '*' build",
+    "build:packages": "bun run --filter './packages/*' build",
+    "build:apps": "bun run --filter './apps/*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck:packages": "bun run --filter './packages/*' typecheck",
+    "typecheck:apps": "bun run --filter './apps/*' typecheck",
+    "lint": "bun run --filter '*' lint",
+    "test": "bun run test:unit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "test:coverage": "vitest run --config vitest.config.ts --coverage",
+    "test:e2e": "playwright test apps/studio/e2e/studio.smoke.spec.ts apps/studio/e2e/studio.project-tree.spec.ts",
+    "test:fuzz": "playwright test apps/studio/e2e/studio.fuzz.spec.ts",
+    "test:mutation": "stryker run",
+    "test:frontend": "bun run typecheck && bun run test:unit && bun run test:e2e",
+    "test:studio": "vitest run --root apps/studio --config vite.config.ts",
+    "test:studio:app": "vitest run --root apps/studio --config vite.config.ts src/app"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/typescript-checker": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
+    "@vitest/coverage-v8": "4.1.7",
+    "fast-check": "^4.8.0",
+    "jsdom": "^29.1.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "vitest": "^4.1.6"
+    "@neo4j/cypher-builder": "^3.3.0",
+    "@neo4j/graphql": "^7.5.4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.9.3",
+    "neo4j-driver": "^6.1.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "vitest": "^4.1.7"
   }
 }

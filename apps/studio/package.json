@@ -5,13 +5,24 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:web": "vite --host 0.0.0.0",
+    "launch": "bun run tauri:dev",
+    "tauri:dev": "tauri dev",
+    "tauri:dev:debug": "tauri dev --verbose",
+    "tauri:build": "tauri build",
     "build": "vite build",
+    "build:web": "vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vite.config.ts",
+    "test:watch": "vitest --config vite.config.ts",
+    "test:app": "vitest run --config vite.config.ts src/app"
   },
   "dependencies": {
     "@transport/domain": "workspace:*",
+    "@transport/frontend": "workspace:*",
     "@transport/shared": "workspace:*",
+    "@transport/transport-worker": "workspace:*",
     "@transport/transport-visual": "workspace:*",
     "@transport/validation": "workspace:*",
     "@vitejs/plugin-react": "latest",
@@ -27,6 +38,7 @@
     "zustand": "latest"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@types/three": "latest",

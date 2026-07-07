@@ -30,6 +30,7 @@ export function RunPanel({ config, diagnostics, tracks, activeTab, onTabChange, 
             <Metric label="visible" value={tracks.length} />
             <Metric label="escaped" value={escaped} />
             <Metric label="absorbed" value={absorbed} />
+            <Metric label="diagnostics" value={diagnostics.length} />
           </div>
         )}
         {activeTab === "tallies" && (
@@ -44,7 +45,7 @@ export function RunPanel({ config, diagnostics, tracks, activeTab, onTabChange, 
           </div>
         )}
         {activeTab === "console" && (
-          <div className="console-line">transport-worker:// idle · visual-ts backend armed · project graph clean</div>
+          <div className="console-line">{getConsoleStatus(config.backend, tracks.length, config.histories, diagnostics)}</div>
         )}
       </div>
     </section>
@@ -53,4 +54,24 @@ export function RunPanel({ config, diagnostics, tracks, activeTab, onTabChange, 
 
 function Metric({ label, value }: { readonly label: string; readonly value: string | number }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function getConsoleStatus(
+  backend: RunConfiguration["backend"],
+  trackCount: number,
+  histories: number,
+  diagnostics: readonly Diagnostic[],
+): string {
+  if (backend === "native") {
+    const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
+
+    return [
+      `tauri://run_photon_smoke complete`,
+      `${trackCount} tracks`,
+      `${histories.toLocaleString()} requested histories`,
+      warnings.length > 0 ? `${warnings.length} warnings` : "no warnings",
+    ].join(" · ");
+  }
+
+  return "transport-worker:// idle · visual-ts backend armed · project graph clean";
 }

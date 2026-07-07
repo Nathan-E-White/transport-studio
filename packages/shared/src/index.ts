@@ -22,5 +22,5 @@ export const IDENTITY_TRANSFORM: Transform = {
 };
 
 export function makeId(prefix = "entity"): EntityId {
-  return `${prefix}_${crypto.randomUUID}` as EntityId;
+  return `${prefix}_${crypto.randomUUID()}` as EntityId;
 }
