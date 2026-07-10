@@ -2,9 +2,29 @@
 
 Transport Studio is a visual-first Monte Carlo particle transport workbench with a Rust physics spine and TypeScript domain contracts.
 
-The glossary below is domain language for the staged Relativistic Multiphysics roadmap. It defines what the project means by the terms before implementation slices promote any new solver surface.
+The glossary below is domain language for Transport Studio. It defines what the project means by these terms before implementation slices promote any new solver or runtime surface.
 
 ## Domain Glossary
+
+### Editable Scene
+
+The authoring-time scene a user edits in the workbench. It may contain incomplete, hidden, helper, decorative, or invalid entities; it is the source for validation and compilation, not the backend problem itself.
+
+### Compiled Transport Problem
+
+The validated, domain-significant problem produced from an Editable Scene for analysis or execution. It contains transport geometry, materials, sources, tallies, settings, and approved backend-facing data, but not viewport, React, selection, panel, render, or editor-only state.
+
+### Compiled Problem Inclusion
+
+The authoring intent that decides whether an editable entity participates in the Compiled Transport Problem. It is independent of viewport visibility, selection, and locking: a hidden entity may still compile, and a visible entity may be excluded.
+
+### Run Session
+
+The lifecycle of one attempt to analyze or execute a Compiled Transport Problem. A Run Session includes selected backend, diagnostics, progress, result tracks or tallies, provenance, and UI outcome state, but not the native runtime adapter that happens to perform a call.
+
+### Capability Status
+
+A product-facing statement of what a solver, backend, or model facet may honestly do right now. Capability Status distinguishes runnable behavior from gated, stubbed, substrate, placeholder, future, or verification-only work so the workbench does not over-claim physics maturity.
 
 ### Relativistic Multiphysics
 
