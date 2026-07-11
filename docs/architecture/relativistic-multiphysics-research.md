@@ -68,6 +68,8 @@ AMR is necessary domain language for future 3D radiation-hydrodynamics work, but
 
 This prevents the first implementation from hard-coding a dead-end uniform-grid assumption while also avoiding a fake AMR claim.
 
+Full Berger-Oliger AMR, AMR convergence evidence, curvilinear chart support, GRMHD, TOV/static-star validation, Bondi/Michel accretion validation, primary Monte Carlo radiation evolution, tabulated EOS support, and product-facing strong-field claims remain future tracks. Their research and domain notes live in the [Future-Track Notes Ledger](future-track-notes-ledger.md).
+
 ### Monte Carlo Packets As Bridge
 
 Monte Carlo packets remain valuable to Transport Studio because the product began as a particle transport workbench. In this staged plan, packets are a bridge:
@@ -94,3 +96,5 @@ The numerical-relativity testbed literature supports using standard tests to com
 ## Product Boundary
 
 The research supports a staged kernel path. It does not support exposing Relativistic Multiphysics as a runnable product solver yet. Product-facing promotion needs capability metadata, validation categories, provenance, reports, and UI language that clearly distinguish solved, placeholder, benchmark, and unsupported surfaces.
+
+The [Future-Track Notes Ledger](future-track-notes-ledger.md) is the controlling note for deferred Relativistic Multiphysics tracks that could otherwise be mistaken for missing work inside the first slice.

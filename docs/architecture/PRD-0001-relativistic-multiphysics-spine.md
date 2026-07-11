@@ -83,6 +83,8 @@ The agreed test-first seams are:
 - No full frequency-dependent or angle-resolved radiation transport.
 - No replacement of existing Monte Carlo transport paths.
 - No criticality, depletion, or weapon-effects solver expansion.
+- No product-facing strong-field or production numerical-relativity claim.
+- No primary Monte Carlo radiation evolution, full Berger-Oliger AMR, curvilinear chart support, GRMHD, TOV/static-star validation, Bondi/Michel validation, AMR convergence campaign, strong-field constraint-preservation campaign, GRMHD test suite, or tabulated EOS support.
 
 ## Further Notes
 
@@ -97,6 +99,7 @@ The implementation order should stay boring and sharp:
 ## Related Documents
 
 - [Relativistic Multiphysics Research Note](relativistic-multiphysics-research.md)
+- [Future-Track Notes Ledger](future-track-notes-ledger.md)
 - [ADR 0007: Staged Relativistic Multiphysics Kernel Promotion](ADR-0007.md)
 - [V1 Physics Engine Completion Plan](V1-physics-engine-plan.md)
 - [Transport Studio Context](../../CONTEXT.md)

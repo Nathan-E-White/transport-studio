@@ -97,3 +97,11 @@ The act of accumulating packet-carried energy, momentum, or source information i
 ### Verification Problem
 
 A constrained scenario with an expected invariant, convergence behavior, or benchmark result. Verification problems test whether the numerical method was implemented as intended; they do not by themselves validate predictive use.
+
+### Future Track
+
+A named research or implementation direction that is intentionally outside the current slice. A Future Track is not missing work, implicit product scope, or evidence for a solver claim until it graduates through source-backed issue scope, tests, validation evidence, and capability-status updates.
+
+## Future Track Ledger
+
+Deferred Relativistic Multiphysics tracks are recorded in [Future-Track Notes Ledger](docs/architecture/future-track-notes-ledger.md). That ledger keeps strong-field production claims, primary Monte Carlo radiation evolution, Berger-Oliger AMR, curvilinear charts, GRMHD, validation campaigns, and tabulated EOS out of the first Dynamical Spacetime Coupling slice until each track has evidence and a narrower issue.
