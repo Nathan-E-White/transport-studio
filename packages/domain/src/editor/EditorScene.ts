@@ -33,6 +33,7 @@ export interface EditorEntityBase {
     readonly transform: EditorTransform;
     readonly materialId?: MaterialId;
     readonly visible: boolean;
+    readonly includedInCompile?: boolean;
     readonly locked: boolean;
     readonly tags?: readonly string[];
 }

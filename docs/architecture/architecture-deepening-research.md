@@ -25,7 +25,7 @@ ADR 0001 says the Editable Scene is not the simulation problem and shows the int
 
 The current app has part of this model in editor state. `EditorEntityViewFlags` includes `includedInCompile`, defaults it to true, and has helper-only defaults that exclude helper entities. Project-tree actions can dispatch `set-included-in-compile`, and badges already know how to show an excluded state.
 
-The compile path still uses `visible` as the inclusion rule. `compileEntity(...)` in `CompileEditorScene.ts` returns no geometry for hidden entities and emits `entity.hidden.skipped`; the matching test currently asserts that behavior. `ProjectTree.tsx` also wires `onCompileInclusionChange={() => undefined}`, so the UI affordance does not persist into the project model.
+Before issue 17, the compile path still used `visible` as the inclusion rule. `compileEntity(...)` in `CompileEditorScene.ts` returned no geometry for hidden entities and emitted `entity.hidden.skipped`; the matching test asserted that behavior. `ProjectTree.tsx` also wired `onCompileInclusionChange={() => undefined}`, so the UI affordance did not persist into the project model.
 
 Research implication: this is one problem, not three. The real issue is to make Compiled Problem Inclusion a persisted editor/project fact and teach the compiler to honor it. Visibility should remain a viewport concern.
 

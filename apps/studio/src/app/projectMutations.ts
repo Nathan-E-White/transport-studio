@@ -68,6 +68,19 @@ export function setEntityVisible(project: Project, entityId: string, visible: bo
   );
 }
 
+export function setEntityIncludedInCompile(
+  project: Project,
+  entityId: string,
+  includedInCompile: boolean,
+): Project {
+  return updateProjectEntities(
+    project,
+    project.scene.entities.map((entity) =>
+      entity.id === entityId ? ({...entity, includedInCompile} as SceneEntity) : entity,
+    ),
+  );
+}
+
 export function setEntityLocked(project: Project, entityId: string, locked: boolean): Project {
   return updateProjectEntities(
     project,
@@ -109,6 +122,7 @@ function createDefaultEntity(kind: SceneEntity["kind"]): SceneEntity {
         name: "New Geometry",
         tags: [],
         visible: true,
+        includedInCompile: true,
         locked: false,
         transform: IDENTITY_TRANSFORM,
         primitive: "box",
@@ -122,6 +136,7 @@ function createDefaultEntity(kind: SceneEntity["kind"]): SceneEntity {
         name: "New Material",
         tags: [],
         visible: true,
+        includedInCompile: true,
         locked: false,
         transform: IDENTITY_TRANSFORM,
         color: "#7aa2ff",
@@ -138,6 +153,7 @@ function createDefaultEntity(kind: SceneEntity["kind"]): SceneEntity {
         name: "New Source",
         tags: [],
         visible: true,
+        includedInCompile: true,
         locked: false,
         transform: IDENTITY_TRANSFORM,
         sourceKind: "pencil-beam",
@@ -154,6 +170,7 @@ function createDefaultEntity(kind: SceneEntity["kind"]): SceneEntity {
         name: "New Tally",
         tags: [],
         visible: true,
+        includedInCompile: true,
         locked: false,
         transform: IDENTITY_TRANSFORM,
         tallyKind: "detector-hit",

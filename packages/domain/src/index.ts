@@ -17,6 +17,7 @@ export interface EntityBase {
   readonly name: string;
   readonly tags: readonly string[];
   readonly visible: boolean;
+  readonly includedInCompile?: boolean;
   readonly locked: boolean;
   readonly transform: Transform;
   readonly metadata?: Record<string, unknown>;

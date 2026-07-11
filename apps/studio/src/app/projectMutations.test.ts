@@ -5,6 +5,7 @@ import {
   deleteEntity,
   duplicateEntity,
   updateEntityMetadata,
+  setEntityIncludedInCompile,
   setEntityLocked,
   setEntityVisible,
 } from "./projectMutations";
@@ -49,6 +50,19 @@ describe("projectMutations", () => {
     expect(updatedEntity).toMatchObject({
       visible: false,
       locked: true,
+    });
+  });
+
+  it("updates compile inclusion without changing viewport visibility", () => {
+    const project = createInitialProject();
+    const entity = project.scene.entities[1];
+
+    const nextProject = setEntityIncludedInCompile(project, entity.id, false);
+    const updatedEntity = nextProject.scene.entities.find((candidate) => candidate.id === entity.id);
+
+    expect(updatedEntity).toMatchObject({
+      visible: entity.visible,
+      includedInCompile: false,
     });
   });
 
