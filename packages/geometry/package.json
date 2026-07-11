@@ -4,7 +4,8 @@
   "private": true,
 
   "dependencies": {
-    "@transport/domain": "workspace:*"
+    "@transport/domain": "workspace:*",
+    "@transport/shared": "workspace:*"
   },
 
   "main": "src/index.ts",
