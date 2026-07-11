@@ -46,7 +46,7 @@ Tests should target runtime-neutral seams first:
 
 - compile behavior through editor/project mutation functions and `compileEditorScene`;
 - run outcomes through a Run Session module with injected bridge adapters;
-- solver capability facts through shared contract fixtures;
+- solver capability facts through the versioned runtime-neutral fixture at `fixtures/contracts/v1-solver-capabilities.json`;
 - engine behavior through the public `transport-engine` facade.
 
 Tauri-specific tests should verify adapter translation only. They should not become the primary proof for domain or engine behavior.
@@ -66,4 +66,3 @@ Tauri-specific tests should verify adapter translation only. They should not bec
 - [ADR 0003: Front-End State Model and Editor Domain Boundary](ADR-0003.md)
 - [ADR 0007: Staged Relativistic Multiphysics Kernel Promotion](ADR-0007.md)
 - [Architecture Deepening Research](architecture-deepening-research.md)
-

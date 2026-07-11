@@ -1,0 +1,99 @@
+{
+  "contractVersion": "1.0.0",
+  "statusLanguage": {
+    "runnable": "May prepare and execute through the V1 solver path.",
+    "gated": "Registered for V1, but runnable preparation must reject it with a gated diagnostic.",
+    "placeholder": "Represented in domain and reporting contracts only; no runnable solver is claimed.",
+    "substrate": "Provides implementation building blocks or verification evidence only; no product-facing solver capability is claimed."
+  },
+  "solvers": [
+    {
+      "id": "mock-fields",
+      "name": "Mock Fields",
+      "status": "runnable",
+      "supportedFacets": ["rad-hydro-fields", "reporting"],
+      "requiredInputs": [],
+      "emittedOutputs": ["field-dataset"]
+    },
+    {
+      "id": "gray-radiation-diffusion",
+      "name": "Gray Radiation Diffusion",
+      "status": "runnable",
+      "supportedFacets": ["rad-hydro-fields", "diffusion", "marshak-waves"],
+      "requiredInputs": ["radiation", "opacity"],
+      "emittedOutputs": ["radiation-energy", "energy-diagnostics"]
+    },
+    {
+      "id": "eulerian-hydro",
+      "name": "Eulerian Hydro",
+      "status": "runnable",
+      "supportedFacets": ["material-state-fields", "shocks"],
+      "requiredInputs": ["hydro", "eos"],
+      "emittedOutputs": ["hydro-state", "mass-energy-diagnostics"]
+    },
+    {
+      "id": "multigroup-radiation-diffusion",
+      "name": "Multigroup Radiation Diffusion",
+      "status": "gated",
+      "supportedFacets": ["diffusion", "multigroup-opacity"],
+      "requiredInputs": [],
+      "emittedOutputs": ["unsupported-diagnostic"]
+    },
+    {
+      "id": "discrete-ordinates",
+      "name": "Discrete Ordinates",
+      "status": "gated",
+      "supportedFacets": ["radiation-angular-transport"],
+      "requiredInputs": [],
+      "emittedOutputs": ["unsupported-diagnostic"]
+    },
+    {
+      "id": "implicit-monte-carlo",
+      "name": "Implicit Monte Carlo",
+      "status": "gated",
+      "supportedFacets": ["radiation-monte-carlo"],
+      "requiredInputs": [],
+      "emittedOutputs": ["unsupported-diagnostic"]
+    },
+    {
+      "id": "lagrangian-hydro",
+      "name": "Lagrangian Hydro",
+      "status": "gated",
+      "supportedFacets": ["material-motion"],
+      "requiredInputs": [],
+      "emittedOutputs": ["unsupported-diagnostic"]
+    },
+    {
+      "id": "ale-hydro",
+      "name": "ALE Hydro",
+      "status": "gated",
+      "supportedFacets": ["material-motion", "remap"],
+      "requiredInputs": [],
+      "emittedOutputs": ["unsupported-diagnostic"]
+    },
+    {
+      "id": "criticality-keff",
+      "name": "Criticality keff",
+      "status": "gated",
+      "supportedFacets": ["criticality"],
+      "requiredInputs": [],
+      "emittedOutputs": ["unsupported-diagnostic"]
+    },
+    {
+      "id": "point-kinetics",
+      "name": "Point Kinetics",
+      "status": "gated",
+      "supportedFacets": ["criticality", "kinetics"],
+      "requiredInputs": [],
+      "emittedOutputs": ["unsupported-diagnostic"]
+    },
+    {
+      "id": "depletion",
+      "name": "Depletion",
+      "status": "gated",
+      "supportedFacets": ["composition-evolution"],
+      "requiredInputs": [],
+      "emittedOutputs": ["unsupported-diagnostic"]
+    }
+  ]
+}

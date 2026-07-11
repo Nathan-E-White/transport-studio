@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import solverCapabilityContract from "../../../../fixtures/contracts/v1-solver-capabilities.json";
 import {
     V1_SOLVER_CAPABILITIES,
     createExperimentReport,
@@ -9,6 +10,11 @@ import {
 } from "./PhysicsProblem";
 
 describe("PhysicsProblem V1 contracts", () => {
+    it("matches the shared versioned solver capability contract", () => {
+        expect(solverCapabilityContract.contractVersion).toBe("1.0.0");
+        expect(V1_SOLVER_CAPABILITIES).toEqual(solverCapabilityContract.solvers);
+    });
+
     it("keeps every planned solver visible in the capability registry", () => {
         expect(V1_SOLVER_CAPABILITIES.map((solver) => solver.id)).toEqual([
             "mock-fields",
@@ -57,6 +63,22 @@ describe("PhysicsProblem V1 contracts", () => {
 
         expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain("physics.solver.gated");
         expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain("physics.criticality.placeholder");
+    });
+
+    it("rejects every solver that the shared contract marks as gated", () => {
+        const gatedSolvers = solverCapabilityContract.solvers.filter((solver) => solver.status === "gated");
+
+        for (const solver of gatedSolvers) {
+            const capability = V1_SOLVER_CAPABILITIES.find((candidate) => candidate.id === solver.id);
+            expect(capability, solver.id).toBeDefined();
+            if (!capability) continue;
+            const diagnostics = validatePhysicsProblem({
+                ...baseProblem(),
+                run: { solverId: capability.id },
+            }).diagnostics;
+
+            expect(diagnostics.map((diagnostic) => diagnostic.code), solver.id).toContain("physics.solver.gated");
+        }
     });
 
     it("detects table-domain failures and stale result fingerprints", () => {

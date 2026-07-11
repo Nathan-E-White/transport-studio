@@ -1253,11 +1253,43 @@ mod tests {
     }
 
     #[test]
-    fn v1_gated_solvers_return_unsupported_diagnostic() {
-        let diagnostic = prepare_v1_input_bundle("criticality-keff", "problem-1", "fingerprint-1")
-            .expect_err("gated solver");
+    fn v1_registry_matches_shared_versioned_capability_contract() {
+        let contract: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../../fixtures/contracts/v1-solver-capabilities.json"
+        ))
+        .expect("valid shared solver capability contract");
+        let registry = v1_solver_registry()
+            .into_iter()
+            .map(|solver| {
+                serde_json::json!({
+                    "id": solver.id,
+                    "name": solver.name,
+                    "status": match solver.status {
+                        V1SolverStatus::Runnable => "runnable",
+                        V1SolverStatus::Gated => "gated",
+                    },
+                    "supportedFacets": solver.supported_facets,
+                    "requiredInputs": solver.required_inputs,
+                    "emittedOutputs": solver.emitted_outputs,
+                })
+            })
+            .collect::<Vec<_>>();
 
-        assert_eq!(diagnostic.code, "solver.gated");
+        assert_eq!(contract["contractVersion"], "1.0.0");
+        assert_eq!(contract["solvers"], serde_json::Value::Array(registry));
+    }
+
+    #[test]
+    fn v1_gated_solvers_return_unsupported_diagnostic() {
+        for solver in v1_solver_registry()
+            .into_iter()
+            .filter(|solver| solver.status == V1SolverStatus::Gated)
+        {
+            let diagnostic = prepare_v1_input_bundle(solver.id, "problem-1", "fingerprint-1")
+                .expect_err("gated solver");
+
+            assert_eq!(diagnostic.code, "solver.gated", "{}", solver.id);
+        }
     }
 
     #[test]
