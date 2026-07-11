@@ -7,6 +7,7 @@ pub mod geodesic;
 pub mod geometry;
 pub mod grid;
 pub mod io;
+pub mod kernel;
 pub mod matter;
 pub mod metric;
 pub mod numerics;
@@ -32,6 +33,17 @@ pub use tensor::*;
 pub use transport::*;
 pub use units::*;
 pub use vec3::Vec3;
+
+/// Deliberate access to low-level physics substrate for numerical development and debugging.
+///
+/// The [`kernel`] module is the canonical interface for coupled stepping. These modules expose
+/// raw fields and numerical operations for callers who explicitly need expert-level control.
+pub mod expert {
+    pub use crate::{
+        adm, bssn, curvature, diagnostics, geodesic, geometry, grid, matter, metric, numerics,
+        physics_v1, tensor, units, vec3,
+    };
+}
 
 #[cfg(test)]
 mod tests;
