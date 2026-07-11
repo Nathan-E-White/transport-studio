@@ -128,7 +128,17 @@ const mocks = vi.hoisted(() => {
                 seed: 1337
             }
         })),
-        compileEditorScene: vi.fn(() => ({
+        compileEditorScene: vi.fn<(scene: unknown) => {
+            ok: true;
+            value: {
+                id: string;
+                settings: {
+                    histories: number;
+                    seed: number;
+                };
+            };
+            diagnostics: [];
+        }>(() => ({
             ok: true,
             value: {
                 id: "compiled-current-scene",
@@ -174,20 +184,37 @@ vi.mock("@transport/validation", () => ({
 }));
 
 function ProjectTreeMock(props: {
+    project: {
+        scene: {
+            entities: readonly {
+                id: string;
+                visible: boolean;
+                includedInCompile?: boolean;
+            }[];
+        };
+    };
     selectedEntityId?: string;
     onSelect: (id: string) => void;
+    onSetEntityVisible: (id: string, visible: boolean) => void;
+    onSetEntityIncludedInCompile: (id: string, includedInCompile: boolean) => void;
     stats: { geometry: number; materials: number; sources: number; tallies: number };
 }) {
+    const shield = props.project.scene.entities.find((entity) => entity.id === "shield-1");
+
     return (
         <section aria-label="Project tree">
             <h2>Project tree</h2>
             <p>tree selected entity: {props.selectedEntityId ?? "none"}</p>
+            <p>tree shield visible: {String(shield?.visible ?? false)}</p>
+            <p>tree shield included: {String(shield?.includedInCompile ?? true)}</p>
             <p>
                 scene
                 stats: {props.stats.geometry} geometry, {props.stats.materials} materials, {props.stats.sources} sources, {props.stats.tallies} tallies
             </p>
             <button type="button" onClick={() => props.onSelect("water-1")}>Select Water Moderator</button>
             <button type="button" onClick={() => props.onSelect("dose-1")}>Select Dose Tally</button>
+            <button type="button" onClick={() => props.onSetEntityVisible("shield-1", false)}>Hide Shield Slab</button>
+            <button type="button" onClick={() => props.onSetEntityIncludedInCompile("shield-1", false)}>Exclude Shield Slab</button>
         </section>
     );
 }
@@ -372,6 +399,38 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("run panel tracks: 0")).toBeTruthy();
         expect(screen.getByText("run panel diagnostics: 2")).toBeTruthy();
         expect(screen.getByText("native.bridge.unavailable: Native Rust photon backend bridge is not available in this runtime.")).toBeTruthy();
+    });
+
+    it("keeps viewport visibility independent from compiled problem inclusion for native compilation", async () => {
+        render(<StudioApp/>);
+
+        fireEvent.click(screen.getByRole("button", {name: "Hide Shield Slab"}));
+        fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
+
+        await waitFor(() => expect(mocks.compileEditorScene).toHaveBeenCalledTimes(1));
+        expect(mocks.compileEditorScene.mock.calls[0]?.[0]).toMatchObject({
+            entities: [
+                {
+                    id: "shield-1",
+                    visible: false,
+                    includedInCompile: true
+                }
+            ]
+        });
+
+        fireEvent.click(screen.getByRole("button", {name: "Exclude Shield Slab"}));
+        fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
+
+        await waitFor(() => expect(mocks.compileEditorScene).toHaveBeenCalledTimes(2));
+        expect(mocks.compileEditorScene.mock.calls[1]?.[0]).toMatchObject({
+            entities: [
+                {
+                    id: "shield-1",
+                    visible: false,
+                    includedInCompile: false
+                }
+            ]
+        });
     });
 
     it("renders native Rust tracks and warning diagnostics when the Tauri bridge succeeds", async () => {

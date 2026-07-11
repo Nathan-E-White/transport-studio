@@ -50,7 +50,11 @@ const COMPILER_VERSION = "transport-domain-compiler-1";
 export function compileEditorScene(scene: EditorScene): CompileResult<TransportProblem> {
     const diagnostics: CompileDiagnostic[] = [];
     const materialIds = new Set(scene.materials.map((material) => material.id));
-    const entityIds = new Set(scene.entities.map((entity) => entity.id));
+    const compiledEntityIds = new Set(
+        scene.entities
+            .filter((entity) => isIncludedInCompile(entity))
+            .map((entity) => entity.id),
+    );
 
     addDuplicateDiagnostics(
         diagnostics,
@@ -74,7 +78,7 @@ export function compileEditorScene(scene: EditorScene): CompileResult<TransportP
         compileEntity(entity, materialIds, diagnostics),
     );
     const sources = scene.sources.flatMap((source) => compileSource(source, diagnostics));
-    const tallies = scene.tallies.flatMap((tally) => compileTally(tally, entityIds, diagnostics));
+    const tallies = scene.tallies.flatMap((tally) => compileTally(tally, compiledEntityIds, diagnostics));
 
     if (!isPositiveInteger(scene.settings.histories)) {
         diagnostics.push({
@@ -155,11 +159,11 @@ function compileEntity(
     materialIds: ReadonlySet<string>,
     diagnostics: CompileDiagnostic[],
 ): TransportGeometryEntity[] {
-    if (!entity.visible) {
+    if (!isIncludedInCompile(entity)) {
         diagnostics.push({
             level: "info",
-            code: "entity.hidden.skipped",
-            message: `Hidden entity "${entity.name}" was skipped during transport compilation.`,
+            code: "entity.compile.excluded",
+            message: `Entity "${entity.name}" was excluded from the compiled transport problem.`,
             entityId: entity.id,
         });
         return [];
@@ -201,6 +205,10 @@ function compileEntity(
             });
             return [];
     }
+}
+
+function isIncludedInCompile(entity: EditorEntity): boolean {
+    return entity.includedInCompile !== false;
 }
 
 function compileBox(entity: EditorBox, diagnostics: CompileDiagnostic[]): TransportGeometryEntity[] {

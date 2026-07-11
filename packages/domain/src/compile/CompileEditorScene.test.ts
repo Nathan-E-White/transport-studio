@@ -142,7 +142,39 @@ describe("compileEditorScene", () => {
         );
     });
 
-    it("skips hidden entities with an informational diagnostic", () => {
+    it("compiles hidden entities when they remain included in the compiled problem", () => {
+        const scene = baseScene();
+        const result = compileEditorScene({
+            ...scene,
+            entities: [
+                {
+                    ...scene.entities[0],
+                    visible: false,
+                    includedInCompile: true,
+                },
+            ],
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.value?.geometry.entities).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: "box-1",
+                    kind: "box",
+                }),
+            ]),
+        );
+        expect(result.diagnostics).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    code: "entity.hidden.skipped",
+                    entityId: "box-1",
+                }),
+            ]),
+        );
+    });
+
+    it("skips explicitly excluded entities with an informational diagnostic", () => {
         const scene = baseScene();
         const result = compileEditorScene({
             ...scene,
@@ -150,7 +182,8 @@ describe("compileEditorScene", () => {
             entities: [
                 {
                     ...scene.entities[0],
-                    visible: false,
+                    visible: true,
+                    includedInCompile: false,
                 },
             ],
         });
@@ -161,7 +194,7 @@ describe("compileEditorScene", () => {
             expect.arrayContaining([
                 expect.objectContaining({
                     level: "info",
-                    code: "entity.hidden.skipped",
+                    code: "entity.compile.excluded",
                     entityId: "box-1",
                 }),
             ]),

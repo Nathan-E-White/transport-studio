@@ -88,6 +88,7 @@ function renderProjectTree(overrides: Partial<ProjectTreeProps> = {}) {
     onDeleteEntity: vi.fn(),
     onSetEntityVisible: vi.fn(),
     onSetEntityLocked: vi.fn(),
+    onSetEntityIncludedInCompile: vi.fn(),
     ...overrides,
   };
 
@@ -160,6 +161,7 @@ describe("ProjectTree", () => {
     expect(props.onSetEntityLocked).toHaveBeenCalledWith("geom-1", true);
 
     fireEvent.click(within(row).getByRole("button", {name: "Exclude this entity from the compiled transport problem"}));
+    expect(props.onSetEntityIncludedInCompile).toHaveBeenCalledWith("geom-1", false);
     expect(screen.getByText("excluded")).toBeInTheDocument();
 
     fireEvent.click(within(row).getByRole("button", {name: "Duplicate this entity"}));

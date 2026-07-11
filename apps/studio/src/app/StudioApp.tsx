@@ -29,6 +29,7 @@ import {
     addEntity,
     deleteEntity,
     duplicateEntity,
+    setEntityIncludedInCompile,
     setEntityLocked,
     setEntityVisible,
     updateEntityMetadata,
@@ -147,6 +148,10 @@ export function StudioApp() {
         setProject((current) => setEntityVisible(current, entityId, visible));
     }
 
+    function setProjectEntityIncludedInCompile(entityId: string, includedInCompile: boolean) {
+        setProject((current) => setEntityIncludedInCompile(current, entityId, includedInCompile));
+    }
+
     function setProjectEntityLocked(entityId: string, locked: boolean) {
         setProject((current) => setEntityLocked(current, entityId, locked));
     }
@@ -196,6 +201,7 @@ export function StudioApp() {
                     onDeleteEntity={deleteProjectEntity}
                     onSetEntityVisible={setProjectEntityVisible}
                     onSetEntityLocked={setProjectEntityLocked}
+                    onSetEntityIncludedInCompile={setProjectEntityIncludedInCompile}
                 />
             </aside>
 
@@ -244,11 +250,12 @@ export function StudioApp() {
 }
 
 function createNativeEditorScene(project: Project): EditorScene {
-    const materialEntities = project.scene.entities.filter((entity) => entity.kind === "material");
-    const geometryEntities = project.scene.entities.filter((entity) => entity.kind === "geometry");
-    const sourceEntities = project.scene.entities.filter((entity) => entity.kind === "source");
-    const tallyEntities = project.scene.entities.filter((entity) => entity.kind === "tally");
-    const defaultTargetEntityId = geometryEntities[0]?.id ?? "";
+    const materialEntities = project.scene.entities.filter(isIncludedMaterialEntity);
+    const geometryEntities = project.scene.entities.filter(isGeometryEntity);
+    const includedGeometryEntities = geometryEntities.filter(isIncludedInCompile);
+    const sourceEntities = project.scene.entities.filter(isIncludedSourceEntity);
+    const tallyEntities = project.scene.entities.filter(isIncludedTallyEntity);
+    const defaultTargetEntityId = includedGeometryEntities[0]?.id ?? "";
     const entities = geometryEntities.flatMap<EditorScene["entities"][number]>((entity) => {
         const transform = {
             position: entity.transform.position,
@@ -265,6 +272,7 @@ function createNativeEditorScene(project: Project): EditorScene {
                     transform,
                     materialId: entity.materialId,
                     visible: entity.visible,
+                    includedInCompile: isIncludedInCompile(entity),
                     locked: entity.locked,
                     tags: entity.tags,
                     size: {
@@ -281,6 +289,7 @@ function createNativeEditorScene(project: Project): EditorScene {
                     transform,
                     materialId: entity.materialId,
                     visible: entity.visible,
+                    includedInCompile: isIncludedInCompile(entity),
                     locked: entity.locked,
                     tags: entity.tags,
                     radius: (entity.parameters.radius ?? 1) * entity.transform.scale.x,
@@ -293,6 +302,7 @@ function createNativeEditorScene(project: Project): EditorScene {
                     transform,
                     materialId: entity.materialId,
                     visible: entity.visible,
+                    includedInCompile: isIncludedInCompile(entity),
                     locked: entity.locked,
                     tags: entity.tags,
                     radius: (entity.parameters.radius ?? 1) * entity.transform.scale.x,
@@ -351,6 +361,26 @@ function createNativeEditorScene(project: Project): EditorScene {
             seed: project.runConfiguration.seed,
         },
     };
+}
+
+function isIncludedInCompile(entity: SceneEntity): boolean {
+    return entity.includedInCompile !== false;
+}
+
+function isGeometryEntity(entity: SceneEntity): entity is Extract<SceneEntity, {readonly kind: "geometry"}> {
+    return entity.kind === "geometry";
+}
+
+function isIncludedMaterialEntity(entity: SceneEntity): entity is Extract<SceneEntity, {readonly kind: "material"}> {
+    return entity.kind === "material" && isIncludedInCompile(entity);
+}
+
+function isIncludedSourceEntity(entity: SceneEntity): entity is Extract<SceneEntity, {readonly kind: "source"}> {
+    return entity.kind === "source" && isIncludedInCompile(entity);
+}
+
+function isIncludedTallyEntity(entity: SceneEntity): entity is Extract<SceneEntity, {readonly kind: "tally"}> {
+    return entity.kind === "tally" && isIncludedInCompile(entity);
 }
 
 function convertCompileDiagnostic(diagnostic: CompileDiagnostic): Diagnostic {

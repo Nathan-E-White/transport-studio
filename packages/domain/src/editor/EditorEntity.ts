@@ -15,6 +15,7 @@ export interface EditorEntityBase {
     readonly transform: EditorTransform;
     readonly materialId?: MaterialId;
     readonly visible: boolean;
+    readonly includedInCompile?: boolean;
     readonly locked: boolean;
     readonly tags?: readonly string[];
 }
@@ -56,6 +57,7 @@ export interface CreateEntityBaseOptions {
     readonly materialId?: MaterialId;
     readonly transform?: EditorTransform;
     readonly visible?: boolean;
+    readonly includedInCompile?: boolean;
     readonly locked?: boolean;
     readonly tags?: readonly string[];
 }
@@ -167,6 +169,7 @@ function createEntityBase(options: CreateEntityBaseOptions): EditorEntityBase {
         materialId: options.materialId,
         transform: options.transform ?? identityTransform(),
         visible: options.visible ?? true,
+        includedInCompile: options.includedInCompile,
         locked: options.locked ?? false,
         tags: options.tags,
     };

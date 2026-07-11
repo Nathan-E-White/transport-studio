@@ -32,6 +32,7 @@ export interface ProjectTreeProps {
   readonly onDeleteEntity: (entityId: string) => void;
   readonly onSetEntityVisible: (entityId: string, visible: boolean) => void;
   readonly onSetEntityLocked: (entityId: string, locked: boolean) => void;
+  readonly onSetEntityIncludedInCompile: (entityId: string, includedInCompile: boolean) => void;
 }
 
 const CREATE_KINDS: readonly SceneEntity["kind"][] = ["geometry", "material", "source", "tally"];
@@ -57,6 +58,7 @@ function ProjectTreeInner({
   onDeleteEntity,
   onSetEntityVisible,
   onSetEntityLocked,
+  onSetEntityIncludedInCompile,
 }: Readonly<ProjectTreeProps>) {
   const {state, dispatch} = useEditorStore();
   const [searchQuery, setSearchQuery] = useState("");
@@ -85,6 +87,7 @@ function ProjectTreeInner({
             ...current,
             visible: entity.visible,
             locked: entity.locked,
+            includedInCompile: entity.includedInCompile ?? current.includedInCompile,
           },
         ];
       }),
@@ -203,7 +206,7 @@ function ProjectTreeInner({
       onDelete={deleteEntity}
       onVisibleChange={(ref, visible) => onSetEntityVisible(ref.id, visible)}
       onLockedChange={(ref, locked) => onSetEntityLocked(ref.id, locked)}
-      onCompileInclusionChange={() => undefined}
+      onCompileInclusionChange={(ref, included) => onSetEntityIncludedInCompile(ref.id, included)}
       onCreateEntity={onCreateEntity}
       allowDelete
     >
