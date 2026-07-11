@@ -47,7 +47,7 @@ Today, TypeScript and Rust both encode V1 solver capability facts. `V1_SOLVER_CA
 
 Because those facts live in separate code registries plus docs/tracker language, they can drift. The existing issue chain makes drift expensive: a solver promoted in one place but gated in another undermines product gating and verification evidence.
 
-Research implication: create a versioned fixture such as `fixtures/contracts/v1-solver-capabilities.json` and test both TypeScript and Rust registries against it. Keep the fixture outside Tauri code so capability truth belongs to domain/engine contracts, not desktop runtime wiring.
+Implemented contract: `fixtures/contracts/v1-solver-capabilities.json` is the versioned, runtime-neutral capability fixture. TypeScript domain tests and Rust `transport-engine` tests compare their public registries against it, and the fixture defines the reporting language for runnable, gated, placeholder, and substrate status. Keep it outside Tauri code so capability truth belongs to domain/engine contracts, not desktop runtime wiring.
 
 ### 4. `transport-engine` needs internal modules behind its public facade
 
