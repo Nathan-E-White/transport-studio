@@ -1,6 +1,7 @@
 use spacetime_physics::kernel::{
-    DynamicalSpacetimeKernel, EvidenceStatus, KernelConfig, KernelState, KernelStateKind,
-    KernelStepError,
+    AlgebraicConstraintStatus, DynamicalSpacetimeKernel, EvidenceStatus,
+    FLAT_BSSN_CONSTRAINT_TOLERANCE, GaugePolicy, GaugeVariableStatus, KernelConfig, KernelState,
+    KernelStateKind, KernelStepError,
 };
 use spacetime_physics::{CoordinateTime, TimeDuration, UniformGrid3, vec3};
 
@@ -23,6 +24,24 @@ fn flat_empty_dynamical_spacetime_state_advances_through_the_canonical_kernel_se
     assert_eq!(result.diagnostics.bssn.momentum_linf, 0.0);
     assert_eq!(result.diagnostics.bssn.determinant_linf, 0.0);
     assert_eq!(result.diagnostics.bssn.trace_free_linf, 0.0);
+    assert_eq!(
+        result.diagnostics.bssn.gauge.policy,
+        GaugePolicy::OnePlusLogGammaDriver
+    );
+    assert_eq!(
+        result.diagnostics.bssn.gauge.lapse,
+        GaugeVariableStatus::FlatPreserved
+    );
+    assert_eq!(
+        result.diagnostics.bssn.gauge.shift,
+        GaugeVariableStatus::FlatPreserved
+    );
+    assert_eq!(
+        result.diagnostics.bssn.algebraic_constraints,
+        AlgebraicConstraintStatus::Satisfied
+    );
+    assert!(result.diagnostics.bssn.hamiltonian_linf <= FLAT_BSSN_CONSTRAINT_TOLERANCE);
+    assert!(result.diagnostics.bssn.momentum_linf <= FLAT_BSSN_CONSTRAINT_TOLERANCE);
     assert_eq!(result.diagnostics.grhd.status, EvidenceStatus::NotEvaluated);
     assert_eq!(
         result.diagnostics.radiation.status,
