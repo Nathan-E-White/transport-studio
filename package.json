@@ -33,8 +33,8 @@
     "test:studio:app": "vitest run --root apps/studio --config vite.config.ts src/app",
     "hygiene:size": "node scripts/hygiene-size.mjs",
     "hygiene:worktrees": "node scripts/worktree-retire.mjs",
-    "rust:check": "CARGO_TARGET_DIR=${TRANSPORT_CARGO_TARGET_TEST:-/tmp/transport-studio-cargo-target/test} cargo check --manifest-path apps/studio/src-tauri/Cargo.toml",
-    "rust:test": "CARGO_TARGET_DIR=${TRANSPORT_CARGO_TARGET_TEST:-/tmp/transport-studio-cargo-target/test} cargo test --manifest-path apps/studio/src-tauri/Cargo.toml"
+    "rust:check": "node scripts/cargo-target.mjs test cargo check --manifest-path apps/studio/src-tauri/Cargo.toml",
+    "rust:test": "node scripts/cargo-target.mjs test cargo test --manifest-path apps/studio/src-tauri/Cargo.toml"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

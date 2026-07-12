@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 export const GENERATED_PATHS = [
@@ -68,7 +68,7 @@ export function inspectWorktree(repoRoot, record, integrationRef = "origin/main"
   const status = tryRun("git", ["-C", record.path, "status", "--porcelain"]);
   const upstream = tryRun("git", ["-C", record.path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
   const divergence = upstream.ok ? tryRun("git", ["-C", record.path, "rev-list", "--left-right", "--count", `HEAD...${upstream.output}`]) : { ok: false, output: "" };
-  const generated = GENERATED_PATHS.map(([category, relative]) => ({ category, relative, bytes: bytesForPath(resolve(record.path, relative)) })).filter((entry) => entry.bytes !== null);
+  const generated = GENERATED_PATHS.map(([category, relative]) => ({ category, relative, bytes: bytesForPath(resolve(record.path, relative)) }));
   return {
     ...record,
     dirty: !status.ok || status.output.length > 0,
@@ -82,7 +82,7 @@ export function inspectWorktree(repoRoot, record, integrationRef = "origin/main"
 }
 
 export function sumCategory(items, category) {
-  return items.flatMap((item) => item.generated).filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.bytes, 0);
+  return items.flatMap((item) => item.generated).filter((entry) => entry.category === category && entry.bytes !== null).reduce((sum, entry) => sum + entry.bytes, 0);
 }
 
 export function assertInside(parent, child) {
@@ -90,6 +90,10 @@ export function assertInside(parent, child) {
   const target = resolve(child);
   if (target !== root && !target.startsWith(`${root}/`)) throw new Error(`path escapes archive root: ${child}`);
   return target;
+}
+
+export function physicalPath(path) {
+  return existsSync(path) ? realpathSync(path) : resolve(path);
 }
 
 export function freeDiskBytes(path) {
@@ -100,7 +104,7 @@ export function freeDiskBytes(path) {
 }
 
 export function planRetirement(primary, registered, selected, item) {
-  if (resolve(selected) === resolve(primary)) throw new Error("refusing to retire the primary checkout");
+  if (physicalPath(selected) === physicalPath(primary)) throw new Error("refusing to retire the primary checkout");
   if (!registered) throw new Error(`unknown or unregistered worktree: ${selected}`);
   if (!item.statusAvailable) throw new Error(`cannot inspect worktree status: ${selected}`);
   if (item.mergeState === "unavailable") throw new Error("integration ref is unavailable");

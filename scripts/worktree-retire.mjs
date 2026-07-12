@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { assertInside, freeDiskBytes, formatBytes, inspectWorktree, parseWorktreePorcelain, planRetirement, run, tryRun } from "./hygiene-lib.mjs";
+import { assertInside, freeDiskBytes, formatBytes, inspectWorktree, parseWorktreePorcelain, physicalPath, planRetirement, run, tryRun } from "./hygiene-lib.mjs";
 
 function parseArgs(argv) {
   const options = { execute: false, archiveDir: resolve("../archives/worktrees"), worktrees: [] };
@@ -9,7 +9,7 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === "--execute") options.execute = true;
     else if (arg === "--archive-dir" && argv[index + 1]) options.archiveDir = resolve(argv[++index]);
-    else if (arg === "--worktree" && argv[index + 1]) options.worktrees.push(resolve(argv[++index]));
+    else if (arg === "--worktree" && argv[index + 1]) options.worktrees.push(physicalPath(argv[++index]));
     else throw new Error(`unknown or incomplete argument: ${arg}`);
   }
   if (options.worktrees.length === 0) throw new Error("at least one --worktree PATH is required");
@@ -39,16 +39,30 @@ function archiveDirty(item, archiveRoot) {
   run("git", ["bundle", "verify", bundle]);
   const bundledHeads = run("git", ["bundle", "list-heads", bundle]);
   if (!bundledHeads.includes(item.head)) throw new Error(`bundle does not contain worktree HEAD: ${item.head}`);
+  const verificationRepo = resolve(destination, ".bundle-verification.git");
+  run("git", ["clone", "--bare", bundle, verificationRepo]);
+  try {
+    for (const oid of unique) run("git", ["-C", verificationRepo, "cat-file", "-e", `${oid}^{commit}`]);
+  } finally {
+    rmSync(verificationRepo, { recursive: true, force: true });
+  }
   return destination;
+}
+
+function trackingSnapshot(repoRoot) {
+  const untracked = run("git", ["-C", repoRoot, "ls-files", "--others", "--exclude-standard"]).split("\n").filter(Boolean);
+  const trackedButIgnored = run("git", ["-C", repoRoot, "ls-files", "-ci", "--exclude-standard"]).split("\n").filter(Boolean);
+  return { untracked, trackedButIgnored };
 }
 
 const options = parseArgs(process.argv.slice(2));
 const repoRoot = run("git", ["rev-parse", "--show-toplevel"]);
 if (options.execute) run("git", ["fetch", "--prune", "origin"]);
 const listed = parseWorktreePorcelain(run("git", ["worktree", "list", "--porcelain"]));
-const primary = resolve(listed[0].path);
-const records = new Map(listed.map((item) => [resolve(item.path), item]));
+const primary = physicalPath(listed[0].path);
+const records = new Map(listed.map((item) => [physicalPath(item.path), { ...item, path: physicalPath(item.path) }]));
 const before = freeDiskBytes(repoRoot);
+const trackingBefore = trackingSnapshot(repoRoot);
 console.log(`mode: ${options.execute ? "execute (origin refreshed)" : "dry-run (local refs only)"}`);
 for (const selected of options.worktrees) {
   const record = records.get(selected);
@@ -64,8 +78,13 @@ for (const selected of options.worktrees) {
 }
 if (options.execute) run("git", ["worktree", "prune"]);
 const after = freeDiskBytes(repoRoot);
+const trackingAfter = trackingSnapshot(repoRoot);
+if (options.execute && JSON.stringify(trackingBefore) !== JSON.stringify(trackingAfter)) {
+  throw new Error(`primary tracking/ignore state changed: before=${JSON.stringify(trackingBefore)} after=${JSON.stringify(trackingAfter)}`);
+}
 console.log(`free-before=${formatBytes(before)} free-after=${formatBytes(after)} reclaimed=${formatBytes(before !== null && after !== null ? after - before : null)}`);
 console.log("remaining worktrees:");
 console.log(run("git", ["worktree", "list"]));
-console.log(`primary-untracked=${run("git", ["ls-files", "--others", "--exclude-standard"]).split("\n").filter(Boolean).length}`);
-console.log(`tracked-but-ignored=${run("git", ["ls-files", "-ci", "--exclude-standard"]).split("\n").filter(Boolean).length}`);
+console.log(`primary-untracked=${JSON.stringify(trackingAfter.untracked)}`);
+console.log(`tracked-but-ignored=${JSON.stringify(trackingAfter.trackedButIgnored)}`);
+console.log("tracking-ignore-verification=unchanged");
