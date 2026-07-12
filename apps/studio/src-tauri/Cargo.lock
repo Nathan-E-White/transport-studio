@@ -1816,6 +1816,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "native-execution-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "transport-engine",
+]
+
+[[package]]
 name = "ndarray"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3637,6 +3646,7 @@ dependencies = [
 name = "transport-studio"
 version = "0.0.0"
 dependencies = [
+ "native-execution-contract",
  "serde",
  "serde_json",
  "spacetime-physics",
