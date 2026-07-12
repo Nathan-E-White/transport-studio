@@ -251,7 +251,11 @@ impl DiagonalLocalFrame {
     }
 }
 
-fn geodesic_rhs<M: MetricField>(metric: &M, state: TransportGeodesicState) -> ([f64; 4], [f64; 4]) {
+fn geodesic_rhs<M: MetricField>(
+    metric: &M,
+    state: TransportGeodesicState,
+) -> Result<([f64; 4], [f64; 4]), PhysicsError> {
+    metric.validate_query(state.x)?;
     let gamma = metric.christoffel_symbols_at(state.x);
     let tangent = state.tangent.components();
     let mut acceleration = [0.0; 4];
@@ -264,7 +268,7 @@ fn geodesic_rhs<M: MetricField>(metric: &M, state: TransportGeodesicState) -> ([
         }
     }
 
-    (tangent, acceleration)
+    Ok((tangent, acceleration))
 }
 
 fn offset_transport_state(
@@ -305,10 +309,12 @@ impl Rk4GeodesicStepper {
         }
 
         let h = d_lambda.value;
-        let (k1_x, k1_u) = geodesic_rhs(metric, state);
-        let (k2_x, k2_u) = geodesic_rhs(metric, offset_transport_state(state, k1_x, k1_u, 0.5 * h));
-        let (k3_x, k3_u) = geodesic_rhs(metric, offset_transport_state(state, k2_x, k2_u, 0.5 * h));
-        let (k4_x, k4_u) = geodesic_rhs(metric, offset_transport_state(state, k3_x, k3_u, h));
+        let (k1_x, k1_u) = geodesic_rhs(metric, state)?;
+        let (k2_x, k2_u) =
+            geodesic_rhs(metric, offset_transport_state(state, k1_x, k1_u, 0.5 * h))?;
+        let (k3_x, k3_u) =
+            geodesic_rhs(metric, offset_transport_state(state, k2_x, k2_u, 0.5 * h))?;
+        let (k4_x, k4_u) = geodesic_rhs(metric, offset_transport_state(state, k3_x, k3_u, h))?;
         let mut next_x = state.x.components;
         let mut next_tangent = state.tangent.components();
 
