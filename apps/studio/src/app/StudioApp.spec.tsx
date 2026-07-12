@@ -1,6 +1,6 @@
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import type {TransportBackendEvent, TransportBackendMetadata} from "@transport/domain";
+import type {Project, TransportBackendEvent, TransportBackendMetadata} from "@transport/domain";
 import type {NativePhotonSmokeBridge} from "@transport/transport-worker";
 import {StudioApp} from "./StudioApp";
 import {getPrimarySelection, useEditorStore} from "../state/editor";
@@ -129,7 +129,7 @@ const mocks = vi.hoisted(() => {
                 seed: 1337
             }
         })),
-        compileEditorScene: vi.fn<(scene: unknown) => {
+        prepareTransportProblem: vi.fn<(project: unknown) => {
             ok: true;
             value: {
                 id: string;
@@ -177,7 +177,7 @@ vi.mock("./nativePhotonSmokeTauriBridge", () => ({
 }));
 
 vi.mock("@transport/domain/compile/CompileEditorScene", () => ({
-    compileEditorScene: mocks.compileEditorScene
+    prepareTransportProblem: mocks.prepareTransportProblem
 }));
 
 vi.mock("@transport/validation", () => ({
@@ -296,7 +296,7 @@ describe("StudioApp spec", () => {
     beforeEach(() => {
         mocks.createInitialProject.mockClear();
         mocks.createNativePhotonSmokeFixtureProblem.mockClear();
-        mocks.compileEditorScene.mockClear();
+        mocks.prepareTransportProblem.mockClear();
         mocks.runNativePhotonSmokeBackend.mockClear();
         mocks.createTauriNativePhotonSmokeBridge.mockClear();
         mocks.runToyPhotonTransport.mockClear();
@@ -387,7 +387,7 @@ describe("StudioApp spec", () => {
 
         await waitFor(() => expect(mocks.runNativePhotonSmokeBackend).toHaveBeenCalledTimes(1));
         expect(mocks.createNativePhotonSmokeFixtureProblem).not.toHaveBeenCalled();
-        expect(mocks.compileEditorScene).toHaveBeenCalledTimes(1);
+        expect(mocks.prepareTransportProblem).toHaveBeenCalledTimes(1);
         expect(mocks.createTauriNativePhotonSmokeBridge).toHaveBeenCalledTimes(1);
         expect(mocks.runNativePhotonSmokeBackend).toHaveBeenCalledWith({
             id: "compiled-current-scene",
@@ -411,29 +411,21 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("viewport shield visible: false")).toBeTruthy();
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
-        await waitFor(() => expect(mocks.compileEditorScene).toHaveBeenCalledTimes(1));
-        expect(mocks.compileEditorScene.mock.calls[0]?.[0]).toMatchObject({
-            entities: [
-                {
-                    id: "shield-1",
-                    visible: false,
-                    includedInCompile: true
-                }
-            ]
-        });
+        await waitFor(() => expect(mocks.prepareTransportProblem).toHaveBeenCalledTimes(1));
+        const hiddenProject = mocks.prepareTransportProblem.mock.calls[0]?.[0] as Project;
+        const hiddenShield = hiddenProject.scene.entities.find((entity) => entity.id === "shield-1");
+        expect(hiddenShield).toMatchObject({id: "shield-1", visible: false});
+        expect(hiddenShield?.includedInCompile).toBeUndefined();
 
         fireEvent.click(screen.getByRole("button", {name: "Exclude Shield Slab"}));
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
-        await waitFor(() => expect(mocks.compileEditorScene).toHaveBeenCalledTimes(2));
-        expect(mocks.compileEditorScene.mock.calls[1]?.[0]).toMatchObject({
-            entities: [
-                {
-                    id: "shield-1",
-                    visible: false,
-                    includedInCompile: false
-                }
-            ]
+        await waitFor(() => expect(mocks.prepareTransportProblem).toHaveBeenCalledTimes(2));
+        const excludedProject = mocks.prepareTransportProblem.mock.calls[1]?.[0] as Project;
+        expect(excludedProject.scene.entities.find((entity) => entity.id === "shield-1")).toMatchObject({
+            id: "shield-1",
+            visible: false,
+            includedInCompile: false
         });
     });
 

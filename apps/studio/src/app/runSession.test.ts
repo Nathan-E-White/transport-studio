@@ -3,22 +3,23 @@ import type {Project, TransportBackendEvent} from "@transport/domain";
 import type {NativePhotonSmokeBridge} from "@transport/transport-worker";
 import type {TransportProblem} from "@transport/domain/transport/TransportProblem";
 import {clearRunSession, runNativeSession, runToySession} from "./runSession";
+import {createInitialProject} from "./createInitialProject";
 
 describe("runNativeSession", () => {
     it("returns bridge-unavailable diagnostics and the diagnostics-tab outcome", async () => {
+        const initialProject = createInitialProject();
         const project = {
-            id: "project-1",
-            name: "Runtime-neutral project",
-            scene: {entities: []},
+            ...initialProject,
             runConfiguration: {
-                particleTypes: ["photon"],
+                ...initialProject.runConfiguration,
+                particleTypes: ["photon"] as const,
                 histories: 4,
                 batchSize: 2,
                 seed: 314159,
-                backend: "visual-ts",
+                backend: "visual-ts" as const,
                 visibleHistoryBudget: 4,
             },
-        } as unknown as Project;
+        };
         const events: readonly TransportBackendEvent[] = [{
             type: "runFailed",
             runId: "native-314159",
@@ -33,7 +34,7 @@ describe("runNativeSession", () => {
         >(async () => events);
 
         const outcome = await runNativeSession(project, undefined, {
-            compile: () => ({
+            prepare: () => ({
                 ok: true,
                 value: {id: "compiled-project-1", settings: {histories: 4, seed: 314159}} as TransportProblem,
                 diagnostics: [],
@@ -59,12 +60,16 @@ describe("runNativeSession", () => {
     });
 
     it("maps successful native events to display tracks and diagnostics", async () => {
+        const initialProject = createInitialProject();
         const project = {
-            id: "project-1",
-            name: "Runtime-neutral project",
-            scene: {entities: []},
-            runConfiguration: {histories: 1, seed: 7, backend: "visual-ts"},
-        } as unknown as Project;
+            ...initialProject,
+            runConfiguration: {
+                ...initialProject.runConfiguration,
+                histories: 1,
+                seed: 7,
+                backend: "visual-ts" as const,
+            },
+        };
         const events: readonly TransportBackendEvent[] = [
             {
                 type: "problemAccepted",
@@ -98,7 +103,7 @@ describe("runNativeSession", () => {
         ];
 
         const outcome = await runNativeSession(project, undefined, {
-            compile: () => ({
+            prepare: () => ({
                 ok: true,
                 value: {id: "compiled-project-1", settings: {histories: 1, seed: 7}} as TransportProblem,
                 diagnostics: [],
@@ -128,6 +133,34 @@ describe("runNativeSession", () => {
                 reason: "sampled absorption",
             }],
         }]);
+    });
+
+    it("returns compiler diagnostics without invoking the backend when preparation fails", async () => {
+        const project = createInitialProject();
+        const prepare = vi.fn(() => ({
+            ok: false,
+            diagnostics: [{
+                level: "error" as const,
+                code: "tally.target.missing",
+                message: "Tally must define its target.",
+                entityId: "tally-1",
+            }],
+        }));
+        const runBackend = vi.fn(async (): Promise<readonly TransportBackendEvent[]> => []);
+
+        const outcome = await runNativeSession(project, undefined, {prepare, runBackend});
+
+        expect(prepare).toHaveBeenCalledWith(project);
+        expect(runBackend).not.toHaveBeenCalled();
+        expect(outcome).toMatchObject({
+            bottomTab: "diagnostics",
+            tracks: [],
+            diagnostics: [{
+                severity: "error",
+                message: "tally.target.missing: Tally must define its target.",
+                entityId: "tally-1",
+            }],
+        });
     });
 });
 

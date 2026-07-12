@@ -9,6 +9,14 @@ import type {
     EditorSphere,
     EditorTally,
 } from "../editor/EditorScene";
+import type {
+    GeometryEntity,
+    MaterialEntity,
+    Project,
+    SceneEntity,
+    SourceEntity,
+    TallyEntity,
+} from "../index";
 import {
     createTransportBox,
     createTransportCylinder,
@@ -46,6 +54,237 @@ export interface CompileDiagnostic {
 const DEFAULT_SEED = 1;
 const DEFAULT_SOURCE_STRENGTH = 1;
 const COMPILER_VERSION = "transport-domain-compiler-1";
+
+export function prepareTransportProblem(project: Project): CompileResult<TransportProblem> {
+    const diagnostics: CompileDiagnostic[] = [];
+    const entities = project.scene.entities.flatMap((entity) =>
+        entity.kind === "geometry" ? prepareGeometry(entity, diagnostics) : [],
+    );
+    const materials = project.scene.entities.flatMap((entity) =>
+        entity.kind === "material" ? prepareMaterial(entity, diagnostics) : [],
+    );
+    const sources = project.scene.entities.flatMap((entity) =>
+        entity.kind === "source" ? prepareSource(entity, diagnostics) : [],
+    );
+    const tallies = project.scene.entities.flatMap((entity) =>
+        entity.kind === "tally" ? prepareTally(entity, diagnostics) : [],
+    );
+    const compileResult = compileEditorScene({
+        id: project.id,
+        name: project.name,
+        entities,
+        materials,
+        sources,
+        tallies,
+        settings: {
+            histories: project.runConfiguration.histories,
+            seed: project.runConfiguration.seed,
+        },
+    });
+    const combinedDiagnostics = [...diagnostics, ...compileResult.diagnostics];
+
+    if (combinedDiagnostics.some((diagnostic) => diagnostic.level === "error") || !compileResult.value) {
+        return {ok: false, diagnostics: combinedDiagnostics};
+    }
+
+    return {ok: true, value: compileResult.value, diagnostics: combinedDiagnostics};
+}
+
+function prepareGeometry(
+    entity: GeometryEntity,
+    diagnostics: CompileDiagnostic[],
+): EditorEntity[] {
+    if (entity.primitive === "plane") {
+        diagnostics.push({
+            level: "error",
+            code: "entity.geometry.unsupported",
+            message: `Geometry entity "${entity.name}" uses unsupported plane geometry.`,
+            entityId: entity.id,
+        });
+        return [];
+    }
+
+    const transform = {
+        position: entity.transform.position,
+        rotation: entity.transform.rotationEuler,
+        scale: entity.transform.scale,
+    };
+    const common = {
+        id: entity.id,
+        name: entity.name,
+        transform,
+        materialId: entity.materialId,
+        visible: entity.visible,
+        includedInCompile: isAuthoringEntityIncluded(entity),
+        locked: entity.locked,
+        tags: entity.tags,
+    };
+
+    switch (entity.primitive) {
+        case "box":
+            return [{
+                ...common,
+                kind: "box",
+                size: {
+                    x: requiredScaledDimension(entity, "width", entity.transform.scale.x, diagnostics),
+                    y: requiredScaledDimension(entity, "height", entity.transform.scale.y, diagnostics),
+                    z: requiredScaledDimension(entity, "depth", entity.transform.scale.z, diagnostics),
+                },
+            }];
+        case "sphere":
+            return [{
+                ...common,
+                kind: "sphere",
+                radius: requiredScaledDimension(entity, "radius", entity.transform.scale.x, diagnostics),
+            }];
+        case "cylinder":
+            return [{
+                ...common,
+                kind: "cylinder",
+                radius: requiredScaledDimension(entity, "radius", entity.transform.scale.x, diagnostics),
+                height: requiredScaledDimension(entity, "height", entity.transform.scale.z, diagnostics),
+            }];
+    }
+}
+
+function requiredScaledDimension(
+    entity: GeometryEntity,
+    parameter: string,
+    scale: number,
+    diagnostics: CompileDiagnostic[],
+): number {
+    const value = entity.parameters[parameter];
+    if (value === undefined) {
+        diagnostics.push({
+            level: "error",
+            code: "entity.geometry.parameter.missing",
+            message: `Geometry entity "${entity.name}" must define ${parameter} before compilation.`,
+            entityId: entity.id,
+        });
+        return Number.NaN;
+    }
+    return value * scale;
+}
+
+function prepareMaterial(
+    entity: MaterialEntity,
+    diagnostics: CompileDiagnostic[],
+): EditorMaterial[] {
+    if (!isAuthoringEntityIncluded(entity)) {
+        addExcludedDiagnostic("Material", "material", entity, diagnostics);
+        return [];
+    }
+
+    return [{
+        id: entity.id,
+        name: entity.name,
+        density: entity.density,
+        color: entity.color,
+        nuclides: entity.nuclides,
+    }];
+}
+
+function prepareSource(
+    entity: SourceEntity,
+    diagnostics: CompileDiagnostic[],
+): EditorSource[] {
+    if (!isAuthoringEntityIncluded(entity)) {
+        addExcludedDiagnostic("Source", "source", entity, diagnostics);
+        return [];
+    }
+
+    const common = {
+        id: entity.id,
+        name: entity.name,
+        particle: entity.particleType,
+        energyMeV: entity.energy,
+        strength: entity.strength,
+        position: entity.transform.position,
+    };
+    if (entity.sourceKind === "point-isotropic") {
+        return [{...common, kind: "point-source"}];
+    }
+    if (!entity.direction) {
+        diagnostics.push({
+            level: "error",
+            code: "source.beam.direction.missing",
+            message: `Beam source "${entity.name}" must define an authoring direction before compilation.`,
+            entityId: entity.id,
+        });
+        return [];
+    }
+    return [{...common, kind: "beam-source", direction: entity.direction}];
+}
+
+function prepareTally(
+    entity: TallyEntity,
+    diagnostics: CompileDiagnostic[],
+): EditorTally[] {
+    if (!isAuthoringEntityIncluded(entity)) {
+        addExcludedDiagnostic("Tally", "tally", entity, diagnostics);
+        return [];
+    }
+    if (!entity.targetEntityId) {
+        diagnostics.push({
+            level: "error",
+            code: "tally.target.missing",
+            message: `Tally "${entity.name}" must define its target entity before compilation.`,
+            entityId: entity.id,
+        });
+        return [];
+    }
+    const particle = entity.particleTypes[0];
+    if (!particle) {
+        diagnostics.push({
+            level: "error",
+            code: "tally.particle.missing",
+            message: `Tally "${entity.name}" must define a particle before compilation.`,
+            entityId: entity.id,
+        });
+        return [];
+    }
+    const common = {
+        id: entity.id,
+        name: entity.name,
+        particle,
+        entityId: entity.targetEntityId,
+    };
+
+    switch (entity.tallyKind) {
+        case "track-length":
+            return [{...common, kind: "track-length"}];
+        case "surface-crossing":
+            return [{...common, kind: "surface-current"}];
+        case "voxel-flux":
+        case "detector-hit":
+        case "event-density":
+            diagnostics.push({
+                level: "error",
+                code: "tally.kind.unsupported",
+                message: `Tally "${entity.name}" uses unsupported ${entity.tallyKind} semantics.`,
+                entityId: entity.id,
+            });
+            return [];
+    }
+}
+
+function isAuthoringEntityIncluded(entity: SceneEntity): boolean {
+    return entity.includedInCompile !== false;
+}
+
+function addExcludedDiagnostic(
+    label: string,
+    codePrefix: string,
+    entity: SceneEntity,
+    diagnostics: CompileDiagnostic[],
+): void {
+    diagnostics.push({
+        level: "info",
+        code: `${codePrefix}.compile.excluded`,
+        message: `${label} "${entity.name}" was excluded from the compiled transport problem.`,
+        entityId: entity.id,
+    });
+}
 
 export function compileEditorScene(scene: EditorScene): CompileResult<TransportProblem> {
     const diagnostics: CompileDiagnostic[] = [];
@@ -377,6 +616,17 @@ function compileTally(
             entityId: tally.id,
         });
 
+        return [
+            createTrackLengthTally({
+                id: tally.id,
+                name: tally.name,
+                particle: tally.particle,
+                entityId: tally.entityId,
+            }),
+        ];
+    }
+
+    if (tally.kind === "track-length") {
         return [
             createTrackLengthTally({
                 id: tally.id,
