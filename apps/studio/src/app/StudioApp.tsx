@@ -4,19 +4,7 @@ import type {
     Project,
     SceneEntity,
     TrackSample,
-    TransportBackendDiagnostic,
-    TransportBackendEvent,
-    TransportTrackSample,
 } from "@transport/domain";
-import {
-    compileEditorScene,
-    type CompileDiagnostic,
-} from "@transport/domain/compile/CompileEditorScene";
-import type {EditorScene} from "@transport/domain/editor/EditorScene";
-import {
-    runNativePhotonSmokeBackend,
-} from "@transport/transport-worker";
-import {runToyPhotonTransport} from "@transport/transport-visual";
 import {validateProject} from "@transport/validation";
 import {createInitialProject} from "./createInitialProject";
 import {createTauriNativePhotonSmokeBridge} from "./nativePhotonSmokeTauriBridge";
@@ -34,6 +22,12 @@ import {
     setEntityVisible,
     updateEntityMetadata,
 } from "./projectMutations";
+import {
+    clearRunSession,
+    runNativeSession,
+    runToySession,
+    type RunSessionOutcome,
+} from "./runSession";
 
 export type EditorMode = "design" | "probe" | "run" | "analyze" | "debug";
 export type BottomTab = "run" | "tallies" | "tracks" | "diagnostics" | "console";
@@ -67,52 +61,23 @@ export function StudioApp() {
     const absorbedCount = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
 
     function runDemo() {
-        const result = runToyPhotonTransport(project, project.runConfiguration);
-        setTracks(result.tracks);
-        setNativeDiagnostics([]);
-        setActiveBackend("visual-ts");
-        setMode("run");
-        setBottomTab("run");
+        applyRunSessionOutcome(runToySession(project));
     }
 
     async function runNative() {
-        const compileResult = compileEditorScene(createNativeEditorScene(project));
-        const compileDiagnostics = compileResult.diagnostics.map(convertCompileDiagnostic);
-
-        if (!compileResult.ok || !compileResult.value) {
-            setTracks([]);
-            setNativeDiagnostics(compileDiagnostics);
-            setActiveBackend("native");
-            setMode("run");
-            setBottomTab("diagnostics");
-            return;
-        }
-
-        const problem = compileResult.value;
-        const events = await runNativePhotonSmokeBackend(problem, createTauriNativePhotonSmokeBridge());
-        const nextTracks = events.flatMap((event) => event.type === "trackSamples"
-            ? event.samples.map(convertTransportTrackSample)
-            : [],
-        );
-        const nextDiagnostics = [
-            ...compileDiagnostics,
-            ...collectNativeDiagnostics(events),
-        ];
-
-        setTracks(nextTracks);
-        setNativeDiagnostics(nextDiagnostics);
-        setActiveBackend("native");
-        setMode("run");
-        setBottomTab(nextDiagnostics.some((diagnostic) => diagnostic.severity === "error")
-            ? "diagnostics"
-            : "run",
-        );
+        applyRunSessionOutcome(await runNativeSession(project, createTauriNativePhotonSmokeBridge()));
     }
 
     function clearResults() {
-        setTracks([]);
-        setNativeDiagnostics([]);
-        setBottomTab("run");
+        applyRunSessionOutcome(clearRunSession({backend: activeBackend, mode}));
+    }
+
+    function applyRunSessionOutcome(outcome: RunSessionOutcome) {
+        setTracks(outcome.tracks);
+        setNativeDiagnostics(outcome.diagnostics);
+        setActiveBackend(outcome.backend);
+        setMode(outcome.mode);
+        setBottomTab(outcome.bottomTab);
     }
 
     function createEntity(kind: SceneEntity["kind"]) {
@@ -247,189 +212,6 @@ export function StudioApp() {
             </footer>
         </div>
     );
-}
-
-function createNativeEditorScene(project: Project): EditorScene {
-    const materialEntities = project.scene.entities.filter(isIncludedMaterialEntity);
-    const geometryEntities = project.scene.entities.filter(isGeometryEntity);
-    const includedGeometryEntities = geometryEntities.filter(isIncludedInCompile);
-    const sourceEntities = project.scene.entities.filter(isIncludedSourceEntity);
-    const tallyEntities = project.scene.entities.filter(isIncludedTallyEntity);
-    const defaultTargetEntityId = includedGeometryEntities[0]?.id ?? "";
-    const entities = geometryEntities.flatMap<EditorScene["entities"][number]>((entity) => {
-        const transform = {
-            position: entity.transform.position,
-            rotation: entity.transform.rotationEuler,
-            scale: entity.transform.scale,
-        };
-
-        switch (entity.primitive) {
-            case "box":
-                return [{
-                    id: entity.id,
-                    kind: "box" as const,
-                    name: entity.name,
-                    transform,
-                    materialId: entity.materialId,
-                    visible: entity.visible,
-                    includedInCompile: isIncludedInCompile(entity),
-                    locked: entity.locked,
-                    tags: entity.tags,
-                    size: {
-                        x: (entity.parameters.width ?? 1) * entity.transform.scale.x,
-                        y: (entity.parameters.height ?? 1) * entity.transform.scale.y,
-                        z: (entity.parameters.depth ?? 1) * entity.transform.scale.z,
-                    },
-                }];
-            case "sphere":
-                return [{
-                    id: entity.id,
-                    kind: "sphere" as const,
-                    name: entity.name,
-                    transform,
-                    materialId: entity.materialId,
-                    visible: entity.visible,
-                    includedInCompile: isIncludedInCompile(entity),
-                    locked: entity.locked,
-                    tags: entity.tags,
-                    radius: (entity.parameters.radius ?? 1) * entity.transform.scale.x,
-                }];
-            case "cylinder":
-                return [{
-                    id: entity.id,
-                    kind: "cylinder" as const,
-                    name: entity.name,
-                    transform,
-                    materialId: entity.materialId,
-                    visible: entity.visible,
-                    includedInCompile: isIncludedInCompile(entity),
-                    locked: entity.locked,
-                    tags: entity.tags,
-                    radius: (entity.parameters.radius ?? 1) * entity.transform.scale.x,
-                    height: (entity.parameters.height ?? 1) * entity.transform.scale.z,
-                }];
-            case "plane":
-                return [];
-        }
-    }) as EditorScene["entities"];
-    const tallies = tallyEntities.flatMap((entity) => defaultTargetEntityId
-        ? [{
-            id: entity.id,
-            kind: "cell-flux" as const,
-            name: entity.name,
-            particle: entity.particleTypes[0] ?? "photon",
-            entityId: defaultTargetEntityId,
-        }]
-        : []) as EditorScene["tallies"];
-
-    return {
-        id: project.id,
-        name: project.name,
-        entities,
-        materials: materialEntities.map((entity) => ({
-            id: entity.id,
-            name: entity.name,
-            density: Math.max(entity.attenuationCoefficient, 0),
-            color: entity.color,
-            nuclides: entity.attenuationCoefficient > 0
-                ? [{nuclide: "H1", fraction: 1}]
-                : [],
-        })),
-        sources: sourceEntities.map((entity) => entity.sourceKind === "pencil-beam"
-            ? {
-                id: entity.id,
-                kind: "beam-source" as const,
-                name: entity.name,
-                particle: entity.particleType,
-                energyMeV: entity.energy,
-                strength: entity.strength,
-                position: entity.transform.position,
-                direction: entity.direction ?? {x: 1, y: 0, z: 0},
-            }
-            : {
-                id: entity.id,
-                kind: "point-source" as const,
-                name: entity.name,
-                particle: entity.particleType,
-                energyMeV: entity.energy,
-                strength: entity.strength,
-                position: entity.transform.position,
-            }),
-        tallies,
-        settings: {
-            histories: project.runConfiguration.histories,
-            seed: project.runConfiguration.seed,
-        },
-    };
-}
-
-function isIncludedInCompile(entity: SceneEntity): boolean {
-    return entity.includedInCompile !== false;
-}
-
-function isGeometryEntity(entity: SceneEntity): entity is Extract<SceneEntity, {readonly kind: "geometry"}> {
-    return entity.kind === "geometry";
-}
-
-function isIncludedMaterialEntity(entity: SceneEntity): entity is Extract<SceneEntity, {readonly kind: "material"}> {
-    return entity.kind === "material" && isIncludedInCompile(entity);
-}
-
-function isIncludedSourceEntity(entity: SceneEntity): entity is Extract<SceneEntity, {readonly kind: "source"}> {
-    return entity.kind === "source" && isIncludedInCompile(entity);
-}
-
-function isIncludedTallyEntity(entity: SceneEntity): entity is Extract<SceneEntity, {readonly kind: "tally"}> {
-    return entity.kind === "tally" && isIncludedInCompile(entity);
-}
-
-function convertCompileDiagnostic(diagnostic: CompileDiagnostic): Diagnostic {
-    return {
-        severity: diagnostic.level,
-        message: `${diagnostic.code}: ${diagnostic.message}`,
-        entityId: diagnostic.entityId as Diagnostic["entityId"],
-    };
-}
-
-function collectNativeDiagnostics(events: readonly TransportBackendEvent[]): readonly Diagnostic[] {
-    return events.flatMap((event) => {
-        switch (event.type) {
-            case "problemAccepted":
-                return event.diagnostics.map(convertBackendDiagnostic);
-            case "diagnostic":
-            case "runFailed":
-                return [convertBackendDiagnostic(event.diagnostic)];
-            default:
-                return [];
-        }
-    });
-}
-
-function convertBackendDiagnostic(diagnostic: TransportBackendDiagnostic): Diagnostic {
-    return {
-        severity: diagnostic.level,
-        message: `${diagnostic.code}: ${diagnostic.message}`,
-        entityId: diagnostic.entityId as Diagnostic["entityId"],
-    };
-}
-
-function convertTransportTrackSample(sample: TransportTrackSample): TrackSample {
-    return {
-        historyId: sample.historyId,
-        events: sample.events.map((event) => ({
-            historyId: event.historyId,
-            particleId: event.particleId,
-            type: event.type,
-            position: event.position,
-            direction: event.direction,
-            energy: event.energyMeV,
-            weight: event.weight,
-            time: event.time,
-            materialId: event.materialId,
-            regionId: event.entityId,
-            reason: event.reason,
-        })) as TrackSample["events"],
-    };
 }
 
 function getSceneStats(entities: readonly SceneEntity[]) {
