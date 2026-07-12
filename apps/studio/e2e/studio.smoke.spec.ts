@@ -33,9 +33,11 @@ test("opens the studio shell and runs the main browser flows", async ({page}) =>
   await expect(page.locator(".viewport-hud.top-left")).toContainText("0 sampled tracks");
 
   await page.getByRole("button", {name: "Run Native Rust"}).click();
-  await expect(page.locator(".run-dock")).toContainText("native");
   await expect(page.locator(".run-dock")).toContainText(
-    "Native Rust photon backend bridge is not available in this runtime.",
+    "tally.target.missing: Tally \"Detector Plane\" must define its target entity before compilation.",
+  );
+  await expect(page.locator(".run-dock")).toContainText(
+    "material.density.invalid: Material \"Toy Shield\" must have a finite non-negative density before compilation.",
   );
 
   await assertStableStudioShell(page, failures);

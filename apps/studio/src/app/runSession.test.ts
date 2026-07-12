@@ -6,19 +6,6 @@ import {clearRunSession, runNativeSession, runToySession} from "./runSession";
 
 describe("runNativeSession", () => {
     it("returns bridge-unavailable diagnostics and the diagnostics-tab outcome", async () => {
-        const project = {
-            id: "project-1",
-            name: "Runtime-neutral project",
-            scene: {entities: []},
-            runConfiguration: {
-                particleTypes: ["photon"],
-                histories: 4,
-                batchSize: 2,
-                seed: 314159,
-                backend: "visual-ts",
-                visibleHistoryBudget: 4,
-            },
-        } as unknown as Project;
         const events: readonly TransportBackendEvent[] = [{
             type: "runFailed",
             runId: "native-314159",
@@ -32,12 +19,11 @@ describe("runNativeSession", () => {
             (problem: unknown, bridge?: NativePhotonSmokeBridge) => Promise<readonly TransportBackendEvent[]>
         >(async () => events);
 
-        const outcome = await runNativeSession(project, undefined, {
-            compile: () => ({
-                ok: true,
-                value: {id: "compiled-project-1", settings: {histories: 4, seed: 314159}} as TransportProblem,
-                diagnostics: [],
-            }),
+        const outcome = await runNativeSession({
+            ok: true,
+            value: {id: "compiled-project-1", settings: {histories: 4, seed: 314159}} as TransportProblem,
+            diagnostics: [],
+        }, undefined, {
             runBackend,
         });
 
@@ -59,12 +45,6 @@ describe("runNativeSession", () => {
     });
 
     it("maps successful native events to display tracks and diagnostics", async () => {
-        const project = {
-            id: "project-1",
-            name: "Runtime-neutral project",
-            scene: {entities: []},
-            runConfiguration: {histories: 1, seed: 7, backend: "visual-ts"},
-        } as unknown as Project;
         const events: readonly TransportBackendEvent[] = [
             {
                 type: "problemAccepted",
@@ -97,12 +77,11 @@ describe("runNativeSession", () => {
             },
         ];
 
-        const outcome = await runNativeSession(project, undefined, {
-            compile: () => ({
-                ok: true,
-                value: {id: "compiled-project-1", settings: {histories: 1, seed: 7}} as TransportProblem,
-                diagnostics: [],
-            }),
+        const outcome = await runNativeSession({
+            ok: true,
+            value: {id: "compiled-project-1", settings: {histories: 1, seed: 7}} as TransportProblem,
+            diagnostics: [],
+        }, undefined, {
             runBackend: async () => events,
         });
 
@@ -128,6 +107,32 @@ describe("runNativeSession", () => {
                 reason: "sampled absorption",
             }],
         }]);
+    });
+
+    it("returns compiler diagnostics without invoking the backend when preparation fails", async () => {
+        const compileResult = {
+            ok: false,
+            diagnostics: [{
+                level: "error" as const,
+                code: "tally.target.missing",
+                message: "Tally must define its target.",
+                entityId: "tally-1",
+            }],
+        };
+        const runBackend = vi.fn(async (): Promise<readonly TransportBackendEvent[]> => []);
+
+        const outcome = await runNativeSession(compileResult, undefined, {runBackend});
+
+        expect(runBackend).not.toHaveBeenCalled();
+        expect(outcome).toMatchObject({
+            bottomTab: "diagnostics",
+            tracks: [],
+            diagnostics: [{
+                severity: "error",
+                message: "tally.target.missing: Tally must define its target.",
+                entityId: "tally-1",
+            }],
+        });
     });
 });
 

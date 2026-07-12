@@ -35,6 +35,11 @@ export interface GeometryEntity extends EntityBase {
 export interface MaterialEntity extends EntityBase {
   readonly kind: "material";
   readonly color: string;
+  readonly density?: number;
+  readonly nuclides?: readonly {
+    readonly nuclide: string;
+    readonly fraction: number;
+  }[];
   readonly attenuationCoefficient: number;
   readonly scatterProbability: number;
   readonly absorptionProbability: number;
@@ -58,6 +63,7 @@ export interface TallyEntity extends EntityBase {
   readonly kind: "tally";
   readonly tallyKind: TallyKind;
   readonly particleTypes: readonly ParticleType[];
+  readonly targetEntityId?: EntityId;
   readonly bins?: readonly [number, number, number];
 }
 

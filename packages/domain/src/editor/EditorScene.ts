@@ -93,7 +93,7 @@ export interface EditorBeamSource extends EditorSourceBase {
     readonly direction: Vec3;
 }
 
-export type EditorTally = EditorCellFluxTally | EditorSurfaceCurrentTally;
+export type EditorTally = EditorCellFluxTally | EditorSurfaceCurrentTally | EditorTrackLengthTally;
 
 export interface EditorTallyBase {
     readonly id: TallyId;
@@ -108,6 +108,11 @@ export interface EditorCellFluxTally extends EditorTallyBase {
 
 export interface EditorSurfaceCurrentTally extends EditorTallyBase {
     readonly kind: "surface-current";
+    readonly entityId: EntityId;
+}
+
+export interface EditorTrackLengthTally extends EditorTallyBase {
+    readonly kind: "track-length";
     readonly entityId: EntityId;
 }
 
