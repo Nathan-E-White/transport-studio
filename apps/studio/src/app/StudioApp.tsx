@@ -6,7 +6,7 @@ import type {
     TrackSample,
 } from "@transport/domain";
 import {validateProject} from "@transport/validation";
-import {prepareTransportProblem} from "@transport/domain/compile/CompileEditorScene";
+import {compileTransportProblem} from "@transport/domain/compile/CompileTransportProblem";
 import {createInitialProject} from "./createInitialProject";
 import {createTauriNativePhotonSmokeBridge} from "./nativePhotonSmokeTauriBridge";
 import {ProjectTree} from "../components/project-tree/ProjectTree";
@@ -63,7 +63,7 @@ function StudioWorkbench() {
     }
 
     async function runNative() {
-        const compileResult = prepareTransportProblem(project);
+        const compileResult = compileTransportProblem(project);
         applyRunSessionOutcome(await runNativeSession(compileResult, createTauriNativePhotonSmokeBridge()));
     }
 
