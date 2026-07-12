@@ -418,6 +418,60 @@ describe("prepareTransportProblem", () => {
         }]));
     });
 
+    it("does not validate unsupported geometry that is excluded from the compiled problem", () => {
+        const project = baseProject();
+        const entities = project.scene.entities.map((entity) => entity.id === "box-1" && entity.kind === "geometry"
+            ? {...entity, primitive: "plane" as const, includedInCompile: false}
+            : entity).filter((entity) => entity.id !== "tally-1");
+        const result = prepareTransportProblem({...project, scene: {entities}});
+
+        expect(result.ok).toBe(true);
+        expect(result.value?.geometry.entities).toEqual([]);
+        expect(result.diagnostics).toEqual([{
+            level: "info",
+            code: "entity.compile.excluded",
+            message: "Entity \"Shield Box\" was excluded from the compiled transport problem.",
+            entityId: "box-1",
+        }]);
+    });
+
+    it("reports lossy non-uniform sphere and cylinder scaling", () => {
+        const project = baseProject();
+        const geometry = project.scene.entities.find((entity) => entity.id === "box-1" && entity.kind === "geometry")!;
+        const withoutTally = project.scene.entities.filter((entity) => entity.id !== "tally-1");
+        const sphere = prepareTransportProblem({
+            ...project,
+            scene: {entities: withoutTally.map((entity) => entity.id === geometry.id
+                ? {
+                    ...geometry,
+                    primitive: "sphere" as const,
+                    parameters: {radius: 2},
+                    transform: {...geometry.transform, scale: {x: 1, y: 2, z: 1}},
+                }
+                : entity)},
+        });
+        const cylinder = prepareTransportProblem({
+            ...project,
+            scene: {entities: withoutTally.map((entity) => entity.id === geometry.id
+                ? {
+                    ...geometry,
+                    primitive: "cylinder" as const,
+                    parameters: {radius: 2, height: 4},
+                    transform: {...geometry.transform, scale: {x: 1, y: 2, z: 3}},
+                }
+                : entity)},
+        });
+
+        expect(sphere.ok).toBe(false);
+        expect(sphere.diagnostics).toEqual(expect.arrayContaining([
+            expect.objectContaining({code: "sphere.scale.unsupported", entityId: "box-1"}),
+        ]));
+        expect(cylinder.ok).toBe(false);
+        expect(cylinder.diagnostics).toEqual(expect.arrayContaining([
+            expect.objectContaining({code: "cylinder.radial-scale.unsupported", entityId: "box-1"}),
+        ]));
+    });
+
     it("reports missing and invalid tally targets without retargeting", () => {
         const project = baseProject();
         const tally = project.scene.entities.find((entity) => entity.id === "tally-1")!;

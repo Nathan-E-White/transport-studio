@@ -3,23 +3,9 @@ import type {Project, TransportBackendEvent} from "@transport/domain";
 import type {NativePhotonSmokeBridge} from "@transport/transport-worker";
 import type {TransportProblem} from "@transport/domain/transport/TransportProblem";
 import {clearRunSession, runNativeSession, runToySession} from "./runSession";
-import {createInitialProject} from "./createInitialProject";
 
 describe("runNativeSession", () => {
     it("returns bridge-unavailable diagnostics and the diagnostics-tab outcome", async () => {
-        const initialProject = createInitialProject();
-        const project = {
-            ...initialProject,
-            runConfiguration: {
-                ...initialProject.runConfiguration,
-                particleTypes: ["photon"] as const,
-                histories: 4,
-                batchSize: 2,
-                seed: 314159,
-                backend: "visual-ts" as const,
-                visibleHistoryBudget: 4,
-            },
-        };
         const events: readonly TransportBackendEvent[] = [{
             type: "runFailed",
             runId: "native-314159",
@@ -33,12 +19,11 @@ describe("runNativeSession", () => {
             (problem: unknown, bridge?: NativePhotonSmokeBridge) => Promise<readonly TransportBackendEvent[]>
         >(async () => events);
 
-        const outcome = await runNativeSession(project, undefined, {
-            prepare: () => ({
-                ok: true,
-                value: {id: "compiled-project-1", settings: {histories: 4, seed: 314159}} as TransportProblem,
-                diagnostics: [],
-            }),
+        const outcome = await runNativeSession({
+            ok: true,
+            value: {id: "compiled-project-1", settings: {histories: 4, seed: 314159}} as TransportProblem,
+            diagnostics: [],
+        }, undefined, {
             runBackend,
         });
 
@@ -60,16 +45,6 @@ describe("runNativeSession", () => {
     });
 
     it("maps successful native events to display tracks and diagnostics", async () => {
-        const initialProject = createInitialProject();
-        const project = {
-            ...initialProject,
-            runConfiguration: {
-                ...initialProject.runConfiguration,
-                histories: 1,
-                seed: 7,
-                backend: "visual-ts" as const,
-            },
-        };
         const events: readonly TransportBackendEvent[] = [
             {
                 type: "problemAccepted",
@@ -102,12 +77,11 @@ describe("runNativeSession", () => {
             },
         ];
 
-        const outcome = await runNativeSession(project, undefined, {
-            prepare: () => ({
-                ok: true,
-                value: {id: "compiled-project-1", settings: {histories: 1, seed: 7}} as TransportProblem,
-                diagnostics: [],
-            }),
+        const outcome = await runNativeSession({
+            ok: true,
+            value: {id: "compiled-project-1", settings: {histories: 1, seed: 7}} as TransportProblem,
+            diagnostics: [],
+        }, undefined, {
             runBackend: async () => events,
         });
 
@@ -136,8 +110,7 @@ describe("runNativeSession", () => {
     });
 
     it("returns compiler diagnostics without invoking the backend when preparation fails", async () => {
-        const project = createInitialProject();
-        const prepare = vi.fn(() => ({
+        const compileResult = {
             ok: false,
             diagnostics: [{
                 level: "error" as const,
@@ -145,12 +118,11 @@ describe("runNativeSession", () => {
                 message: "Tally must define its target.",
                 entityId: "tally-1",
             }],
-        }));
+        };
         const runBackend = vi.fn(async (): Promise<readonly TransportBackendEvent[]> => []);
 
-        const outcome = await runNativeSession(project, undefined, {prepare, runBackend});
+        const outcome = await runNativeSession(compileResult, undefined, {runBackend});
 
-        expect(prepare).toHaveBeenCalledWith(project);
         expect(runBackend).not.toHaveBeenCalled();
         expect(outcome).toMatchObject({
             bottomTab: "diagnostics",

@@ -7,7 +7,6 @@ import type {
     TransportTrackSample,
 } from "@transport/domain";
 import {
-    prepareTransportProblem,
     type CompileDiagnostic,
     type CompileResult,
 } from "@transport/domain/compile/CompileEditorScene";
@@ -30,7 +29,6 @@ export interface RunSessionOutcome {
 }
 
 export interface NativeRunSessionDependencies {
-    readonly prepare?: (project: Project) => CompileResult<TransportProblem>;
     readonly runBackend?: (
         problem: TransportProblem,
         bridge?: NativePhotonSmokeBridge,
@@ -69,13 +67,11 @@ export function clearRunSession(
 }
 
 export async function runNativeSession(
-    project: Project,
+    compileResult: CompileResult<TransportProblem>,
     bridge?: NativePhotonSmokeBridge,
     dependencies: NativeRunSessionDependencies = {},
 ): Promise<RunSessionOutcome> {
-    const prepare = dependencies.prepare ?? prepareTransportProblem;
     const runBackend = dependencies.runBackend ?? runNativePhotonSmokeBackend;
-    const compileResult = prepare(project);
     const compileDiagnostics = compileResult.diagnostics.map(convertCompileDiagnostic);
 
     if (!compileResult.ok || !compileResult.value) {

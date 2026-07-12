@@ -94,6 +94,10 @@ function prepareGeometry(
     entity: GeometryEntity,
     diagnostics: CompileDiagnostic[],
 ): EditorEntity[] {
+    if (!isAuthoringEntityIncluded(entity)) {
+        addExcludedDiagnostic("Entity", "entity", entity, diagnostics);
+        return [];
+    }
     if (entity.primitive === "plane") {
         diagnostics.push({
             level: "error",
@@ -132,12 +136,31 @@ function prepareGeometry(
                 },
             }];
         case "sphere":
+            if (!hasEqualScale(entity.transform.scale.x, entity.transform.scale.y)
+                || !hasEqualScale(entity.transform.scale.x, entity.transform.scale.z)) {
+                diagnostics.push({
+                    level: "error",
+                    code: "sphere.scale.unsupported",
+                    message: `Sphere "${entity.name}" requires uniform scale before compilation.`,
+                    entityId: entity.id,
+                });
+                return [];
+            }
             return [{
                 ...common,
                 kind: "sphere",
                 radius: requiredScaledDimension(entity, "radius", entity.transform.scale.x, diagnostics),
             }];
         case "cylinder":
+            if (!hasEqualScale(entity.transform.scale.x, entity.transform.scale.y)) {
+                diagnostics.push({
+                    level: "error",
+                    code: "cylinder.radial-scale.unsupported",
+                    message: `Cylinder "${entity.name}" requires equal x and y scale before compilation.`,
+                    entityId: entity.id,
+                });
+                return [];
+            }
             return [{
                 ...common,
                 kind: "cylinder",
@@ -145,6 +168,10 @@ function prepareGeometry(
                 height: requiredScaledDimension(entity, "height", entity.transform.scale.z, diagnostics),
             }];
     }
+}
+
+function hasEqualScale(left: number, right: number): boolean {
+    return Object.is(left, right);
 }
 
 function requiredScaledDimension(
