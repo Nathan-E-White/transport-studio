@@ -44,7 +44,7 @@ Tauri-specific code must not:
 
 Tests should target runtime-neutral seams first:
 
-- compile behavior through editor/project mutation functions and `compileEditorScene`;
+- compile behavior through editor/project mutation functions and `compileTransportProblem`;
 - run outcomes through a Run Session module with injected bridge adapters;
 - solver capability facts through the versioned runtime-neutral fixture at `fixtures/contracts/v1-solver-capabilities.json`;
 - engine behavior through the public `transport-engine` facade.

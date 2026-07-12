@@ -55,7 +55,8 @@ const DEFAULT_SEED = 1;
 const DEFAULT_SOURCE_STRENGTH = 1;
 const COMPILER_VERSION = "transport-domain-compiler-1";
 
-export function prepareTransportProblem(project: Project): CompileResult<TransportProblem> {
+/** Canonical compiler from the authoritative editable Project to an executable problem. */
+export function compileTransportProblem(project: Project): CompileResult<TransportProblem> {
     const diagnostics: CompileDiagnostic[] = [];
     const entities = project.scene.entities.flatMap((entity) =>
         entity.kind === "geometry" ? prepareGeometry(entity, diagnostics) : [],
@@ -69,7 +70,7 @@ export function prepareTransportProblem(project: Project): CompileResult<Transpo
     const tallies = project.scene.entities.flatMap((entity) =>
         entity.kind === "tally" ? prepareTally(entity, diagnostics) : [],
     );
-    const compileResult = compileEditorScene({
+    const compileResult = compilePreparedScene({
         id: project.id,
         name: project.name,
         entities,
@@ -202,6 +203,18 @@ function prepareMaterial(
         return [];
     }
 
+    if (entity.attenuationCoefficient !== 0
+        || entity.scatterProbability !== 0
+        || entity.absorptionProbability !== 0
+        || entity.anisotropy !== 0) {
+        diagnostics.push({
+            level: "warning",
+            code: "material.toy-coefficients.lossy",
+            message: `Material "${entity.name}" toy transport coefficients are not part of the compiled material contract and were omitted.`,
+            entityId: entity.id,
+        });
+    }
+
     return [{
         id: entity.id,
         name: entity.name,
@@ -313,7 +326,7 @@ function addExcludedDiagnostic(
     });
 }
 
-export function compileEditorScene(scene: EditorScene): CompileResult<TransportProblem> {
+function compilePreparedScene(scene: EditorScene): CompileResult<TransportProblem> {
     const diagnostics: CompileDiagnostic[] = [];
     const materialIds = new Set(scene.materials.map((material) => material.id));
     const compiledEntityIds = new Set(
@@ -371,7 +384,7 @@ export function compileEditorScene(scene: EditorScene): CompileResult<TransportP
             settings: {
                 histories: scene.settings.histories,
                 seed: scene.settings.seed ?? DEFAULT_SEED,
-                particles: ["photon"],
+                particles: [...new Set(sources.map((source) => source.particle))],
             },
             metadata: {
                 sourceSceneId: scene.id,

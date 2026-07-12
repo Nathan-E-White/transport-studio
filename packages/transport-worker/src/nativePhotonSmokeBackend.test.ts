@@ -177,7 +177,7 @@ describe("runNativePhotonSmokeBackend", () => {
     });
   });
 
-  it("uses the compiled editor-scene fixture as the canonical native MWE input", () => {
+  it("uses the shared compatibility fixture as the canonical native MWE input", () => {
     const problem = createNativePhotonSmokeFixtureProblem();
 
     expect(problem).toMatchObject({

@@ -12,9 +12,9 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
-    "./compile/CompileEditorScene": {
-      "types": "./src/compile/CompileEditorScene.ts",
-      "import": "./src/compile/CompileEditorScene.ts"
+    "./compile/CompileTransportProblem": {
+      "types": "./src/compile/CompileTransportProblem.ts",
+      "import": "./src/compile/CompileTransportProblem.ts"
     },
     "./editor/EditorScene": {
       "types": "./src/editor/EditorScene.ts",

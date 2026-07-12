@@ -9,7 +9,7 @@ import type {
 import {
     type CompileDiagnostic,
     type CompileResult,
-} from "@transport/domain/compile/CompileEditorScene";
+} from "@transport/domain/compile/CompileTransportProblem";
 import type {TransportProblem} from "@transport/domain/transport/TransportProblem";
 import {
     runNativePhotonSmokeBackend,

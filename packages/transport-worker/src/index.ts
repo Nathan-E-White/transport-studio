@@ -33,7 +33,6 @@ export {
 
 export {
   createNativePhotonSmokeFixtureProblem,
-  createNativePhotonSmokeFixtureScene,
 } from "./nativePhotonSmokeFixture";
 
 // noinspection JSUnusedGlobalSymbols

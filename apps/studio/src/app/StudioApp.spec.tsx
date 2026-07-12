@@ -129,7 +129,7 @@ const mocks = vi.hoisted(() => {
                 seed: 1337
             }
         })),
-        prepareTransportProblem: vi.fn<(project: unknown) => {
+        compileTransportProblem: vi.fn<(project: unknown) => {
             ok: true;
             value: {
                 id: string;
@@ -176,8 +176,8 @@ vi.mock("./nativePhotonSmokeTauriBridge", () => ({
     createTauriNativePhotonSmokeBridge: mocks.createTauriNativePhotonSmokeBridge
 }));
 
-vi.mock("@transport/domain/compile/CompileEditorScene", () => ({
-    prepareTransportProblem: mocks.prepareTransportProblem
+vi.mock("@transport/domain/compile/CompileTransportProblem", () => ({
+    compileTransportProblem: mocks.compileTransportProblem
 }));
 
 vi.mock("@transport/validation", () => ({
@@ -296,7 +296,7 @@ describe("StudioApp spec", () => {
     beforeEach(() => {
         mocks.createInitialProject.mockClear();
         mocks.createNativePhotonSmokeFixtureProblem.mockClear();
-        mocks.prepareTransportProblem.mockClear();
+        mocks.compileTransportProblem.mockClear();
         mocks.runNativePhotonSmokeBackend.mockClear();
         mocks.createTauriNativePhotonSmokeBridge.mockClear();
         mocks.runToyPhotonTransport.mockClear();
@@ -387,7 +387,7 @@ describe("StudioApp spec", () => {
 
         await waitFor(() => expect(mocks.runNativePhotonSmokeBackend).toHaveBeenCalledTimes(1));
         expect(mocks.createNativePhotonSmokeFixtureProblem).not.toHaveBeenCalled();
-        expect(mocks.prepareTransportProblem).toHaveBeenCalledTimes(1);
+        expect(mocks.compileTransportProblem).toHaveBeenCalledTimes(1);
         expect(mocks.createTauriNativePhotonSmokeBridge).toHaveBeenCalledTimes(1);
         expect(mocks.runNativePhotonSmokeBackend).toHaveBeenCalledWith({
             id: "compiled-current-scene",
@@ -411,8 +411,8 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("viewport shield visible: false")).toBeTruthy();
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
-        await waitFor(() => expect(mocks.prepareTransportProblem).toHaveBeenCalledTimes(1));
-        const hiddenProject = mocks.prepareTransportProblem.mock.calls[0]?.[0] as Project;
+        await waitFor(() => expect(mocks.compileTransportProblem).toHaveBeenCalledTimes(1));
+        const hiddenProject = mocks.compileTransportProblem.mock.calls[0]?.[0] as Project;
         const hiddenShield = hiddenProject.scene.entities.find((entity) => entity.id === "shield-1");
         expect(hiddenShield).toMatchObject({id: "shield-1", visible: false});
         expect(hiddenShield?.includedInCompile).toBeUndefined();
@@ -420,8 +420,8 @@ describe("StudioApp spec", () => {
         fireEvent.click(screen.getByRole("button", {name: "Exclude Shield Slab"}));
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
-        await waitFor(() => expect(mocks.prepareTransportProblem).toHaveBeenCalledTimes(2));
-        const excludedProject = mocks.prepareTransportProblem.mock.calls[1]?.[0] as Project;
+        await waitFor(() => expect(mocks.compileTransportProblem).toHaveBeenCalledTimes(2));
+        const excludedProject = mocks.compileTransportProblem.mock.calls[1]?.[0] as Project;
         expect(excludedProject.scene.entities.find((entity) => entity.id === "shield-1")).toMatchObject({
             id: "shield-1",
             visible: false,

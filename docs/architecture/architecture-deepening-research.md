@@ -9,7 +9,7 @@ Which architecture problems should be split into orthogonal implementation issue
 ## Primary Sources
 
 - Repo decisions: [ADR 0001](ADR-0001.md), [ADR 0002](ADR-0002.md), [ADR 0003](ADR-0003.md), [ADR 0007](ADR-0007.md).
-- Editor and compile source: `apps/studio/src/components/project-tree/ProjectTree.tsx`, `apps/studio/src/state/editor/visibility.ts`, `packages/domain/src/compile/CompileEditorScene.ts`, `packages/domain/src/compile/CompileEditorScene.test.ts`.
+- Editor and compile source: `apps/studio/src/components/project-tree/ProjectTree.tsx`, `apps/studio/src/state/editor/visibility.ts`, `packages/domain/src/compile/CompileTransportProblem.ts`, `packages/domain/src/compile/CompileTransportProblem.test.ts`.
 - Run and native bridge source: `apps/studio/src/app/StudioApp.tsx`, `apps/studio/src/app/nativePhotonSmokeTauriBridge.ts`, `packages/transport-worker/src/index.ts`, `apps/studio/src-tauri/src/mod.rs`, `apps/studio/src-tauri/tauri.conf.json`.
 - Capability and engine source: `packages/domain/src/physics/PhysicsProblem.ts`, `docs/architecture/V1-physics-engine-plan.md`, `apps/studio/src-tauri/crates/transport-engine/src/lib.rs`, `apps/studio/src-tauri/crates/transport-engine/Cargo.toml`, `apps/studio/src-tauri/crates/spacetime-physics/src/lib.rs`.
 - Live tracker context: [#13 End-to-End Coupled Kernel Toy](https://github.com/Nathan-E-White/transport-studio/issues/13), [#14 Product Gating + Capability Status](https://github.com/Nathan-E-White/transport-studio/issues/14), [#15 Tiered Verification Harness](https://github.com/Nathan-E-White/transport-studio/issues/15).
