@@ -8,7 +8,7 @@ import {
     summarizeDiagnostics
 } from "./projectTreeBadgesModel";
 
-import {EditorDiagnostic, entityKey, getEntityViewFlags, ProjectTreeNode, useEditorStore,} from "../../../state/editor";
+import {EditorDiagnostic, entityKey, getEntityViewFlags, ProjectTreeNode, selectVisibility, useEditorStore,} from "../../../state/editor";
 
 
 export interface ProjectTreeBadgesContextValue {
@@ -19,6 +19,7 @@ const ProjectTreeBadgesContext = createContext<ProjectTreeBadgesContextValue | n
 
 export function ProjectTreeBadgesProvider({children}: Readonly<PropsWithChildren>) {
     const {state} = useEditorStore();
+    const visibility = useMemo(() => selectVisibility(state), [state.scene.project]);
 
     const value = useMemo<ProjectTreeBadgesContextValue>(() => {
         const errorsByEntity = groupDiagnosticsByEntity(state.validation.errors);
@@ -32,7 +33,7 @@ export function ProjectTreeBadgesProvider({children}: Readonly<PropsWithChildren
 
                 const ref = node.entityRef;
                 const key = entityKey(ref);
-                const flags = getEntityViewFlags(state.visibility, ref);
+                const flags = getEntityViewFlags(visibility, ref);
                 const entityErrors = errorsByEntity.get(key) ?? [];
                 const entityWarnings = warningsByEntity.get(key) ?? [];
                 const badges: ProjectTreeBadge[] = [];
@@ -121,7 +122,7 @@ export function ProjectTreeBadgesProvider({children}: Readonly<PropsWithChildren
                 return dedupeBadges(badges);
             },
         };
-    }, [state.stale.reasons, state.validation.errors, state.validation.warnings, state.visibility]);
+    }, [state.stale.reasons, state.validation.errors, state.validation.warnings, visibility]);
 
     return (
         <ProjectTreeBadgesContext.Provider value={value}>
@@ -158,5 +159,4 @@ function groupDiagnosticsByEntity(
 
     return grouped;
 }
-
 

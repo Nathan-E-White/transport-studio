@@ -1,13 +1,13 @@
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import type {Diagnostic, Project, SceneEntity} from "@transport/domain";
+import {useCallback, useEffect, useMemo, useState} from "react";
+import type {Diagnostic, SceneEntity} from "@transport/domain";
 import {
   EditorDiagnostic,
   EditorEntityMetadata,
   EditorEntityRef,
-  EditorStateRoot,
-  VisibilityTable,
   buildProjectTree,
-  getEntityViewFlags,
+  getPrimarySelection,
+  selectProjectTreeMetadata,
+  selectVisibility,
   useEditorStore,
 } from "../../state/editor";
 import {ProjectTreeBadgesScope} from "./Badges/ProjectTreeBadgesScope";
@@ -18,21 +18,7 @@ import {ProjectTreeBoundary} from "./ProjectTreeBoundary";
 import {ProjectTreeProvider} from "./ProjectTreeProvider";
 
 export interface ProjectTreeProps {
-  readonly project: Project;
-  readonly selectedEntityId?: string;
   readonly diagnostics: readonly Diagnostic[];
-  readonly stats?: {readonly geometry: number; readonly materials: number; readonly sources: number; readonly tallies: number};
-  readonly onSelect: (entityId: string | undefined) => void;
-  readonly onCreateEntity: (kind: SceneEntity["kind"]) => void;
-  readonly onUpdateEntityMetadata: (
-    entityId: string,
-    patch: {readonly name?: string; readonly description?: string; readonly tags?: readonly string[]},
-  ) => void;
-  readonly onDuplicateEntity: (entityId: string) => void;
-  readonly onDeleteEntity: (entityId: string) => void;
-  readonly onSetEntityVisible: (entityId: string, visible: boolean) => void;
-  readonly onSetEntityLocked: (entityId: string, locked: boolean) => void;
-  readonly onSetEntityIncludedInCompile: (entityId: string, includedInCompile: boolean) => void;
 }
 
 const CREATE_KINDS: readonly SceneEntity["kind"][] = ["geometry", "material", "source", "tally"];
@@ -40,65 +26,27 @@ const CREATE_KINDS: readonly SceneEntity["kind"][] = ["geometry", "material", "s
 export function ProjectTree(props: Readonly<ProjectTreeProps>) {
   return (
     <ProjectTreeBoundary>
-      <EditorStateRoot>
-        <ProjectTreeInner {...props}/>
-      </EditorStateRoot>
+      <ProjectTreeInner {...props}/>
     </ProjectTreeBoundary>
   );
 }
 
 function ProjectTreeInner({
-  project,
-  selectedEntityId,
   diagnostics,
-  onSelect,
-  onCreateEntity,
-  onUpdateEntityMetadata,
-  onDuplicateEntity,
-  onDeleteEntity,
-  onSetEntityVisible,
-  onSetEntityLocked,
-  onSetEntityIncludedInCompile,
 }: Readonly<ProjectTreeProps>) {
   const {state, dispatch} = useEditorStore();
+  const project = state.scene.project;
+  if (!project) throw new Error("Project Tree requires an Editable Scene project");
+  const selectedEntityId = getPrimarySelection(state.selection)?.id;
+  const visibility = useMemo(() => selectVisibility(state), [state.scene.project]);
   const [searchQuery, setSearchQuery] = useState("");
   const [editingEntityId, setEditingEntityId] = useState<string | undefined>();
   const [drafts, setDrafts] = useState<Record<string, ProjectTreeMetadataDraft>>({});
-  const visibilityRef = useRef(state.visibility);
-
-  useEffect(() => {
-    visibilityRef.current = state.visibility;
-  }, [state.visibility]);
 
   const entitiesById = useMemo(
     () => new Map<string, SceneEntity>(project.scene.entities.map((entity) => [entity.id, entity])),
     [project.scene.entities],
   );
-
-  useEffect(() => {
-    const visibility: VisibilityTable = Object.fromEntries(
-      project.scene.entities.map((entity) => {
-        const ref = entityRefForEntity(entity);
-        const current = getEntityViewFlags(visibilityRef.current, ref);
-
-        return [
-          `${entity.kind}:${entity.id}`,
-          {
-            ...current,
-            visible: entity.visible,
-            locked: entity.locked,
-            includedInCompile: entity.includedInCompile ?? current.includedInCompile,
-          },
-        ];
-      }),
-    );
-
-    dispatch({
-      type: "hydrate-project-tree",
-      entities: project.scene.entities.map(entityToMetadata),
-      visibility,
-    });
-  }, [dispatch, project.scene.entities]);
 
   useEffect(() => {
     const errors: EditorDiagnostic[] = [];
@@ -120,39 +68,24 @@ function ProjectTreeInner({
     dispatch({type: "set-validation-result", errors, warnings});
   }, [diagnostics, dispatch, project.scene.entities]);
 
-  useEffect(() => {
-    const selected = selectedEntityId ? entitiesById.get(selectedEntityId) : undefined;
-
-    if (!selected) {
-      dispatch({type: "clear-selection"});
-      return;
-    }
-
-    dispatch({type: "select-one", ref: entityRefForEntity(selected)});
-  }, [dispatch, entitiesById, selectedEntityId]);
-
   const filteredMetadata = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const metadata = Object.values(state.scene.entities);
+    const metadata = selectProjectTreeMetadata(state);
 
     if (!query) {
       return metadata;
     }
 
     return metadata.filter((entity) => matchesSearch(entity, query));
-  }, [searchQuery, state.scene.entities]);
+  }, [searchQuery, state.scene.project]);
 
   const groups = useMemo(
-    () => buildProjectTree({entities: filteredMetadata, visibility: state.visibility}),
-    [filteredMetadata, state.visibility],
+    () => buildProjectTree({entities: filteredMetadata, visibility}),
+    [filteredMetadata, visibility],
   );
 
   const stats = useMemo(() => getSceneStats(project.scene.entities), [project.scene.entities]);
   const visibleRows = groups.reduce((count, group) => count + (group.children?.length ?? 0), 0);
-
-  const selectEntity = useCallback((ref: EditorEntityRef) => {
-    onSelect(ref.id);
-  }, [onSelect]);
 
   const requestEdit = useCallback((ref: EditorEntityRef) => {
     const entity = entitiesById.get(ref.id);
@@ -178,36 +111,19 @@ function ProjectTreeInner({
       return;
     }
 
-    onUpdateEntityMetadata(ref.id, {
+    dispatch({type: "update-project-entity-metadata", ref, patch: {
       name: draft.name.trim() || "Untitled Entity",
       description: draft.description.trim(),
       tags: parseTags(draft.tags),
-    });
+    }});
     setEditingEntityId(undefined);
-  }, [drafts, onUpdateEntityMetadata]);
-
-  const deleteEntity = useCallback((ref: EditorEntityRef) => {
-    const deletedIndex = project.scene.entities.findIndex((entity) => entity.id === ref.id);
-    const nextSelection = project.scene.entities[deletedIndex + 1]
-      ?? project.scene.entities[deletedIndex - 1]
-      ?? project.scene.entities.find((entity) => entity.id !== ref.id);
-
-    onDeleteEntity(ref.id);
-    onSelect(nextSelection?.id);
-  }, [onDeleteEntity, onSelect, project.scene.entities]);
+  }, [dispatch, drafts]);
 
   return (
     <ProjectTreeProvider
       selectedEntityId={selectedEntityId}
       editingEntityId={editingEntityId}
-      onSelect={selectEntity}
       onRequestEdit={requestEdit}
-      onDuplicate={(ref) => onDuplicateEntity(ref.id)}
-      onDelete={deleteEntity}
-      onVisibleChange={(ref, visible) => onSetEntityVisible(ref.id, visible)}
-      onLockedChange={(ref, locked) => onSetEntityLocked(ref.id, locked)}
-      onCompileInclusionChange={(ref, included) => onSetEntityIncludedInCompile(ref.id, included)}
-      onCreateEntity={onCreateEntity}
       allowDelete
     >
       <ProjectTreeIconsScope>
@@ -230,7 +146,7 @@ function ProjectTreeInner({
 
             <div className="project-tree-create" aria-label="Create entities">
               {CREATE_KINDS.map((kind) => (
-                <button key={kind} type="button" onClick={() => onCreateEntity(kind)}>
+                <button key={kind} type="button" onClick={() => dispatch({type: "create-project-entity", kind})}>
                   + {labelForKind(kind)}
                 </button>
               ))}
@@ -291,16 +207,6 @@ function getSceneStats(entities: readonly SceneEntity[]) {
     materials: entities.filter((entity) => entity.kind === "material").length,
     sources: entities.filter((entity) => entity.kind === "source").length,
     tallies: entities.filter((entity) => entity.kind === "tally").length,
-  };
-}
-
-function entityToMetadata(entity: SceneEntity): EditorEntityMetadata {
-  return {
-    id: entity.id,
-    kind: entity.kind,
-    name: entity.name,
-    description: getDescription(entity),
-    tags: entity.tags,
   };
 }
 

@@ -10,8 +10,10 @@ import {
     EditorStoreAction,
     EditorStoreState,
     editorStoreReducer,
+    createEditorStoreState,
     initialEditorStoreState
 } from "./editorStore";
+import type {Project} from "@transport/domain";
 
 interface EditorStoreContextValue {
     readonly state: EditorStoreState;
@@ -20,9 +22,16 @@ interface EditorStoreContextValue {
 
 const EditorStoreContext = createContext<EditorStoreContextValue | null>(null);
 
-export function EditorStoreProvider({children}: PropsWithChildren) {
+export interface EditorStoreProviderProps extends PropsWithChildren {
+    readonly initialProject?: Project;
+}
 
-    const [state, dispatch] = useReducer(editorStoreReducer, initialEditorStoreState);
+export function EditorStoreProvider({children, initialProject}: EditorStoreProviderProps) {
+
+    const [state, dispatch] = useReducer(
+        editorStoreReducer,
+        initialProject ? createEditorStoreState(initialProject) : initialEditorStoreState,
+    );
 
     const value = useMemo(
         () => ({

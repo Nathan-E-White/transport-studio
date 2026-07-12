@@ -56,7 +56,6 @@ export function ProjectTreeActionProvider({
             type: "select-one",
             ref: action.ref,
           });
-          projectTree.onSelect(action.ref);
           return;
 
         case "edit-metadata":
@@ -69,7 +68,6 @@ export function ProjectTreeActionProvider({
             ref: action.ref,
             visible: !action.pressed,
           });
-          projectTree.onVisibleChange(action.ref, !action.pressed);
           return;
 
         case "toggle-locked":
@@ -78,7 +76,6 @@ export function ProjectTreeActionProvider({
             ref: action.ref,
             locked: !action.pressed,
           });
-          projectTree.onLockedChange(action.ref, !action.pressed);
           return;
 
         case "toggle-included-in-compile":
@@ -87,19 +84,14 @@ export function ProjectTreeActionProvider({
             ref: action.ref,
             includedInCompile: !action.pressed,
           });
-          projectTree.onCompileInclusionChange(action.ref, !action.pressed);
           return;
 
         case "duplicate":
-          projectTree.onDuplicate(action.ref);
+          dispatch({type: "duplicate-project-entity", ref: action.ref});
           return;
 
         case "delete":
-          dispatch({
-            type: "remove-entity",
-            ref: action.ref,
-          });
-          projectTree.onDelete(action.ref);
+          dispatch({type: "delete-project-entity", ref: action.ref});
           return;
 
         default:

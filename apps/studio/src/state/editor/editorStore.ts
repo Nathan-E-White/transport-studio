@@ -3,7 +3,6 @@
 import {
     EditorEntityId,
     EditorEntityKind,
-    EditorEntityMetadata,
     EditorEntityRef,
     entityKey,
 } from "./entities";
@@ -32,17 +31,20 @@ import {
     setInspectorFocus,
     toggleSelected,
 } from "./selection";
+import {VisibilityTable} from "./visibility";
+import type {Project, SceneEntity} from "@transport/domain";
 import {
-    VisibilityTable,
-    removeEntityViewFlags,
-    setIncludedInCompile,
-    setLocked,
-    setSelectable,
-    setVisible,
-} from "./visibility";
+    addEntity,
+    deleteEntity,
+    duplicateEntity,
+    setEntityIncludedInCompile,
+    setEntityLocked,
+    setEntityVisible,
+    updateEntityMetadata,
+} from "../../app/projectMutations";
 
 export interface EditorSceneState {
-    readonly entities: Readonly<Record<string, EditorEntityMetadata>>;
+    readonly project: Project | null;
 }
 
 export interface EditorShellState {
@@ -95,7 +97,6 @@ export interface EditorStoreState {
     readonly shell: EditorShellState;
     readonly scene: EditorSceneState;
     readonly selection: EditorSelectionState;
-    readonly visibility: VisibilityTable;
     readonly validation: EditorValidationState;
     readonly stale: EditorStaleState;
     readonly run: EditorRunResultState;
@@ -108,8 +109,10 @@ export type EditorStoreAction =
     | { readonly type: "set-right-panel-open"; readonly open: boolean }
     | { readonly type: "set-bottom-dock-open"; readonly open: boolean }
 
-    | { readonly type: "upsert-entity"; readonly entity: EditorEntityMetadata; readonly dirtyReason?: EditorDirtyReason }
-    | { readonly type: "remove-entity"; readonly ref: EditorEntityRef; readonly dirtyReason?: EditorDirtyReason }
+    | { readonly type: "create-project-entity"; readonly kind: SceneEntity["kind"] }
+    | { readonly type: "update-project-entity-metadata"; readonly ref: EditorEntityRef; readonly patch: {readonly name?: string; readonly description?: string; readonly tags?: readonly string[]} }
+    | { readonly type: "duplicate-project-entity"; readonly ref: EditorEntityRef }
+    | { readonly type: "delete-project-entity"; readonly ref: EditorEntityRef }
 
     | { readonly type: "select-one"; readonly ref: EditorEntityRef }
     | { readonly type: "select-many"; readonly refs: readonly EditorEntityRef[] }
@@ -120,7 +123,6 @@ export type EditorStoreAction =
 
     | { readonly type: "set-visible"; readonly ref: EditorEntityRef; readonly visible: boolean }
     | { readonly type: "set-locked"; readonly ref: EditorEntityRef; readonly locked: boolean }
-    | { readonly type: "set-selectable"; readonly ref: EditorEntityRef; readonly selectable: boolean }
     | { readonly type: "set-included-in-compile"; readonly ref: EditorEntityRef; readonly includedInCompile: boolean }
 
     | { readonly type: "set-validation-result"; readonly errors: readonly EditorDiagnostic[]; readonly warnings: readonly EditorDiagnostic[] }
@@ -130,8 +132,7 @@ export type EditorStoreAction =
     | { readonly type: "mark-scene-clean" }
     | { readonly type: "mark-scene-dirty"; readonly reason: EditorDirtyReason }
 
-    | { readonly type: "set-run-status"; readonly status: EditorRunStatus; readonly runId?: string | null }
-    | { readonly type: "hydrate-project-tree"; readonly entities: readonly EditorEntityMetadata[]; readonly visibility: VisibilityTable };
+    | { readonly type: "set-run-status"; readonly status: EditorRunStatus; readonly runId?: string | null };
 
 export const initialEditorStoreState: EditorStoreState = {
     shell: {
@@ -142,10 +143,9 @@ export const initialEditorStoreState: EditorStoreState = {
         bottomDockOpen: true,
     },
     scene: {
-        entities: {},
+        project: null,
     },
     selection: EMPTY_SELECTION_STATE,
-    visibility: {},
     validation: {
         hasErrors: false,
         hasWarnings: false,
@@ -159,6 +159,15 @@ export const initialEditorStoreState: EditorStoreState = {
         lastCompletedRunId: null,
     },
 };
+
+export function createEditorStoreState(project: Project): EditorStoreState {
+    const state = syncProject(initialEditorStoreState, project);
+    const initialSelection = project.scene.entities[1];
+    return initialSelection ? {
+        ...state,
+        selection: selectOne(state.selection, {kind: initialSelection.kind, id: initialSelection.id}),
+    } : state;
+}
 
 export function editorStoreReducer(
     state: EditorStoreState,
@@ -211,45 +220,37 @@ export function editorStoreReducer(
                 },
             };
 
-        case "upsert-entity": {
-            const ref: EditorEntityRef = {
-                kind: action.entity.kind,
-                id: action.entity.id,
-            };
-
-            return {
-                ...state,
-                scene: {
-                    ...state.scene,
-                    entities: {
-                        ...state.scene.entities,
-                        [entityKey(ref)]: action.entity,
-                    },
-                },
-                stale: markSceneDirty(state.stale, action.dirtyReason ?? dirtyReasonForEntityKind(action.entity.kind)),
-            };
+        case "create-project-entity": {
+            const project = requireProject(state);
+            const next = addEntity(project, action.kind);
+            const created = next.scene.entities.at(-1);
+            return markProjectChanged(syncProject(state, next), dirtyReasonForEntityKind(action.kind), created);
         }
 
-        case "remove-entity": {
-            const key = entityKey(action.ref);
+        case "update-project-entity-metadata": {
+            const project = requireProject(state);
+            const current = project.scene.entities.find((entity) => entity.id === action.ref.id);
+            if (!current) return state;
+            return markProjectChanged(
+                syncProject(state, updateEntityMetadata(project, action.ref.id, action.patch)),
+                dirtyReasonForEntityKind(current.kind),
+            );
+        }
 
-            if (!(key in state.scene.entities)) {
-                return state;
-            }
+        case "duplicate-project-entity": {
+            const project = requireProject(state);
+            const current = project.scene.entities.find((entity) => entity.id === action.ref.id);
+            if (!current) return state;
+            const next = duplicateEntity(project, action.ref.id);
+            return markProjectChanged(syncProject(state, next), dirtyReasonForEntityKind(current.kind), next.scene.entities.at(-1));
+        }
 
-            const entities = { ...state.scene.entities };
-            delete entities[key];
-
-            return {
-                ...state,
-                scene: {
-                    ...state.scene,
-                    entities,
-                },
-                selection: removeEntityFromSelection(state.selection, action.ref),
-                visibility: removeEntityViewFlags(state.visibility, action.ref),
-                stale: markSceneDirty(state.stale, action.dirtyReason ?? dirtyReasonForEntityKind(action.ref.kind)),
-            };
+        case "delete-project-entity": {
+            const project = requireProject(state);
+            const current = project.scene.entities.find((entity) => entity.id === action.ref.id);
+            if (!current) return state;
+            const changed = markProjectChanged(syncProject(state, deleteEntity(project, action.ref.id)), dirtyReasonForEntityKind(current.kind));
+            return {...changed, selection: removeEntityFromSelection(changed.selection, action.ref)};
         }
 
         case "select-one":
@@ -289,33 +290,22 @@ export function editorStoreReducer(
             };
 
         case "set-visible":
-            return {
+            return markProjectChanged({
                 ...state,
-                visibility: setVisible(state.visibility, action.ref, action.visible),
-            };
+                scene: state.scene.project ? {...state.scene, project: setEntityVisible(state.scene.project, action.ref.id, action.visible)} : state.scene,
+            }, "visibility-changed");
 
         case "set-locked":
-            return {
+            return markProjectChanged({
                 ...state,
-                visibility: setLocked(state.visibility, action.ref, action.locked),
-            };
-
-        case "set-selectable":
-            return {
-                ...state,
-                visibility: setSelectable(state.visibility, action.ref, action.selectable),
-            };
+                scene: state.scene.project ? {...state.scene, project: setEntityLocked(state.scene.project, action.ref.id, action.locked)} : state.scene,
+            }, "unknown");
 
         case "set-included-in-compile":
-            return {
+            return markProjectChanged({
                 ...state,
-                visibility: setIncludedInCompile(
-                    state.visibility,
-                    action.ref,
-                    action.includedInCompile,
-                ),
-                stale: markSceneDirty(state.stale, "compile-inclusion-changed"),
-            };
+                scene: state.scene.project ? {...state.scene, project: setEntityIncludedInCompile(state.scene.project, action.ref.id, action.includedInCompile)} : state.scene,
+            }, "compile-inclusion-changed");
 
         case "set-validation-result":
             return {
@@ -362,24 +352,44 @@ export function editorStoreReducer(
         case "set-run-status":
             return applyRunStatus(state, action.status, action.runId);
 
-        case "hydrate-project-tree":
-            return {
-                ...state,
-                scene: {
-                    ...state.scene,
-                    entities: Object.fromEntries(
-                        action.entities.map((entity) => [
-                            entityKey({kind: entity.kind, id: entity.id}),
-                            entity,
-                        ]),
-                    ),
-                },
-                visibility: action.visibility,
-            };
-
         default:
             return assertNever(action);
     }
+}
+
+function syncProject(state: EditorStoreState, project: Project): EditorStoreState {
+    return {
+        ...state,
+        scene: {project},
+    };
+}
+
+function markProjectChanged(state: EditorStoreState, reason: EditorDirtyReason, selected?: SceneEntity): EditorStoreState {
+    return {
+        ...state,
+        selection: selected ? selectOne(state.selection, {kind: selected.kind, id: selected.id}) : state.selection,
+        stale: markSceneDirty(state.stale, reason),
+    };
+}
+
+function requireProject(state: EditorStoreState): Project {
+    if (!state.scene.project) throw new Error("Editable Scene store has no project");
+    return state.scene.project;
+}
+
+export function selectProjectTreeMetadata(state: EditorStoreState) {
+    return (state.scene.project?.scene.entities ?? []).map((entity) => ({
+        id: entity.id, kind: entity.kind, name: entity.name,
+        description: typeof entity.metadata?.description === "string" ? entity.metadata.description : undefined,
+        tags: entity.tags,
+    }));
+}
+
+export function selectVisibility(state: EditorStoreState): VisibilityTable {
+    return Object.fromEntries((state.scene.project?.scene.entities ?? []).map((entity) => [
+        entityKey({kind: entity.kind, id: entity.id}),
+        {visible: entity.visible, locked: entity.locked, selectable: true, includedInCompile: entity.includedInCompile ?? true, helperOnly: false},
+    ]));
 }
 
 function dirtyReasonForEntityKind(kind: EditorEntityKind): EditorDirtyReason {

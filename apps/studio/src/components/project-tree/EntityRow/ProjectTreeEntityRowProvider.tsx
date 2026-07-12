@@ -1,5 +1,5 @@
 import { PropsWithChildren, useMemo } from "react";
-import { ProjectTreeNode, useEditorStore } from "../../../state/editor";
+import { ProjectTreeNode, selectVisibility, useEditorStore } from "../../../state/editor";
 import { ProjectTreeEntityRowContext } from "./ProjectTreeEntityRowContext";
 
 import { buildProjectTreeEntityRowModel } from "./ProjectTreeEntityRowModels";
@@ -14,15 +14,16 @@ export function ProjectTreeEntityRowProvider({
   children,
 }: Readonly<ProjectTreeEntityRowProviderProps>) {
   const { state, dispatch } = useEditorStore();
+  const visibility = useMemo(() => selectVisibility(state), [state.scene.project]);
 
   const row = useMemo(
     () =>
       buildProjectTreeEntityRowModel({
         node,
         selection: state.selection,
-        visibility: state.visibility,
+        visibility,
       }),
-    [node, state.selection, state.visibility],
+    [node, state.selection, visibility],
   );
 
   const value = useMemo(() => {
