@@ -4,18 +4,22 @@ import {
   NATIVE_RUST_PHOTON_BACKEND_ID,
   type TransportBackendDiagnostic,
 } from "@transport/domain";
-import {createTransportGeometry} from "@transport/domain/transport/TransportGeometry";
-import {createTransportProblem} from "@transport/domain/transport/TransportProblem";
-import {runNativePhotonSmokeBackend, type NativePhotonSmokeBridge, type NativePhotonSmokePayload} from "./index";
+import contractFixture from "../../../fixtures/contracts/native-execution-v1.json";
+import {
+  createNativeExecutionRequest,
+  NATIVE_EXECUTION_CONTRACT_VERSION,
+  parseNativeBackendEvents,
+  parseNativeExecutionFailure,
+  parseNativeExecutionSuccess,
+  runNativePhotonSmokeBackend,
+  type NativePhotonSmokeBridge,
+  type NativePhotonSmokePayload,
+} from "./index";
 import {createNativePhotonSmokeFixtureProblem} from "./nativePhotonSmokeFixture";
 
 describe("runNativePhotonSmokeBackend", () => {
   it("returns an explicit failure event when no native bridge is available", async () => {
-    const events = await runNativePhotonSmokeBackend(createTransportProblem({
-      id: "problem-1",
-      name: "No Bridge",
-      geometry: createTransportGeometry(),
-    }));
+    const events = await runNativePhotonSmokeBackend(createNativePhotonSmokeFixtureProblem());
 
     expect(events).toEqual(
       expect.arrayContaining([
@@ -26,6 +30,30 @@ describe("runNativePhotonSmokeBackend", () => {
         }),
       ]),
     );
+    expect(events.find((event) => event.type === "runFailed")).toEqual(contractFixture.backendEvents[1]);
+  });
+
+  it("constructs the shared versioned request through the production contract seam", () => {
+    const wireRequest = JSON.parse(JSON.stringify(createNativeExecutionRequest(createNativePhotonSmokeFixtureProblem())));
+    expect(wireRequest).toEqual(contractFixture.request);
+  });
+
+  it("parses shared success and event fixtures while ignoring additive fields", () => {
+    expect(parseNativeExecutionSuccess({...contractFixture.success, additiveFutureField: true})).toEqual({
+      ...contractFixture.success,
+      additiveFutureField: true,
+    });
+    expect(parseNativeBackendEvents(contractFixture.backendEvents)).toEqual(contractFixture.backendEvents);
+  });
+
+  it("rejects contract-version mismatches and unknown event kinds explicitly", () => {
+    expect(() => parseNativeExecutionSuccess({...contractFixture.success, contractVersion: "0.0.0"}))
+      .toThrow(contractFixture.failure.message);
+    expect(() => parseNativeBackendEvents([{type: "future-event"}]))
+      .toThrow("Unknown native backend event kind 'future-event'.");
+    expect(() => parseNativeBackendEvents([{type: "runCompleted"}]))
+      .toThrow("Unknown native backend event kind 'runCompleted'.");
+    expect(parseNativeExecutionFailure(contractFixture.failure)).toEqual(contractFixture.failure);
   });
 
   it("emits a complete ordered backend event stream from an injected native bridge", async () => {
@@ -88,9 +116,9 @@ describe("runNativePhotonSmokeBackend", () => {
       ],
     };
     const bridge: NativePhotonSmokeBridge = {
-      runPhotonSmoke: async (receivedProblem) => {
-        expect(receivedProblem).toBe(problem);
-        return bridgePayload;
+      runPhotonSmoke: async (request) => {
+        expect(request).toEqual({contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION, problem});
+        return {contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION, payload: bridgePayload};
       },
     };
 

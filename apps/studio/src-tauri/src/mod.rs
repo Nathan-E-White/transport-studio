@@ -9,6 +9,7 @@ pub use spacetime_physics;
 pub use transport_engine;
 
 pub const NATIVE_BACKEND_ID: &str = transport_engine::NATIVE_PHOTON_BACKEND_ID;
+pub const NATIVE_EXECUTION_CONTRACT_VERSION: &str = "1.0.0";
 
 pub fn native_backend_metadata() -> transport_engine::BackendMetadata {
     transport_engine::backend_metadata()
@@ -22,32 +23,86 @@ use transport_engine::{
 };
 
 #[tauri::command]
-pub fn run_photon_smoke(problem: TransportProblemDto) -> Result<NativePhotonSmokePayload, String> {
-    let problem = TransportProblem::from(problem);
+pub fn run_photon_smoke(
+    request: NativeExecutionRequest,
+) -> Result<NativeExecutionSuccess, NativeExecutionFailure> {
+    execute_native_request(request)
+}
+
+pub fn execute_native_request(
+    request: NativeExecutionRequest,
+) -> Result<NativeExecutionSuccess, NativeExecutionFailure> {
+    if request.contract_version != NATIVE_EXECUTION_CONTRACT_VERSION {
+        return Err(NativeExecutionFailure {
+            contract_version: NATIVE_EXECUTION_CONTRACT_VERSION.to_string(),
+            code: "native.contract.version_mismatch".to_string(),
+            message: format!(
+                "Unsupported native execution contract version '{}'; expected '{}'.",
+                request.contract_version, NATIVE_EXECUTION_CONTRACT_VERSION
+            ),
+        });
+    }
+
+    let problem_dto: TransportProblemDto =
+        serde_json::from_value(request.problem).map_err(|error| NativeExecutionFailure {
+            contract_version: NATIVE_EXECUTION_CONTRACT_VERSION.to_string(),
+            code: "native.contract.invalid_request".to_string(),
+            message: format!("Native execution request payload is invalid: {error}"),
+        })?;
+    let problem = TransportProblem::from(problem_dto);
     let result = transport_engine::run_photon_smoke(&problem);
 
-    Ok(NativePhotonSmokePayload {
-        run_id: result.run_id,
-        completed_histories: result.completed_histories,
-        total_histories: result.total_histories,
-        tracks: result.tracks.into_iter().map(TrackSampleDto::from).collect(),
-        tally_deltas: result
-            .tally_deltas
-            .into_iter()
-            .map(TallyDeltaDto::from)
-            .collect(),
-        diagnostics: result
-            .diagnostics
-            .into_iter()
-            .map(BackendDiagnosticDto::from)
-            .collect(),
-        warnings: result
-            .provenance
-            .used_simple_coefficients
-            .then_some("simple coefficient smoke kernel".to_string())
-            .into_iter()
-            .collect(),
+    Ok(NativeExecutionSuccess {
+        contract_version: NATIVE_EXECUTION_CONTRACT_VERSION.to_string(),
+        payload: NativePhotonSmokePayload {
+            run_id: result.run_id,
+            completed_histories: result.completed_histories,
+            total_histories: result.total_histories,
+            tracks: result
+                .tracks
+                .into_iter()
+                .map(TrackSampleDto::from)
+                .collect(),
+            tally_deltas: result
+                .tally_deltas
+                .into_iter()
+                .map(TallyDeltaDto::from)
+                .collect(),
+            diagnostics: result
+                .diagnostics
+                .into_iter()
+                .map(BackendDiagnosticDto::from)
+                .collect(),
+            warnings: result
+                .provenance
+                .used_simple_coefficients
+                .then_some("simple coefficient smoke kernel".to_string())
+                .into_iter()
+                .collect(),
+        },
     })
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeExecutionRequest {
+    contract_version: String,
+    problem: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeExecutionSuccess {
+    contract_version: String,
+    payload: NativePhotonSmokePayload,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeExecutionFailure {
+    contract_version: String,
+    code: String,
+    message: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -69,7 +124,11 @@ struct TransportGeometryDto {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 enum GeometryEntityDto {
     Box {
         id: String,
@@ -135,7 +194,11 @@ struct MaterialDto {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 enum SourceDto {
     PointSource {
         id: String,
@@ -184,7 +247,11 @@ enum ParticleKindDto {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 enum TallyDto {
     CellFlux {
         id: String,
@@ -229,7 +296,7 @@ struct RunSettingsDto {
     max_steps_per_history: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativePhotonSmokePayload {
     run_id: String,
@@ -241,20 +308,20 @@ pub struct NativePhotonSmokePayload {
     warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TrackSampleDto {
     history_id: String,
     events: Vec<ParticleEventDto>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ParticleEventDto {
     history_id: String,
     particle_id: String,
     #[serde(rename = "type")]
-    event_type: &'static str,
+    event_type: String,
     position: Vec3Dto,
     direction: Vec3Dto,
     energy_mev: f64,
@@ -265,20 +332,42 @@ struct ParticleEventDto {
     reason: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TallyDeltaDto {
     tally_id: String,
     scores: Vec<f64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct BackendDiagnosticDto {
-    level: &'static str,
+pub struct BackendDiagnosticDto {
+    level: String,
     code: String,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     entity_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    problem_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum NativeBackendEventDto {
+    Diagnostic {
+        run_id: Option<String>,
+        diagnostic: BackendDiagnosticDto,
+    },
+    RunFailed {
+        run_id: Option<String>,
+        diagnostic: BackendDiagnosticDto,
+    },
 }
 
 impl From<TransportProblemDto> for TransportProblem {
@@ -286,8 +375,17 @@ impl From<TransportProblemDto> for TransportProblem {
         Self {
             id: problem.id,
             name: problem.name,
-            geometry: problem.geometry.entities.into_iter().map(GeometryEntity::from).collect(),
-            materials: problem.materials.into_iter().map(transport_engine::Material::from).collect(),
+            geometry: problem
+                .geometry
+                .entities
+                .into_iter()
+                .map(GeometryEntity::from)
+                .collect(),
+            materials: problem
+                .materials
+                .into_iter()
+                .map(transport_engine::Material::from)
+                .collect(),
             sources: problem.sources.into_iter().map(Source::from).collect(),
             tallies: problem.tallies.into_iter().map(Tally::from).collect(),
             settings: RunSettings {
@@ -303,21 +401,40 @@ impl From<TransportProblemDto> for TransportProblem {
 impl From<GeometryEntityDto> for GeometryEntity {
     fn from(entity: GeometryEntityDto) -> Self {
         match entity {
-            GeometryEntityDto::Box { id, name, material_id, transform, size } => GeometryEntity::Box {
+            GeometryEntityDto::Box {
+                id,
+                name,
+                material_id,
+                transform,
+                size,
+            } => GeometryEntity::Box {
                 id,
                 name,
                 material_id,
                 transform: transform.into(),
                 size: size.into(),
             },
-            GeometryEntityDto::Sphere { id, name, material_id, transform, radius } => GeometryEntity::Sphere {
+            GeometryEntityDto::Sphere {
+                id,
+                name,
+                material_id,
+                transform,
+                radius,
+            } => GeometryEntity::Sphere {
                 id,
                 name,
                 material_id,
                 transform: transform.into(),
                 radius,
             },
-            GeometryEntityDto::Cylinder { id, name, material_id, transform, radius, height } => GeometryEntity::Cylinder {
+            GeometryEntityDto::Cylinder {
+                id,
+                name,
+                material_id,
+                transform,
+                radius,
+                height,
+            } => GeometryEntity::Cylinder {
                 id,
                 name,
                 material_id,
@@ -325,10 +442,26 @@ impl From<GeometryEntityDto> for GeometryEntity {
                 radius,
                 height,
             },
-            GeometryEntityDto::Mesh { id, name } => GeometryEntity::Unsupported { id, name, kind: "mesh".to_string() },
-            GeometryEntityDto::VoxelRegion { id, name } => GeometryEntity::Unsupported { id, name, kind: "voxel-region".to_string() },
-            GeometryEntityDto::ImplicitRegion { id, name } => GeometryEntity::Unsupported { id, name, kind: "implicit-region".to_string() },
-            GeometryEntityDto::CsgRegion { id, name } => GeometryEntity::Unsupported { id, name, kind: "csg-region".to_string() },
+            GeometryEntityDto::Mesh { id, name } => GeometryEntity::Unsupported {
+                id,
+                name,
+                kind: "mesh".to_string(),
+            },
+            GeometryEntityDto::VoxelRegion { id, name } => GeometryEntity::Unsupported {
+                id,
+                name,
+                kind: "voxel-region".to_string(),
+            },
+            GeometryEntityDto::ImplicitRegion { id, name } => GeometryEntity::Unsupported {
+                id,
+                name,
+                kind: "implicit-region".to_string(),
+            },
+            GeometryEntityDto::CsgRegion { id, name } => GeometryEntity::Unsupported {
+                id,
+                name,
+                kind: "csg-region".to_string(),
+            },
         }
     }
 }
@@ -347,7 +480,14 @@ impl From<MaterialDto> for transport_engine::Material {
 impl From<SourceDto> for Source {
     fn from(source: SourceDto) -> Self {
         match source {
-            SourceDto::PointSource { id, name, particle, position, energy_mev, strength } => Source::Point {
+            SourceDto::PointSource {
+                id,
+                name,
+                particle,
+                position,
+                energy_mev,
+                strength,
+            } => Source::Point {
                 id,
                 name,
                 particle: particle.into(),
@@ -355,7 +495,15 @@ impl From<SourceDto> for Source {
                 energy_mev,
                 strength,
             },
-            SourceDto::BeamSource { id, name, particle, position, direction, energy_mev, strength } => Source::Beam {
+            SourceDto::BeamSource {
+                id,
+                name,
+                particle,
+                position,
+                direction,
+                energy_mev,
+                strength,
+            } => Source::Beam {
                 id,
                 name,
                 particle: particle.into(),
@@ -364,7 +512,14 @@ impl From<SourceDto> for Source {
                 energy_mev,
                 strength,
             },
-            SourceDto::IsotropicSource { id, name, particle, position, energy_mev, strength } => Source::Isotropic {
+            SourceDto::IsotropicSource {
+                id,
+                name,
+                particle,
+                position,
+                energy_mev,
+                strength,
+            } => Source::Isotropic {
                 id,
                 name,
                 particle: particle.into(),
@@ -372,8 +527,16 @@ impl From<SourceDto> for Source {
                 energy_mev,
                 strength,
             },
-            SourceDto::SurfaceSource { id, name } => Source::Unsupported { id, name, kind: "surface-source".to_string() },
-            SourceDto::RegionSource { id, name } => Source::Unsupported { id, name, kind: "region-source".to_string() },
+            SourceDto::SurfaceSource { id, name } => Source::Unsupported {
+                id,
+                name,
+                kind: "surface-source".to_string(),
+            },
+            SourceDto::RegionSource { id, name } => Source::Unsupported {
+                id,
+                name,
+                kind: "region-source".to_string(),
+            },
         }
     }
 }
@@ -381,15 +544,30 @@ impl From<SourceDto> for Source {
 impl From<TallyDto> for Tally {
     fn from(tally: TallyDto) -> Self {
         match tally {
-            TallyDto::CellFlux { id, name, particle, entity_id } => Tally {
+            TallyDto::CellFlux {
+                id,
+                name,
+                particle,
+                entity_id,
+            } => Tally {
                 id,
                 name,
                 particle: particle.into(),
                 kind: TallyKind::CellFlux,
                 target_entity_id: Some(entity_id),
             },
-            TallyDto::TrackLength { id, name, particle, entity_id }
-            | TallyDto::PulseHeight { id, name, particle, entity_id } => Tally {
+            TallyDto::TrackLength {
+                id,
+                name,
+                particle,
+                entity_id,
+            }
+            | TallyDto::PulseHeight {
+                id,
+                name,
+                particle,
+                entity_id,
+            } => Tally {
                 id,
                 name,
                 particle: particle.into(),
@@ -430,13 +608,21 @@ impl From<Transform3Dto> for Transform3 {
 
 impl From<Vec3Dto> for Vec3 {
     fn from(value: Vec3Dto) -> Self {
-        Self { x: value.x, y: value.y, z: value.z }
+        Self {
+            x: value.x,
+            y: value.y,
+            z: value.z,
+        }
     }
 }
 
 impl From<Vec3> for Vec3Dto {
     fn from(value: Vec3) -> Self {
-        Self { x: value.x, y: value.y, z: value.z }
+        Self {
+            x: value.x,
+            y: value.y,
+            z: value.z,
+        }
     }
 }
 
@@ -444,7 +630,11 @@ impl From<TrackSample> for TrackSampleDto {
     fn from(sample: TrackSample) -> Self {
         Self {
             history_id: sample.history_id,
-            events: sample.events.into_iter().map(ParticleEventDto::from).collect(),
+            events: sample
+                .events
+                .into_iter()
+                .map(ParticleEventDto::from)
+                .collect(),
         }
     }
 }
@@ -462,7 +652,8 @@ impl From<ParticleEvent> for ParticleEventDto {
                 ParticleEventType::Absorb => "absorb",
                 ParticleEventType::Escape => "escape",
                 ParticleEventType::ErrorLost => "error-lost",
-            },
+            }
+            .to_string(),
             position: event.position.into(),
             direction: event.direction.into(),
             energy_mev: event.energy_mev,
@@ -491,10 +682,13 @@ impl From<EngineDiagnostic> for BackendDiagnosticDto {
                 DiagnosticLevel::Info => "info",
                 DiagnosticLevel::Warning => "warning",
                 DiagnosticLevel::Error => "error",
-            },
+            }
+            .to_string(),
             code: diagnostic.code,
             message: diagnostic.message,
             entity_id: diagnostic.entity_id,
+            problem_id: None,
+            run_id: None,
         }
     }
 }
@@ -504,85 +698,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn run_photon_smoke_accepts_canonical_fixture_json() {
-        let problem: TransportProblemDto = serde_json::from_str(
-            r##"{
-                "id": "fixture-photon-shielding",
-                "name": "Native Photon Smoke Fixture",
-                "status": "compiled",
-                "geometry": {
-                    "entities": [
-                        {
-                            "id": "shield-box",
-                            "kind": "box",
-                            "name": "Shield Box",
-                            "materialId": "mat-water",
-                            "transform": {
-                                "position": {"x": 0.0, "y": 0.0, "z": 0.0},
-                                "rotation": {"x": 0.0, "y": 0.0, "z": 0.0}
-                            },
-                            "size": {"x": 2.0, "y": 4.0, "z": 4.0}
-                        }
-                    ],
-                    "surfaces": [],
-                    "regions": []
-                },
-                "materials": [
-                    {
-                        "id": "mat-water",
-                        "name": "Water Shield",
-                        "density": 1.0,
-                        "nuclides": [
-                            {"nuclide": "H1", "fraction": 2.0, "basis": "atom"},
-                            {"nuclide": "O16", "fraction": 1.0, "basis": "atom"}
-                        ],
-                        "color": "#38bdf8"
-                    }
-                ],
-                "sources": [
-                    {
-                        "id": "beam-1",
-                        "kind": "beam-source",
-                        "name": "Photon Beam",
-                        "particle": "photon",
-                        "position": {"x": -4.0, "y": 0.0, "z": 0.0},
-                        "direction": {"x": 1.0, "y": 0.0, "z": 0.0},
-                        "energyMeV": 1.0,
-                        "strength": 1.0,
-                        "enabled": true
-                    }
-                ],
-                "tallies": [
-                    {
-                        "id": "shield-track-length",
-                        "kind": "cell-flux",
-                        "name": "Shield Track Length",
-                        "particle": "photon",
-                        "entityId": "shield-box"
-                    }
-                ],
-                "settings": {
-                    "histories": 16,
-                    "seed": 1337
-                },
-                "metadata": {
-                    "sourceSceneId": "fixture-photon-shielding",
-                    "targetBackendId": "native-rust-photon-smoke",
-                    "tags": ["mwe", "native-photon-smoke"]
-                }
-            }"##,
+    fn adapter_consumes_the_shared_contract_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/contracts/native-execution-v1.json"
+        ))
+        .expect("shared fixture should be valid JSON");
+        let request: NativeExecutionRequest = serde_json::from_value(fixture["request"].clone())
+            .expect("shared request should match the native adapter DTO");
+        assert_eq!(request.contract_version, NATIVE_EXECUTION_CONTRACT_VERSION);
+        assert_eq!(serde_json::to_value(&request).unwrap(), fixture["request"]);
+
+        let success: NativeExecutionSuccess = serde_json::from_value(fixture["success"].clone())
+            .expect("shared success should match the native adapter DTO");
+        assert_eq!(serde_json::to_value(success).unwrap(), fixture["success"]);
+
+        let events: Vec<NativeBackendEventDto> = serde_json::from_value(
+            fixture["backendEvents"].clone(),
         )
-        .expect("fixture JSON should match the Tauri DTO contract");
+        .expect("shared diagnostic and failure events should match the native adapter DTOs");
+        assert_eq!(
+            serde_json::to_value(events).unwrap(),
+            fixture["backendEvents"]
+        );
+    }
 
-        let payload = run_photon_smoke(problem).expect("native smoke command should succeed");
+    #[test]
+    fn adapter_rejects_version_mismatch_and_ignores_unknown_fields() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/contracts/native-execution-v1.json"
+        ))
+        .expect("shared fixture should be valid JSON");
+        let mut request = fixture["request"].clone();
+        request["additiveFutureField"] = serde_json::json!(true);
+        let compatible: NativeExecutionRequest = serde_json::from_value(request.clone())
+            .expect("unknown fields are ignored by the v1 compatibility rule");
+        assert!(execute_native_request(compatible).is_ok());
 
-        assert_eq!(payload.completed_histories, 16);
-        assert_eq!(payload.total_histories, 16);
-        assert!(!payload.tracks.is_empty());
-        assert!(payload.warnings.iter().any(|warning| warning == "simple coefficient smoke kernel"));
-        assert!(payload
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == "physics_data.simple_coefficients"));
+        request["contractVersion"] = serde_json::json!("0.0.0");
+        let mismatch: NativeExecutionRequest = serde_json::from_value(request).unwrap();
+        let failure = execute_native_request(mismatch).unwrap_err();
+        assert_eq!(failure.code, fixture["failure"]["code"]);
+        assert_eq!(failure.message, fixture["failure"]["message"]);
+        assert_eq!(serde_json::to_value(failure).unwrap(), fixture["failure"]);
+
+        assert!(
+            serde_json::from_value::<Vec<NativeBackendEventDto>>(
+                serde_json::json!([{"type": "futureEvent"}])
+            )
+            .is_err()
+        );
     }
 }

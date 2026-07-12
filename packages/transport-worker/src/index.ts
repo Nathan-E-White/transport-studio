@@ -12,6 +12,24 @@ import {
   type TransportTrackSample
 } from "@transport/domain";
 import type {TransportProblem} from "@transport/domain/transport/TransportProblem";
+import {
+  createNativeExecutionRequest,
+  parseNativeExecutionSuccess,
+  type NativeExecutionRequest,
+  type NativePhotonSmokePayload,
+} from "./nativeExecutionContract";
+
+export {
+  createNativeExecutionRequest,
+  NATIVE_EXECUTION_CONTRACT_VERSION,
+  parseNativeBackendEvents,
+  parseNativeExecutionFailure,
+  parseNativeExecutionSuccess,
+  type NativeExecutionFailure,
+  type NativeExecutionRequest,
+  type NativeExecutionSuccess,
+  type NativePhotonSmokePayload,
+} from "./nativeExecutionContract";
 
 export {
   createNativePhotonSmokeFixtureProblem,
@@ -37,17 +55,7 @@ export type WorkerResponse =
   | { readonly type: "runFailed"; readonly message: string };
 
 export interface NativePhotonSmokeBridge {
-  readonly runPhotonSmoke: (problem: TransportProblem) => Promise<NativePhotonSmokePayload>;
-}
-
-export interface NativePhotonSmokePayload {
-  readonly runId: string;
-  readonly tracks: readonly TransportTrackSample[];
-  readonly tallyDeltas: readonly TransportTallyDelta[];
-  readonly diagnostics: readonly TransportBackendDiagnostic[];
-  readonly completedHistories: number;
-  readonly totalHistories: number;
-  readonly warnings: readonly string[];
+  readonly runPhotonSmoke: (request: NativeExecutionRequest) => Promise<unknown>;
 }
 
 export async function runNativePhotonSmokeBackend(
@@ -67,7 +75,8 @@ export async function runNativePhotonSmokeBackend(
     ];
   }
 
-  const payload = await bridge.runPhotonSmoke(problem);
+  const response = parseNativeExecutionSuccess(await bridge.runPhotonSmoke(createNativeExecutionRequest(problem)));
+  const payload = response.payload;
 
   return [
     { type: "backendMetadata", metadata: nativeRustPhotonBackendMetadata },

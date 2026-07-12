@@ -1,5 +1,9 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {createNativePhotonSmokeFixtureProblem} from "@transport/transport-worker";
+import {
+    createNativeExecutionRequest,
+    createNativePhotonSmokeFixtureProblem,
+    NATIVE_EXECUTION_CONTRACT_VERSION,
+} from "@transport/transport-worker";
 import {createTauriNativePhotonSmokeBridge, RUN_PHOTON_SMOKE_COMMAND} from "./nativePhotonSmokeTauriBridge";
 import {invoke} from "@tauri-apps/api/core";
 
@@ -31,11 +35,27 @@ describe("createTauriNativePhotonSmokeBridge", () => {
             warnings: ["simple coefficient smoke kernel"],
         };
         (window as Window & {__TAURI_INTERNALS__?: unknown}).__TAURI_INTERNALS__ = {};
-        invokeMock.mockResolvedValue(payload);
+        const response = {contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION, payload};
+        invokeMock.mockResolvedValue(response);
 
         const bridge = createTauriNativePhotonSmokeBridge();
 
-        await expect(bridge?.runPhotonSmoke(problem)).resolves.toBe(payload);
-        expect(invokeMock).toHaveBeenCalledWith(RUN_PHOTON_SMOKE_COMMAND, {problem});
+        const request = createNativeExecutionRequest(problem);
+        await expect(bridge?.runPhotonSmoke(request)).resolves.toBe(response);
+        expect(invokeMock).toHaveBeenCalledWith(RUN_PHOTON_SMOKE_COMMAND, {request});
+    });
+
+    it("translates a structured native contract failure", async () => {
+        const failure = {
+            contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+            code: "native.contract.version_mismatch",
+            message: "version mismatch",
+        };
+        (window as Window & {__TAURI_INTERNALS__?: unknown}).__TAURI_INTERNALS__ = {};
+        invokeMock.mockRejectedValue(failure);
+
+        const bridge = createTauriNativePhotonSmokeBridge();
+        await expect(bridge?.runPhotonSmoke(createNativeExecutionRequest(createNativePhotonSmokeFixtureProblem())))
+            .rejects.toEqual(failure);
     });
 });
