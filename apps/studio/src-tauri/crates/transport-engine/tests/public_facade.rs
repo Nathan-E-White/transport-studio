@@ -1,8 +1,8 @@
 use transport_engine::{
     GeometryEntity, Material, ParticleEventType, ParticleKind, RunSettings,
     SimplePhotonCoefficients, Source, Tally, TallyKind, Transform3, TransportProblem,
-    V1SolverStatus, Vec3, compare_v1_results, prepare_v1_input_bundle, run_photon_smoke,
-    run_v1_solver_bundle, v1_solver_registry,
+    V1SolverStatus, Vec3, backend_metadata, compare_v1_results, prepare_v1_input_bundle,
+    run_photon_smoke, run_v1_solver_bundle, v1_solver_registry,
 };
 
 #[test]
@@ -82,13 +82,36 @@ fn v1_orchestration_and_results_remain_available_from_the_root_facade() {
     let bundle = prepare_v1_input_bundle("mock-fields", "problem-1", "fingerprint-1")
         .expect("runnable solver input");
     let first = run_v1_solver_bundle(&bundle);
+    let cloned = first.clone();
     let second = run_v1_solver_bundle(&bundle);
     let comparison = compare_v1_results(&first, &second);
 
+    assert_eq!(first, cloned);
+    assert!(format!("{first:?}").contains("mock-fields"));
     assert_eq!(first.fields, second.fields);
     assert!(comparison.same_problem);
     assert_eq!(comparison.max_abs_delta, 0.0);
     assert!(comparison.diagnostics.is_empty());
+}
+
+#[test]
+fn photon_metadata_and_results_remain_root_facade_types() {
+    let metadata = backend_metadata();
+    assert_eq!(metadata, metadata.clone());
+    assert!(format!("{metadata:?}").contains("native-rust-photon-smoke"));
+
+    let result = run_photon_smoke(&photon_problem(
+        GeometryEntity::Sphere {
+            id: "sphere-1".into(),
+            name: "Sphere".into(),
+            material_id: "void".into(),
+            transform: centered_transform(),
+            radius: 1.0,
+        },
+        "sphere-1",
+    ));
+    assert_eq!(result, result.clone());
+    assert!(format!("{result:?}").contains("problem-1"));
 }
 
 fn photon_problem(geometry: GeometryEntity, entity_id: &str) -> TransportProblem {

@@ -1,4 +1,3 @@
-use crate::photon_smoke::TransportProblem;
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Vec3 {
     pub x: f64,
@@ -57,12 +56,11 @@ impl GeometryHit {
 }
 
 pub(crate) fn nearest_intersection(
-    problem: &TransportProblem,
+    geometry: &[GeometryEntity],
     origin: Vec3,
     direction: Vec3,
 ) -> Option<GeometryHit> {
-    problem
-        .geometry
+    geometry
         .iter()
         .filter_map(|entity| intersect_entity(entity, origin, direction))
         .filter(|hit| hit.exit_distance > 0.0)

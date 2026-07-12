@@ -73,6 +73,7 @@ pub enum DiagnosticLevel {
     Warning,
     Error,
 }
+#[derive(Debug, Clone, PartialEq)]
 pub struct V1ResultDataset {
     pub solver_id: String,
     pub problem_id: String,

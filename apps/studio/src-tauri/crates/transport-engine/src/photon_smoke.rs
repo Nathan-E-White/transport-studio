@@ -4,6 +4,7 @@ use crate::diagnostics::{
 };
 use crate::geometry::{GeometryEntity, Vec3, nearest_intersection};
 pub const NATIVE_PHOTON_BACKEND_ID: &str = "native-rust-photon-smoke";
+#[derive(Debug, Clone, PartialEq)]
 pub struct BackendMetadata {
     pub id: &'static str,
     pub name: &'static str,
@@ -145,7 +146,8 @@ pub fn run_photon_smoke(problem: &TransportProblem) -> RunResult {
         };
 
         let mut history = start_history(source, history_index, &mut rng);
-        let maybe_hit = nearest_intersection(problem, history.position, history.direction);
+        let maybe_hit =
+            nearest_intersection(&problem.geometry, history.position, history.direction);
         history.events.push(event(
             history_index,
             ParticleEventType::Birth,
