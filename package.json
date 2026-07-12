@@ -30,7 +30,11 @@
     "test:mutation": "stryker run",
     "test:frontend": "bun run typecheck && bun run test:unit && bun run test:e2e",
     "test:studio": "vitest run --root apps/studio --config vite.config.ts",
-    "test:studio:app": "vitest run --root apps/studio --config vite.config.ts src/app"
+    "test:studio:app": "vitest run --root apps/studio --config vite.config.ts src/app",
+    "hygiene:size": "node scripts/hygiene-size.mjs",
+    "hygiene:worktrees": "node scripts/worktree-retire.mjs",
+    "rust:check": "node scripts/cargo-target.mjs test cargo check --manifest-path apps/studio/src-tauri/Cargo.toml",
+    "rust:test": "node scripts/cargo-target.mjs test cargo test --manifest-path apps/studio/src-tauri/Cargo.toml"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

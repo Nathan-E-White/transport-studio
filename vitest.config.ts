@@ -62,6 +62,7 @@ export default defineConfig({
     include: [
       "apps/**/*.{test,spec}.{ts,tsx}",
       "packages/**/*.{test,spec}.{ts,tsx}",
+      "scripts/**/*.{test,spec}.ts",
     ],
     exclude: [
       "**/node_modules/**",

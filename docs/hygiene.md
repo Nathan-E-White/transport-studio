@@ -1,0 +1,7 @@
+# Developer hygiene
+
+Run `bun run hygiene:size` for a read-only report of free disk space, registered worktrees, duplicate dependencies, generated outputs, checkout-local Rust targets, and named external Cargo caches. The command reports absent optional paths as skipped and never fetches, deletes, prunes, or rewrites state.
+
+Tauri development, Tauri builds, Rust checks, and Rust tests route Cargo output to named paths below `/tmp/transport-studio-cargo-target`. Override the corresponding `TRANSPORT_CARGO_TARGET_*` variable when a durable or larger cache volume is preferable. Do not add checkout-local `target`, dependency, coverage, or generated output to Git.
+
+Worktree retirement is separate from cache cleanup. Preview registered sibling worktrees with `bun run hygiene:worktrees -- --worktree ../devs/example`. Dry-runs use local refs. Add `--execute` only after reviewing the classification and archive destination; execution refreshes `origin` before making merge decisions. Clean worktrees must be merged into `origin/main`. Dirty attached worktrees are archived under collision-safe, timestamped directories in `../archives/worktrees` with status metadata, staged and unstaged binary patches, untracked files, and a verified Git bundle containing the worktree HEAD. Dirty detached worktrees require manual preservation. Branches are retained. The command refuses the primary checkout, unknown paths, unavailable integration refs, and clean unmerged branches.
