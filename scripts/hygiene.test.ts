@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,37 @@ describe("hygiene reporting", () => {
   });
   test("reports unavailable integration refs", () => {
     expect(mergeState(process.cwd(), "HEAD", "refs/does-not-exist")).toBe("unavailable");
+  });
+
+  test("CLI reports clean, dirty, merged, missing, and low-disk fixtures", () => {
+    const root = mkdtempSync(resolve(tmpdir(), "transport-audit-"));
+    const remote = resolve(root, "remote.git");
+    const repo = resolve(root, "repo");
+    const dirty = resolve(root, "dirty");
+    const bin = resolve(root, "bin");
+    try {
+      git(root, "init", "--bare", remote);
+      git(root, "init", "-b", "main", repo);
+      git(repo, "config", "user.name", "Hygiene Test");
+      git(repo, "config", "user.email", "hygiene@example.test");
+      git(repo, "config", "commit.gpgsign", "false");
+      writeFileSync(resolve(repo, "tracked.txt"), "baseline\n");
+      git(repo, "add", "tracked.txt");
+      git(repo, "commit", "-m", "baseline");
+      git(repo, "remote", "add", "origin", remote);
+      git(repo, "push", "-u", "origin", "main");
+      git(repo, "worktree", "add", "-b", "dirty", dirty);
+      writeFileSync(resolve(dirty, "tracked.txt"), "dirty\n");
+      mkdirSync(bin);
+      const fakeDf = resolve(bin, "df");
+      writeFileSync(fakeDf, "#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\nfixture 1000 488 512 49%% /\\n'\n");
+      chmodSync(fakeDf, 0o755);
+      const output = execFileSync(process.execPath, [resolve(scriptsDir, "hygiene-size.mjs")], { cwd: repo, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+      expect(output).toContain("free disk: 512.0 KiB");
+      expect(output).toMatch(/branch=main state=clean merge=merged/);
+      expect(output).toMatch(/branch=dirty state=dirty merge=merged/);
+      expect(output).toContain("generated/dist: skipped");
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
 
