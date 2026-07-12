@@ -6,24 +6,41 @@
 //! physical or numerical choices without exposing raw storage policy.
 
 use crate::{
-    BoundaryConditions3, BssnGridFields, ConservativeMatterCell, ConservativeMatterGrid,
-    CoordinateTime, CoupledBssnMatterState, CoupledBssnMatterStepper, IdealGasEquationOfState,
-    PhysicsError, StressEnergyTensor, SymmetricSpatialTensor2, TimeDuration, UniformGrid3, vec3,
+    AlgebraicBssnGaugeEnforcer, BoundaryConditions3, BssnCellState, BssnGeometryStepper,
+    BssnGridFields, ConservativeMatterCell, ConservativeMatterGrid, CoordinateTime,
+    CoupledBssnMatterState, CoupledBssnMatterStepper, EvolutionGridField3, IdealGasEquationOfState,
+    NoopMatterRadiationStepper, PhysicsError, StressEnergyTensor, SymmetricSpatialTensor2,
+    TimeDuration, UniformGrid3, vec3,
 };
 
 const INTERNAL_GHOST_WIDTH: usize = 2;
 const VACUUM_IDEAL_GAS_GAMMA: f64 = 5.0 / 3.0;
+/// Maximum accepted L-infinity residual for the flat BSSN tracer bullet.
+pub const FLAT_BSSN_CONSTRAINT_TOLERANCE: f64 = 1.0e-12;
+/// Maximum accepted lapse or shift departure from flat gauge data.
+pub const FLAT_GAUGE_TOLERANCE: f64 = 1.0e-12;
+
+/// Staged BSSN gauge selected by ADR-0007.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum GaugePolicy {
+    OnePlusLogGammaDriver,
+}
 
 /// Caller intent needed to construct the first flat-empty kernel state.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct KernelConfig {
     grid: UniformGrid3,
     initial_time: CoordinateTime,
+    gauge_policy: GaugePolicy,
 }
 
 impl KernelConfig {
     pub const fn flat_empty(grid: UniformGrid3, initial_time: CoordinateTime) -> Self {
-        Self { grid, initial_time }
+        Self {
+            grid,
+            initial_time,
+            gauge_policy: GaugePolicy::OnePlusLogGammaDriver,
+        }
     }
 }
 
@@ -101,11 +118,7 @@ impl KernelState {
 
             if geometry.lapse != 1.0
                 || geometry.shift != vec3::ZERO
-                || geometry.conformal_metric != SymmetricSpatialTensor2::IDENTITY
-                || geometry.conformal_factor != 0.0
-                || geometry.trace_extrinsic_curvature != 0.0
-                || geometry.trace_free_curvature != SymmetricSpatialTensor2::ZERO
-                || geometry.connection_functions != vec3::ZERO
+                || !is_flat_bssn_spatial_geometry(&geometry)
                 || matter != ConservativeMatterCell::VACUUM
                 || *deposited != StressEnergyTensor::ZERO
             {
@@ -140,6 +153,27 @@ pub struct BssnEvidence {
     pub momentum_linf: f64,
     pub determinant_linf: f64,
     pub trace_free_linf: f64,
+    pub gauge: GaugeEvidence,
+    pub algebraic_constraints: AlgebraicConstraintStatus,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum GaugeVariableStatus {
+    FlatPreserved,
+    DepartedFromFlat,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct GaugeEvidence {
+    pub policy: GaugePolicy,
+    pub lapse: GaugeVariableStatus,
+    pub shift: GaugeVariableStatus,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum AlgebraicConstraintStatus {
+    Satisfied,
+    Violated,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -222,17 +256,33 @@ impl DynamicalSpacetimeKernel {
 
         let start_time = state.time();
         let mut next_state = state.clone();
-        let diagnostics =
-            match CoupledBssnMatterStepper::noop().step(&mut next_state.inner, &[], dt) {
-                Ok(diagnostics) => diagnostics,
-                Err(error) => {
-                    return Err(KernelStepFailure {
-                        error: KernelStepError::Physics(error),
-                        state: Box::new(state),
-                    });
-                }
-            };
+        let diagnostics = match flat_bssn_stepper().step(&mut next_state.inner, &[], dt) {
+            Ok(diagnostics) => diagnostics,
+            Err(error) => {
+                return Err(KernelStepFailure {
+                    error: KernelStepError::Physics(error),
+                    state: Box::new(state),
+                });
+            }
+        };
         let constraints = diagnostics.constraints;
+        let gauge = match gauge_evidence(self.config.gauge_policy, &next_state.inner.geometry) {
+            Ok(gauge) => gauge,
+            Err(error) => {
+                return Err(KernelStepFailure {
+                    error: KernelStepError::Physics(error),
+                    state: Box::new(state),
+                });
+            }
+        };
+        let algebraic_constraints = if constraints.determinant_reduction.linf
+            <= FLAT_BSSN_CONSTRAINT_TOLERANCE
+            && constraints.trace_free_reduction.linf <= FLAT_BSSN_CONSTRAINT_TOLERANCE
+        {
+            AlgebraicConstraintStatus::Satisfied
+        } else {
+            AlgebraicConstraintStatus::Violated
+        };
 
         Ok(KernelStepResult {
             state: next_state,
@@ -249,6 +299,8 @@ impl DynamicalSpacetimeKernel {
                     momentum_linf: constraints.adm.momentum_reduction.linf,
                     determinant_linf: constraints.determinant_reduction.linf,
                     trace_free_linf: constraints.trace_free_reduction.linf,
+                    gauge,
+                    algebraic_constraints,
                 },
                 grhd: FacetEvidence::NOT_EVALUATED,
                 radiation: FacetEvidence::NOT_EVALUATED,
@@ -258,4 +310,84 @@ impl DynamicalSpacetimeKernel {
             },
         })
     }
+}
+
+fn gauge_evidence(
+    policy: GaugePolicy,
+    geometry: &BssnGridFields,
+) -> Result<GaugeEvidence, PhysicsError> {
+    let mut lapse = GaugeVariableStatus::FlatPreserved;
+    let mut shift = GaugeVariableStatus::FlatPreserved;
+
+    for index in 0..geometry.lapse.interior_len() {
+        let cell = geometry.cell_state(index)?;
+        if (cell.lapse - 1.0).abs() > FLAT_GAUGE_TOLERANCE {
+            lapse = GaugeVariableStatus::DepartedFromFlat;
+        }
+        if cell.shift.norm() > FLAT_GAUGE_TOLERANCE {
+            shift = GaugeVariableStatus::DepartedFromFlat;
+        }
+    }
+
+    Ok(GaugeEvidence {
+        policy,
+        lapse,
+        shift,
+    })
+}
+
+/// First BSSN evolution backend: evaluate the flat-vacuum RHS, which is identically zero.
+/// Unlike the kernel skeleton's generic no-op, this path validates the assumptions that make
+/// that zero RHS physically meaningful before advancing the coupled step.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct FlatVacuumBssnGeometryStepper;
+
+impl BssnGeometryStepper for FlatVacuumBssnGeometryStepper {
+    fn evolve_geometry(
+        &self,
+        geometry: &mut BssnGridFields,
+        stress_energy: &EvolutionGridField3<StressEnergyTensor>,
+        dt: TimeDuration,
+    ) -> Result<(), PhysicsError> {
+        if !dt.seconds().is_finite() || geometry.grid != stress_energy.grid {
+            return Err(PhysicsError::InvalidGrid);
+        }
+        for index in 0..stress_energy.interior_len() {
+            let [i, j, k] = stress_energy.interior_ijk_for_index(index)?;
+            if *stress_energy.get_interior(i, j, k)? != StressEnergyTensor::ZERO {
+                return Err(PhysicsError::InvalidStep);
+            }
+        }
+        for index in 0..geometry.lapse.interior_len() {
+            let cell = geometry.cell_state(index)?;
+            if !is_flat_bssn_spatial_geometry(&cell) {
+                return Err(PhysicsError::InvalidStep);
+            }
+        }
+
+        geometry.apply_boundary_conditions()
+    }
+}
+
+fn is_flat_bssn_spatial_geometry(cell: &BssnCellState) -> bool {
+    cell.conformal_metric == SymmetricSpatialTensor2::IDENTITY
+        && cell.conformal_factor == 0.0
+        && cell.trace_extrinsic_curvature == 0.0
+        && cell.trace_free_curvature == SymmetricSpatialTensor2::ZERO
+        && cell.connection_functions == vec3::ZERO
+}
+
+fn flat_bssn_stepper() -> CoupledBssnMatterStepper<
+    FlatVacuumBssnGeometryStepper,
+    NoopMatterRadiationStepper,
+    AlgebraicBssnGaugeEnforcer,
+> {
+    CoupledBssnMatterStepper::new(
+        FlatVacuumBssnGeometryStepper,
+        NoopMatterRadiationStepper,
+        AlgebraicBssnGaugeEnforcer,
+        crate::ConstraintDiagnosticsOperator::SECOND_ORDER,
+        1,
+        BoundaryConditions3::OUTFLOW,
+    )
 }
