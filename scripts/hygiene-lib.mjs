@@ -1,0 +1,14 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
+import { resolve } from "node:path";
+
+export const GENERATED_PATHS = ["node_modules", "apps/studio/node_modules", "apps/studio/src-tauri/target", "dist", "coverage", "playwright-report", "test-results", ".vite"];
+export function run(command, args, options = {}) { return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options }).trim(); }
+export function tryRun(command, args, options = {}) { try { return { ok: true, output: run(command, args, options) }; } catch (error) { return { ok: false, output: "", error: error instanceof Error ? error.message : String(error) }; } }
+export function parseWorktreePorcelain(text) { const records=[]; let current=null; for(const line of text.split("\n")){ if(line.startsWith("worktree ")){ if(current) records.push(current); current={path:line.slice(9),branch:"(detached)",head:""}; } else if(current&&line.startsWith("HEAD ")) current.head=line.slice(5); else if(current&&line.startsWith("branch refs/heads/")) current.branch=line.slice(18); } if(current) records.push(current); return records; }
+export function bytesForPath(path) { if(!existsSync(path)) return null; const result=tryRun("du",["-sk",path]); if(!result.ok) return null; const kib=Number(result.output.split(/\s+/)[0]); return Number.isFinite(kib)?kib*1024:null; }
+export function formatBytes(bytes) { if(bytes===null) return "skipped"; const units=["B","KiB","MiB","GiB","TiB"]; let value=bytes,unit=0; while(value>=1024&&unit<units.length-1){value/=1024;unit+=1;} return `${value.toFixed(unit===0?0:1)} ${units[unit]}`; }
+export function inspectWorktree(repoRoot,record,integrationRef="origin/main") { const status=tryRun("git",["-C",record.path,"status","--porcelain"]); const upstream=tryRun("git",["-C",record.path,"rev-parse","--abbrev-ref","--symbolic-full-name","@{upstream}"]); const merged=tryRun("git",["-C",repoRoot,"merge-base","--is-ancestor",record.head,integrationRef]); return {...record,dirty:!status.ok||status.output.length>0,statusAvailable:status.ok,upstream:upstream.ok?upstream.output:"none",merged:merged.ok,bytes:bytesForPath(record.path),generated:GENERATED_PATHS.map(relative=>({relative,bytes:bytesForPath(resolve(record.path,relative))})).filter(entry=>entry.bytes!==null)}; }
+export function assertInside(parent,child) { const root=resolve(parent),target=resolve(child); if(target!==root&&!target.startsWith(`${root}/`)) throw new Error(`path escapes archive root: ${child}`); return target; }
+export function freeDiskBytes(path) { const result=tryRun("df",["-k",path]); if(!result.ok)return null; const fields=result.output.split("\n").at(-1)?.trim().split(/\s+/); const kib=Number(fields?.[3]); return Number.isFinite(kib)?kib*1024:null; }
+export function isDirectory(path) { return existsSync(path)&&statSync(path).isDirectory(); }
