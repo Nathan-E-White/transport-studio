@@ -3,6 +3,7 @@ import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {TransportBackendEvent, TransportBackendMetadata} from "@transport/domain";
 import type {NativePhotonSmokeBridge} from "@transport/transport-worker";
 import {StudioApp} from "./StudioApp";
+import {getPrimarySelection, useEditorStore} from "../state/editor";
 
 const mocks = vi.hoisted(() => {
     const nativeBackendMetadata: TransportBackendMetadata = {
@@ -183,38 +184,36 @@ vi.mock("@transport/validation", () => ({
     validateProject: mocks.validateProject
 }));
 
-function ProjectTreeMock(props: {
-    project: {
-        scene: {
-            entities: readonly {
-                id: string;
-                visible: boolean;
-                includedInCompile?: boolean;
-            }[];
-        };
+function ProjectTreeMock() {
+    const {state, dispatch} = useEditorStore();
+    const entities = state.scene.project?.scene.entities ?? [];
+    const shield = entities.find((entity) => entity.id === "shield-1");
+    const selectedEntityId = getPrimarySelection(state.selection)?.id;
+    const stats = {
+        geometry: entities.filter((entity) => entity.kind === "geometry").length,
+        materials: entities.filter((entity) => entity.kind === "material").length,
+        sources: entities.filter((entity) => entity.kind === "source").length,
+        tallies: entities.filter((entity) => entity.kind === "tally").length,
     };
-    selectedEntityId?: string;
-    onSelect: (id: string) => void;
-    onSetEntityVisible: (id: string, visible: boolean) => void;
-    onSetEntityIncludedInCompile: (id: string, includedInCompile: boolean) => void;
-    stats: { geometry: number; materials: number; sources: number; tallies: number };
-}) {
-    const shield = props.project.scene.entities.find((entity) => entity.id === "shield-1");
+    const ref = (id: string) => {
+        const entity = entities.find((candidate) => candidate.id === id)!;
+        return {kind: entity.kind, id: entity.id};
+    };
 
     return (
         <section aria-label="Project tree">
             <h2>Project tree</h2>
-            <p>tree selected entity: {props.selectedEntityId ?? "none"}</p>
+            <p>tree selected entity: {selectedEntityId ?? "none"}</p>
             <p>tree shield visible: {String(shield?.visible ?? false)}</p>
             <p>tree shield included: {String(shield?.includedInCompile ?? true)}</p>
             <p>
                 scene
-                stats: {props.stats.geometry} geometry, {props.stats.materials} materials, {props.stats.sources} sources, {props.stats.tallies} tallies
+                stats: {stats.geometry} geometry, {stats.materials} materials, {stats.sources} sources, {stats.tallies} tallies
             </p>
-            <button type="button" onClick={() => props.onSelect("water-1")}>Select Water Moderator</button>
-            <button type="button" onClick={() => props.onSelect("dose-1")}>Select Dose Tally</button>
-            <button type="button" onClick={() => props.onSetEntityVisible("shield-1", false)}>Hide Shield Slab</button>
-            <button type="button" onClick={() => props.onSetEntityIncludedInCompile("shield-1", false)}>Exclude Shield Slab</button>
+            <button type="button" onClick={() => dispatch({type: "select-one", ref: ref("water-1")})}>Select Water Moderator</button>
+            <button type="button" onClick={() => dispatch({type: "select-one", ref: ref("dose-1")})}>Select Dose Tally</button>
+            <button type="button" onClick={() => dispatch({type: "set-visible", ref: ref("shield-1"), visible: false})}>Hide Shield Slab</button>
+            <button type="button" onClick={() => dispatch({type: "set-included-in-compile", ref: ref("shield-1"), includedInCompile: false})}>Exclude Shield Slab</button>
         </section>
     );
 }
@@ -254,6 +253,7 @@ vi.mock("../panels/RunPanel", () => ({
         tracks: readonly unknown[];
         diagnostics: readonly { message: string }[];
         sceneStats: { geometry: number; materials: number; sources: number; tallies: number };
+        stale: {runResultsStale: boolean};
     }) => (
         <section aria-label="Run panel">
             <h2>Run panel</h2>
@@ -261,6 +261,7 @@ vi.mock("../panels/RunPanel", () => ({
             <p>run panel backend: {props.config.backend}</p>
             <p>run panel tracks: {props.tracks.length}</p>
             <p>run panel diagnostics: {props.diagnostics.length}</p>
+            <p>run results freshness: {props.stale.runResultsStale ? "stale" : "current"}</p>
             {props.diagnostics.map((diagnostic) => <p key={diagnostic.message}>{diagnostic.message}</p>)}
             <p>run panel scene
                 stats: {props.sceneStats.geometry}/{props.sceneStats.materials}/{props.sceneStats.sources}/{props.sceneStats.tallies}</p>
@@ -277,6 +278,7 @@ vi.mock("../viewport/TransportViewport", () => ({
         showTallies: boolean;
         showDiagnostics: boolean;
         mode: string;
+        project: {scene: {entities: readonly {id: string; visible: boolean}[]}};
     }) => (
         <section aria-label="Transport viewport">
             <h2>Transport viewport</h2>
@@ -285,6 +287,7 @@ vi.mock("../viewport/TransportViewport", () => ({
             <p>viewport tracks: {props.tracks.length}</p>
             <p>viewport tallies visible: {String(props.showTallies)}</p>
             <p>viewport diagnostics visible: {String(props.showDiagnostics)}</p>
+            <p>viewport shield visible: {String(props.project.scene.entities.find((entity) => entity.id === "shield-1")?.visible)}</p>
         </section>
     )
 }));
@@ -405,6 +408,7 @@ describe("StudioApp spec", () => {
         render(<StudioApp/>);
 
         fireEvent.click(screen.getByRole("button", {name: "Hide Shield Slab"}));
+        expect(screen.getByText("viewport shield visible: false")).toBeTruthy();
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
         await waitFor(() => expect(mocks.compileEditorScene).toHaveBeenCalledTimes(1));
@@ -431,6 +435,18 @@ describe("StudioApp spec", () => {
                 }
             ]
         });
+    });
+
+    it("retains prior tracks while rendering Run Session freshness after authoring changes", () => {
+        render(<StudioApp/>);
+        fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
+        expect(screen.getByText("run results freshness: current")).toBeTruthy();
+        expect(screen.getByText("run panel tracks: 4")).toBeTruthy();
+
+        fireEvent.click(screen.getByRole("button", {name: "Hide Shield Slab"}));
+
+        expect(screen.getByText("run results freshness: stale")).toBeTruthy();
+        expect(screen.getByText("run panel tracks: 4")).toBeTruthy();
     });
 
     it("renders native Rust tracks and warning diagnostics when the Tauri bridge succeeds", async () => {

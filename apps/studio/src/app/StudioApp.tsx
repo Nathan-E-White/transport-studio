@@ -13,15 +13,7 @@ import {StyleSelectorBoundary} from "../components/style-selector/StyleSelectorB
 import {InspectorPanel} from "../panels/InspectorPanel";
 import {RunPanel} from "../panels/RunPanel";
 import {TransportViewport} from "../viewport/TransportViewport";
-import {
-    addEntity,
-    deleteEntity,
-    duplicateEntity,
-    setEntityIncludedInCompile,
-    setEntityLocked,
-    setEntityVisible,
-    updateEntityMetadata,
-} from "./projectMutations";
+import {EditorStateRoot, getPrimarySelection, useEditorStore} from "../state/editor";
 import {
     clearRunSession,
     runNativeSession,
@@ -35,9 +27,14 @@ export type BottomTab = "run" | "tallies" | "tracks" | "diagnostics" | "console"
 const modes: readonly EditorMode[] = ["design", "probe", "run", "analyze", "debug"];
 
 export function StudioApp() {
+    return <EditorStateRoot initialProject={createInitialProject()}><StudioWorkbench/></EditorStateRoot>;
+}
 
-    const [project, setProject] = useState<Project>(() => createInitialProject());
-    const [selectedEntityId, setSelectedEntityId] = useState<string | undefined>(project.scene.entities[1]?.id);
+function StudioWorkbench() {
+
+    const {state, dispatch} = useEditorStore();
+    const project = state.scene.project!;
+    const selectedEntityId = getPrimarySelection(state.selection)?.id;
     const [tracks, setTracks] = useState<readonly TrackSample[]>([]);
     const [mode, setMode] = useState<EditorMode>("design");
     const [bottomTab, setBottomTab] = useState<BottomTab>("run");
@@ -78,47 +75,12 @@ export function StudioApp() {
         setActiveBackend(outcome.backend);
         setMode(outcome.mode);
         setBottomTab(outcome.bottomTab);
+        dispatch({type: "mark-run-results-fresh"});
     }
 
-    function createEntity(kind: SceneEntity["kind"]) {
-        setProject((current) => {
-            const next = addEntity(current, kind);
-            const created = next.scene.entities.at(-1);
-            setSelectedEntityId(created?.id);
-            return next;
-        });
-    }
-
-    function renameEntity(
-        entityId: string,
-        patch: { readonly name?: string; readonly description?: string; readonly tags?: readonly string[] },
-    ) {
-        setProject((current) => updateEntityMetadata(current, entityId, patch));
-    }
-
-    function duplicateProjectEntity(entityId: string) {
-        setProject((current) => {
-            const next = duplicateEntity(current, entityId);
-            const duplicated = next.scene.entities.at(-1);
-            setSelectedEntityId(duplicated?.id ?? entityId);
-            return next;
-        });
-    }
-
-    function deleteProjectEntity(entityId: string) {
-        setProject((current) => deleteEntity(current, entityId));
-    }
-
-    function setProjectEntityVisible(entityId: string, visible: boolean) {
-        setProject((current) => setEntityVisible(current, entityId, visible));
-    }
-
-    function setProjectEntityIncludedInCompile(entityId: string, includedInCompile: boolean) {
-        setProject((current) => setEntityIncludedInCompile(current, entityId, includedInCompile));
-    }
-
-    function setProjectEntityLocked(entityId: string, locked: boolean) {
-        setProject((current) => setEntityLocked(current, entityId, locked));
+    function selectEntity(entityId: string | undefined) {
+        const entity = project.scene.entities.find((candidate) => candidate.id === entityId);
+        dispatch(entity ? {type: "select-one", ref: {kind: entity.kind, id: entity.id}} : {type: "clear-selection"});
     }
 
     return (
@@ -155,18 +117,7 @@ export function StudioApp() {
 
             <aside className="left-panel">
                 <ProjectTree
-                    project={project}
-                    selectedEntityId={selectedEntityId}
                     diagnostics={diagnostics}
-                    stats={sceneStats}
-                    onSelect={setSelectedEntityId}
-                    onCreateEntity={createEntity}
-                    onUpdateEntityMetadata={renameEntity}
-                    onDuplicateEntity={duplicateProjectEntity}
-                    onDeleteEntity={deleteProjectEntity}
-                    onSetEntityVisible={setProjectEntityVisible}
-                    onSetEntityLocked={setProjectEntityLocked}
-                    onSetEntityIncludedInCompile={setProjectEntityIncludedInCompile}
                 />
             </aside>
 
@@ -175,7 +126,7 @@ export function StudioApp() {
                     project={project}
                     tracks={showTracks ? tracks : []}
                     selectedEntityId={selectedEntityId}
-                    onSelect={setSelectedEntityId}
+                    onSelect={(entityId) => selectEntity(entityId)}
                     showTallies={showTallies}
                     showDiagnostics={showDiagnostics}
                     mode={mode}
@@ -208,6 +159,7 @@ export function StudioApp() {
                     activeTab={bottomTab}
                     onTabChange={setBottomTab}
                     sceneStats={sceneStats}
+                    stale={state.stale}
                 />
             </footer>
         </div>

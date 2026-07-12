@@ -1,8 +1,9 @@
 import {fireEvent, render, screen, within} from "@testing-library/react";
-import {describe, expect, it, vi} from "vitest";
+import {describe, expect, it} from "vitest";
 import type {Project} from "@transport/domain";
 import {IDENTITY_TRANSFORM} from "@transport/shared";
 import {ProjectTree, ProjectTreeProps} from "./ProjectTree";
+import {EditorStoreProvider} from "../../state/editor";
 
 const project: Project = {
   id: "project-1" as Project["id"],
@@ -78,21 +79,11 @@ const project: Project = {
 
 function renderProjectTree(overrides: Partial<ProjectTreeProps> = {}) {
   const props: ProjectTreeProps = {
-    project,
-    selectedEntityId: "geom-1",
     diagnostics: [],
-    onSelect: vi.fn(),
-    onCreateEntity: vi.fn(),
-    onUpdateEntityMetadata: vi.fn(),
-    onDuplicateEntity: vi.fn(),
-    onDeleteEntity: vi.fn(),
-    onSetEntityVisible: vi.fn(),
-    onSetEntityLocked: vi.fn(),
-    onSetEntityIncludedInCompile: vi.fn(),
     ...overrides,
   };
 
-  render(<ProjectTree {...props}/>);
+  render(<EditorStoreProvider initialProject={project}><ProjectTree {...props}/></EditorStoreProvider>);
 
   return props;
 }
@@ -124,16 +115,16 @@ describe("ProjectTree", () => {
     expect(screen.getByText("Search entities")).toBeInTheDocument();
   });
 
-  it("syncs row selection through the app callback", () => {
-    const props = renderProjectTree();
+  it("updates authoritative selection when a row is chosen", () => {
+    renderProjectTree();
 
     fireEvent.click(screen.getByRole("treeitem", {name: "Water, material"}));
 
-    expect(props.onSelect).toHaveBeenCalledWith("mat-1");
+    expect(screen.getByRole("treeitem", {name: "Water, material"})).toHaveAttribute("aria-selected", "true");
   });
 
   it("opens and saves the metadata editor", () => {
-    const props = renderProjectTree();
+    renderProjectTree();
     const row = screen.getByRole("treeitem", {name: "Shield Slab, geometry"});
 
     fireEvent.click(within(row).getByRole("button", {name: "Edit entity metadata"}));
@@ -142,37 +133,31 @@ describe("ProjectTree", () => {
     fireEvent.change(screen.getByLabelText("Tags"), {target: {value: "shield, primary"}});
     fireEvent.click(screen.getByRole("button", {name: "Save"}));
 
-    expect(props.onUpdateEntityMetadata).toHaveBeenCalledWith("geom-1", {
-      name: "Primary Shield",
-      description: "front slab",
-      tags: ["shield", "primary"],
-    });
+    expect(screen.getByRole("treeitem", {name: "Primary Shield, geometry"})).toBeInTheDocument();
   });
 
   it("dispatches duplicate, delete, create, visibility, lock, and compile actions", () => {
-    const props = renderProjectTree();
+    renderProjectTree();
     const row = screen.getByRole("treeitem", {name: "Shield Slab, geometry"});
 
     fireEvent.click(within(row).getByRole("button", {name: "Hide this entity in the viewport"}));
-    expect(props.onSetEntityVisible).toHaveBeenCalledWith("geom-1", false);
     expect(screen.getByText("hidden")).toBeInTheDocument();
 
     fireEvent.click(within(row).getByRole("button", {name: "Lock this entity against editing"}));
-    expect(props.onSetEntityLocked).toHaveBeenCalledWith("geom-1", true);
+    expect(row).toHaveAttribute("data-locked", "true");
 
     fireEvent.click(within(row).getByRole("button", {name: "Exclude this entity from the compiled transport problem"}));
-    expect(props.onSetEntityIncludedInCompile).toHaveBeenCalledWith("geom-1", false);
     expect(screen.getByText("excluded")).toBeInTheDocument();
 
     fireEvent.click(within(row).getByRole("button", {name: "Duplicate this entity"}));
-    expect(props.onDuplicateEntity).toHaveBeenCalledWith("geom-1");
+    expect(screen.getByText("Shield Slab Copy")).toBeInTheDocument();
 
     const materialRow = screen.getByRole("treeitem", {name: "Water, material"});
     fireEvent.click(within(materialRow).getByRole("button", {name: "Delete this entity"}));
-    expect(props.onDeleteEntity).toHaveBeenCalledWith("mat-1");
+    expect(screen.queryByText("Water")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", {name: "+ Source"}));
-    expect(props.onCreateEntity).toHaveBeenCalledWith("source");
+    expect(screen.getByText("New Source")).toBeInTheDocument();
   });
 
   it("shows diagnostic badges for entity-specific diagnostics", () => {

@@ -35,7 +35,6 @@ function ProjectTreeEntityRowInner() {
             type: "select-one",
             ref: row.ref,
         });
-        projectTree.onSelect(row.ref);
     }
 
     function handleRowKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
