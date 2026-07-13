@@ -1,3 +1,5 @@
+use crate::RadiationTransportMode;
+use crate::radiation::{OrthonormalGrayRadiationMoments, close_gray_m1_moments};
 use crate::{
     BoundaryConditions3, BssnConstraintDiagnostics, BssnGridFields, ConservativeMatterGrid,
     EquationOfState, EvolutionGridField3, MatterMetricCellGrid, PhysicsError,
@@ -5,8 +7,203 @@ use crate::{
 };
 use crate::{
     ConstraintDiagnosticsOperator, EinsteinTensor, StressEnergyContribution, StressEnergyTensor,
-    TimeDuration,
+    SymmetricSpatialTensor2, TimeDuration, ValenciaEquationOfState, ValenciaGeometry,
+    ValenciaPrimitive, Vec3, primitive_to_conserved, vec3,
 };
+
+const STRESS_ENERGY_SYMMETRY_TOLERANCE: f64 = 1.0e-12;
+const STRESS_ENERGY_SYMMETRIC_PAIRS: [(usize, usize); 6] =
+    [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+
+/// Origin of the stress-energy presented to one BSSN source cell.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum BssnSourcePath {
+    Vacuum,
+    Matter,
+    Radiation,
+    Combined,
+}
+
+/// Eulerian-orthonormal 3+1 projection of one stress-energy tensor.
+///
+/// This narrow slice interprets `T00` as energy density, `T0i` as momentum density, and `Tij`
+/// as spatial stress in the local Eulerian orthonormal frame. A coordinate-basis projection for
+/// general lapse and shift remains future work.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct BssnSourceProjection {
+    pub energy_density: f64,
+    pub momentum_density: Vec3,
+    pub spatial_stress: SymmetricSpatialTensor2,
+    pub spatial_stress_trace: f64,
+}
+
+impl BssnSourceProjection {
+    pub const ZERO: Self = Self {
+        energy_density: 0.0,
+        momentum_density: vec3::ZERO,
+        spatial_stress: SymmetricSpatialTensor2::ZERO,
+        spatial_stress_trace: 0.0,
+    };
+
+    pub fn from_eulerian_orthonormal_tensor(
+        tensor: StressEnergyTensor,
+    ) -> Result<Self, PhysicsError> {
+        if tensor
+            .components
+            .iter()
+            .flatten()
+            .any(|value| !value.is_finite())
+        {
+            return Err(PhysicsError::InvalidStep);
+        }
+        for (mu, nu) in STRESS_ENERGY_SYMMETRIC_PAIRS {
+            let lhs = tensor.components[mu][nu];
+            let rhs = tensor.components[nu][mu];
+            let scale = 1.0 + lhs.abs().max(rhs.abs());
+            if (lhs - rhs).abs() > STRESS_ENERGY_SYMMETRY_TOLERANCE * scale {
+                return Err(PhysicsError::InvalidStep);
+            }
+        }
+        let symmetric_component = |mu: usize, nu: usize| {
+            0.5 * tensor.components[mu][nu] + 0.5 * tensor.components[nu][mu]
+        };
+        let spatial_stress = SymmetricSpatialTensor2::new([
+            [
+                tensor.components[1][1],
+                symmetric_component(1, 2),
+                symmetric_component(1, 3),
+            ],
+            [
+                symmetric_component(1, 2),
+                tensor.components[2][2],
+                symmetric_component(2, 3),
+            ],
+            [
+                symmetric_component(1, 3),
+                symmetric_component(2, 3),
+                tensor.components[3][3],
+            ],
+        ]);
+        let momentum_density = vec3::new(
+            symmetric_component(0, 1),
+            symmetric_component(0, 2),
+            symmetric_component(0, 3),
+        );
+        let spatial_stress_trace = spatial_stress.components[0][0]
+            + spatial_stress.components[1][1]
+            + spatial_stress.components[2][2];
+        if !spatial_stress_trace.is_finite() {
+            return Err(PhysicsError::InvalidStep);
+        }
+        Ok(Self {
+            energy_density: tensor.components[0][0],
+            momentum_density,
+            spatial_stress,
+            spatial_stress_trace,
+        })
+    }
+}
+
+/// Canonical local-frame stress-energy from the Valencia GRHD primitive state.
+pub fn valencia_stress_energy_in_eulerian_orthonormal_frame<Eos: ValenciaEquationOfState>(
+    primitive: ValenciaPrimitive,
+    eos: Eos,
+) -> Result<StressEnergyTensor, PhysicsError> {
+    let conserved = primitive_to_conserved(primitive, eos, ValenciaGeometry::FLAT)?;
+    let momentum = conserved.momentum_density.to_packed().data;
+    let velocity = primitive.velocity.to_packed().data;
+    let mut components = [[0.0; 4]; 4];
+    components[0][0] = conserved.energy_excluding_rest_mass + conserved.densitized_rest_mass;
+    for axis in 0..3 {
+        components[0][axis + 1] = momentum[axis];
+        components[axis + 1][0] = momentum[axis];
+    }
+    for i in 0..3 {
+        for j in 0..3 {
+            components[i + 1][j + 1] =
+                momentum[i] * velocity[j] + if i == j { primitive.pressure } else { 0.0 };
+        }
+    }
+    let tensor = StressEnergyTensor::new(components);
+    BssnSourceProjection::from_eulerian_orthonormal_tensor(tensor)?;
+    Ok(tensor)
+}
+
+/// Canonical local-frame stress-energy from closed gray-M1 radiation moments.
+pub fn gray_m1_stress_energy_in_eulerian_orthonormal_frame(
+    moments: OrthonormalGrayRadiationMoments,
+) -> Result<StressEnergyTensor, PhysicsError> {
+    let closed = close_gray_m1_moments(RadiationTransportMode::GrayM1, moments)
+        .map_err(|_| PhysicsError::InvalidStep)?;
+    let flux = moments.flux.to_packed().data;
+    let mut components = [[0.0; 4]; 4];
+    components[0][0] = moments.energy_density;
+    for axis in 0..3 {
+        components[0][axis + 1] = flux[axis];
+        components[axis + 1][0] = flux[axis];
+    }
+    for i in 0..3 {
+        for j in 0..3 {
+            components[i + 1][j + 1] = closed.pressure.components[i][j];
+        }
+    }
+    Ok(StressEnergyTensor::new(components))
+}
+
+/// Project canonical Valencia matter and gray-M1 radiation into one BSSN source cell.
+pub fn project_valencia_gray_m1_bssn_sources<Eos: ValenciaEquationOfState>(
+    matter: ValenciaPrimitive,
+    eos: Eos,
+    radiation: OrthonormalGrayRadiationMoments,
+) -> Result<(StressEnergyTensor, BssnSourceEvidence), PhysicsError> {
+    let matter_tensor = valencia_stress_energy_in_eulerian_orthonormal_frame(matter, eos)?;
+    let radiation_tensor = gray_m1_stress_energy_in_eulerian_orthonormal_frame(radiation)?;
+    Ok((
+        matter_tensor + radiation_tensor,
+        project_bssn_sources(matter_tensor, radiation_tensor)?,
+    ))
+}
+
+/// Separated and total BSSN source evidence for one cell.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct BssnSourceEvidence {
+    pub path: BssnSourcePath,
+    pub matter: BssnSourceProjection,
+    pub radiation: BssnSourceProjection,
+    pub total: BssnSourceProjection,
+}
+
+impl BssnSourceEvidence {
+    pub const VACUUM: Self = Self {
+        path: BssnSourcePath::Vacuum,
+        matter: BssnSourceProjection::ZERO,
+        radiation: BssnSourceProjection::ZERO,
+        total: BssnSourceProjection::ZERO,
+    };
+}
+
+pub fn project_bssn_sources(
+    matter: StressEnergyTensor,
+    radiation: StressEnergyTensor,
+) -> Result<BssnSourceEvidence, PhysicsError> {
+    let matter_projection = BssnSourceProjection::from_eulerian_orthonormal_tensor(matter)?;
+    let radiation_projection = BssnSourceProjection::from_eulerian_orthonormal_tensor(radiation)?;
+    let path = match (
+        matter != StressEnergyTensor::ZERO,
+        radiation != StressEnergyTensor::ZERO,
+    ) {
+        (false, false) => BssnSourcePath::Vacuum,
+        (true, false) => BssnSourcePath::Matter,
+        (false, true) => BssnSourcePath::Radiation,
+        (true, true) => BssnSourcePath::Combined,
+    };
+    Ok(BssnSourceEvidence {
+        path,
+        matter: matter_projection,
+        radiation: radiation_projection,
+        total: BssnSourceProjection::from_eulerian_orthonormal_tensor(matter + radiation)?,
+    })
+}
 
 /// Coupling constants for the Einstein field equations.
 ///
@@ -85,8 +282,58 @@ impl<Eos> CoupledBssnMatterState<Eos> {
 pub struct CoupledStepDiagnostics {
     pub deposited_history_count: usize,
     pub stress_energy: EvolutionGridField3<StressEnergyTensor>,
+    pub bssn_sources: EvolutionGridField3<BssnSourceEvidence>,
     pub metric_on_matter: MatterMetricCellGrid,
     pub constraints: BssnConstraintDiagnostics,
+}
+
+/// Controlled toy response used to prove that projected sources reach the BSSN geometry path.
+///
+/// It advances only the trace of the extrinsic curvature by `response_coefficient * E * dt`.
+/// It is not a production BSSN evolution system and makes no strong-field accuracy claim.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ControlledToyBssnSourceStepper {
+    pub response_coefficient: f64,
+}
+
+impl BssnGeometryStepper for ControlledToyBssnSourceStepper {
+    fn evolve_geometry(
+        &self,
+        geometry: &mut BssnGridFields,
+        stress_energy: &EvolutionGridField3<StressEnergyTensor>,
+        dt: TimeDuration,
+    ) -> Result<(), PhysicsError> {
+        if !self.response_coefficient.is_finite() {
+            return Err(PhysicsError::InvalidStep);
+        }
+        if !dt.seconds().is_finite() {
+            return Err(PhysicsError::InvalidStep);
+        }
+        if geometry.grid != stress_energy.grid {
+            return Err(PhysicsError::InvalidStep);
+        }
+        let mut staged = geometry.clone();
+        for index in 0..stress_energy.interior_len() {
+            let ijk = stress_energy.interior_ijk_for_index(index)?;
+            let projection = BssnSourceProjection::from_eulerian_orthonormal_tensor(
+                *stress_energy.get_interior(ijk[0], ijk[1], ijk[2])?,
+            )?;
+            let current = *staged
+                .trace_extrinsic_curvature
+                .get_interior(ijk[0], ijk[1], ijk[2])?;
+            let next =
+                current + self.response_coefficient * projection.energy_density * dt.seconds();
+            if !next.is_finite() {
+                return Err(PhysicsError::InvalidStep);
+            }
+            staged
+                .trace_extrinsic_curvature
+                .set_interior(ijk[0], ijk[1], ijk[2], next)?;
+        }
+        staged.apply_boundary_conditions()?;
+        *geometry = staged;
+        Ok(())
+    }
 }
 
 /// Geometry RHS/evolution backend for the coupled pipeline.
@@ -234,6 +481,31 @@ impl<GeometryStepper, MatterStepper, GaugeEnforcer>
         }
 
         let stress_energy = state.matter.stress_energy_field()?;
+        let mut bssn_sources = EvolutionGridField3::new(
+            state.matter.grid,
+            state.matter.density.centering,
+            state.matter.density.ghost_zones,
+            state.matter.density.boundary_conditions,
+            BssnSourceEvidence::VACUUM,
+        )?;
+        for index in 0..state.matter.density.interior_len() {
+            let ijk = state.matter.density.interior_ijk_for_index(index)?;
+            bssn_sources.set_interior(
+                ijk[0],
+                ijk[1],
+                ijk[2],
+                project_bssn_sources(
+                    state
+                        .matter
+                        .matter_stress_energy_at_cell(ijk[0], ijk[1], ijk[2])?,
+                    *state
+                        .matter
+                        .radiation_particle_stress_energy
+                        .get_interior(ijk[0], ijk[1], ijk[2])?,
+                )?,
+            )?;
+        }
+        bssn_sources.apply_boundary_conditions()?;
         self.geometry_stepper
             .evolve_geometry(&mut state.geometry, &stress_energy, dt)?;
 
@@ -254,6 +526,7 @@ impl<GeometryStepper, MatterStepper, GaugeEnforcer>
         Ok(CoupledStepDiagnostics {
             deposited_history_count: depositions.len(),
             stress_energy,
+            bssn_sources,
             metric_on_matter,
             constraints,
         })
