@@ -16,6 +16,7 @@ pub mod physics_v1;
 pub mod tensor;
 mod transport;
 pub mod units;
+pub mod valencia;
 pub mod vec3;
 
 pub use adm::*;
@@ -34,6 +35,7 @@ pub use physics_v1::*;
 pub use tensor::*;
 pub use transport::*;
 pub use units::*;
+pub use valencia::*;
 pub use vec3::Vec3;
 
 /// Deliberate access to low-level physics substrate for numerical development and debugging.
