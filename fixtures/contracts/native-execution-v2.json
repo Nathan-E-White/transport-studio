@@ -113,6 +113,17 @@
       {"type": "runCompleted", "runId": "fixture-session", "summary": {"completedHistories": 16, "totalHistories": 16, "sampledTrackCount": 0, "tallyCount": 1, "diagnostics": []}}
     ]
   },
+  "bridgeUnavailableEvent": {
+    "type": "runFailed",
+    "runId": "fixture-session",
+    "diagnostic": {
+      "level": "error",
+      "code": "native.bridge.unavailable",
+      "message": "Native Rust photon backend bridge is not available in this runtime.",
+      "problemId": "fixture-photon-shielding",
+      "runId": "fixture-session"
+    }
+  },
   "versionMismatchRequest": {
     "contractVersion": "1.0.0",
     "runSessionId": "fixture-session",

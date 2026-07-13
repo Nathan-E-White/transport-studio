@@ -3,6 +3,7 @@ import fixture from "../../../fixtures/contracts/native-execution-v2.json";
 import {
   createNativeExecutionRequest,
   NATIVE_EXECUTION_CONTRACT_VERSION,
+  parseNativeExecutionEvent,
   parseNativeExecutionResponse,
 } from "./index";
 
@@ -10,11 +11,12 @@ describe("Native Execution Contract v2", () => {
   it("owns the shared request and complete event conformance corpus", () => {
     expect(createNativeExecutionRequest(fixture.request.runSessionId, fixture.request.problem as never))
       .toEqual(fixture.request);
+    expect(fixture.eventExamples.map(parseNativeExecutionEvent)).toEqual(fixture.eventExamples);
     expect(parseNativeExecutionResponse({
       contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
-      events: fixture.eventExamples,
+      events: fixture.eventExamples.slice(0, 8),
       additiveFutureField: true,
-    }).events).toEqual(fixture.eventExamples);
+    }).events).toEqual(fixture.eventExamples.slice(0, 8));
     expect(new Set(fixture.eventExamples.map((event) => event.type))).toEqual(new Set([
       "backendMetadata",
       "problemAccepted",
@@ -41,6 +43,10 @@ describe("Native Execution Contract v2", () => {
     })).toThrow("Unknown or invalid native execution event kind 'futureEvent'.");
     expect(() => parseNativeExecutionResponse({contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION}))
       .toThrow("Native execution response events must be an array.");
+    expect(() => parseNativeExecutionResponse({
+      contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+      events: [],
+    })).toThrow("Native execution response must contain events.");
     expect(() => parseNativeExecutionResponse(null))
       .toThrow("Unsupported native execution contract version 'missing'; expected '2.0.0'.");
     expect(() => parseNativeExecutionResponse({contractVersion: 2, events: []}))
@@ -102,10 +108,7 @@ describe("Native Execution Contract v2", () => {
     ];
 
     for (const event of malformedEvents) {
-      expect(() => parseNativeExecutionResponse({
-        contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
-        events: [event],
-      })).toThrow("Unknown or invalid native execution event kind");
+      expect(() => parseNativeExecutionEvent(event)).toThrow("Unknown or invalid native execution event kind");
     }
   });
 
@@ -120,22 +123,57 @@ describe("Native Execution Contract v2", () => {
     const sampleEvents = samples[0]?.events as Record<string, unknown>[];
 
     for (const dataPolicy of ["toy", "simple-coefficients", "hybrid-warning-mode", "requires-data-packs"]) {
-      expect(parseNativeExecutionResponse({
-        contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
-        events: [{...started, provenance: {...provenance, dataPolicy}}],
-      }).events).toHaveLength(1);
+      expect(parseNativeExecutionEvent({...started, provenance: {...provenance, dataPolicy}}).type)
+        .toBe("runStarted");
     }
     for (const level of ["info", "warning", "error"]) {
-      expect(parseNativeExecutionResponse({
-        contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
-        events: [{...diagnostic, diagnostic: {...diagnosticBody, level}}],
-      }).events).toHaveLength(1);
+      expect(parseNativeExecutionEvent({...diagnostic, diagnostic: {...diagnosticBody, level}}).type)
+        .toBe("diagnostic");
     }
     for (const type of ["birth", "move", "boundary-crossing", "scatter", "absorb", "escape", "detector-hit", "error-lost"]) {
-      expect(parseNativeExecutionResponse({
-        contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
-        events: [{...tracks, samples: [{...samples[0], events: [{...sampleEvents[0], type}]}]}],
-      }).events).toHaveLength(1);
+      expect(parseNativeExecutionEvent({
+        ...tracks,
+        samples: [{...samples[0], events: [{...sampleEvents[0], type}]}],
+      }).type).toBe("trackSamples");
     }
+  });
+
+  it("enforces caller identity and one ordered lifecycle", () => {
+    const successEvents = fixture.eventExamples.slice(0, 8);
+    expect(() => parseNativeExecutionResponse({
+      contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+      events: successEvents,
+    }, "another-session")).toThrow("does not match caller session 'another-session'");
+    expect(() => parseNativeExecutionResponse({
+      contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+      events: [successEvents[0], successEvents[2], successEvents[1], ...successEvents.slice(3)],
+    })).toThrow("must begin with metadata, acceptance, and start events");
+    for (const events of [
+      [successEvents[1], successEvents[0], ...successEvents.slice(2)],
+      [successEvents[0], successEvents[2], ...successEvents.slice(2)],
+      [successEvents[0], successEvents[1], successEvents[3], ...successEvents.slice(3)],
+      [successEvents[0]],
+    ]) {
+      expect(() => parseNativeExecutionResponse({
+        contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+        events,
+      })).toThrow("must begin with metadata, acceptance, and start events");
+    }
+    expect(() => parseNativeExecutionResponse({
+      contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+      events: [...successEvents, fixture.eventExamples[6]],
+    })).toThrow("must end with exactly one terminal event");
+    expect(() => parseNativeExecutionResponse({
+      contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+      events: [...successEvents.slice(0, -1), fixture.eventExamples[8], fixture.eventExamples[7]],
+    })).toThrow("is out of lifecycle order");
+    expect(parseNativeExecutionResponse({
+      contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+      events: [fixture.eventExamples[8]],
+    }, "fixture-session").events).toHaveLength(1);
+    expect(() => parseNativeExecutionResponse({
+      contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+      events: [fixture.eventExamples[7]],
+    })).toThrow("must begin with metadata, acceptance, and start events");
   });
 });

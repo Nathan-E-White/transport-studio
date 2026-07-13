@@ -63,6 +63,7 @@ export async function runNativePhotonSmokeBackend(
   try {
     const response = parseNativeExecutionResponse(
       await bridge.runPhotonSmoke(createNativeExecutionRequest(runSessionId, problem)),
+      runSessionId,
     );
     return response.events;
   } catch (error) {
@@ -75,7 +76,16 @@ export async function runNativePhotonSmokeBackend(
     };
     return [
       {type: "backendMetadata", metadata: nativeRustPhotonBackendMetadata},
-      {type: "runFailed", runId: runSessionId, diagnostic},
+      {type: "diagnostic", runId: runSessionId, diagnostic},
+      {
+        type: "runFailed",
+        runId: runSessionId,
+        diagnostic: {
+          ...diagnostic,
+          code: "native.adapter.failed",
+          message: "Native adapter transport failed; see the preceding diagnostic event.",
+        },
+      },
     ];
   }
 }

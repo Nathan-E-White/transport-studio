@@ -11,15 +11,7 @@ describe("native execution v2 adapter", () => {
     );
 
     expect(events.map((event) => event.type)).toEqual(["backendMetadata", "runFailed"]);
-    expect(events.at(-1)).toMatchObject({
-      type: "runFailed",
-      runId: "fixture-session",
-      diagnostic: {
-        level: "error",
-        code: "native.bridge.unavailable",
-        message: "Native Rust photon backend bridge is not available in this runtime.",
-      },
-    });
+    expect(events.at(-1)).toEqual(fixture.bridgeUnavailableEvent);
   });
 
   it("submits the caller-owned session id and returns the validated canonical event stream", async () => {
@@ -52,10 +44,22 @@ describe("native execution v2 adapter", () => {
       {runPhotonSmoke: async () => { throw new Error("IPC unavailable"); }},
     );
 
-    expect(events.at(-1)).toMatchObject({
-      type: "runFailed",
+    expect(events.map((event) => event.type)).toEqual(["backendMetadata", "diagnostic", "runFailed"]);
+    expect(events[1]).toMatchObject({
+      type: "diagnostic",
       runId: "fixture-session",
       diagnostic: {code: "native.adapter.transport_failure", message: "IPC unavailable"},
+    });
+    expect(events.at(-1)).toEqual({
+      type: "runFailed",
+      runId: "fixture-session",
+      diagnostic: {
+        level: "error",
+        code: "native.adapter.failed",
+        message: "Native adapter transport failed; see the preceding diagnostic event.",
+        problemId: "fixture-photon-shielding",
+        runId: "fixture-session",
+      },
     });
     expect(events[0]).toEqual({type: "backendMetadata", metadata: expect.any(Object)});
     const terminal = events.at(-1);
@@ -73,6 +77,10 @@ describe("native execution v2 adapter", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "runFailed",
+      diagnostic: {code: "native.adapter.failed"},
+    });
+    expect(events[1]).toMatchObject({
+      type: "diagnostic",
       diagnostic: {message: "Native adapter transport failed."},
     });
   });

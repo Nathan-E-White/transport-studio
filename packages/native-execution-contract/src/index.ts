@@ -32,7 +32,10 @@ export function createNativeExecutionRequest(
   return {contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION, runSessionId, problem};
 }
 
-export function parseNativeExecutionResponse(value: unknown): NativeExecutionResponse {
+export function parseNativeExecutionResponse(
+  value: unknown,
+  expectedRunSessionId?: TransportRunId,
+): NativeExecutionResponse {
   if (!isRecord(value) || value.contractVersion !== NATIVE_EXECUTION_CONTRACT_VERSION) {
     const received = isRecord(value) && typeof value.contractVersion === "string"
       ? value.contractVersion
@@ -44,14 +47,52 @@ export function parseNativeExecutionResponse(value: unknown): NativeExecutionRes
   if (!Array.isArray(value.events)) {
     throw new Error("Native execution response events must be an array.");
   }
-  for (const event of value.events) {
-    if (!isNativeExecutionEvent(event)) {
-      throw new Error(
-        `Unknown or invalid native execution event kind '${isRecord(event) ? String(event.type) : "missing"}'.`,
-      );
+  const events = value.events.map(parseNativeExecutionEvent);
+  assertNativeExecutionSequence(events, expectedRunSessionId);
+  return value as unknown as NativeExecutionResponse;
+}
+
+export function parseNativeExecutionEvent(value: unknown): NativeExecutionEvent {
+  if (!isNativeExecutionEvent(value)) {
+    throw new Error(
+      `Unknown or invalid native execution event kind '${isRecord(value) ? String(value.type) : "missing"}'.`,
+    );
+  }
+  return value as NativeExecutionEvent;
+}
+
+function assertNativeExecutionSequence(
+  events: readonly NativeExecutionEvent[],
+  expectedRunSessionId?: TransportRunId,
+): void {
+  if (events.length === 0) throw new Error("Native execution response must contain events.");
+  if (expectedRunSessionId !== undefined) {
+    for (const event of events) {
+      if (event.type !== "backendMetadata" && event.runId !== expectedRunSessionId) {
+        throw new Error(
+          `Native execution event session '${event.runId}' does not match caller session '${expectedRunSessionId}'.`,
+        );
+      }
     }
   }
-  return value as unknown as NativeExecutionResponse;
+  if (events.length === 1 && events[0]?.type === "runFailed") return;
+  if (events[0]?.type !== "backendMetadata"
+    || events[1]?.type !== "problemAccepted"
+    || events[2]?.type !== "runStarted") {
+    throw new Error("Native execution response must begin with metadata, acceptance, and start events.");
+  }
+  const terminal = events.at(-1);
+  if (terminal?.type !== "runCompleted" && terminal?.type !== "runFailed") {
+    throw new Error("Native execution response must end with exactly one terminal event.");
+  }
+  for (const event of events.slice(3, -1)) {
+    if (event.type !== "runProgress"
+      && event.type !== "trackSamples"
+      && event.type !== "tallyDelta"
+      && event.type !== "diagnostic") {
+      throw new Error(`Native execution event '${event.type}' is out of lifecycle order.`);
+    }
+  }
 }
 
 function isNativeExecutionEvent(event: unknown): boolean {
