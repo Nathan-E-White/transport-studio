@@ -708,7 +708,13 @@ impl StressEnergyContribution {
     }
 
     pub fn tensor_density(self, cell_volume: f64) -> Result<StressEnergyTensor, PhysicsError> {
-        if !self.weight.is_finite() || !cell_volume.is_finite() || cell_volume <= 0.0 {
+        if !self.weight.is_finite() {
+            return Err(PhysicsError::NonFiniteValue);
+        }
+        if !cell_volume.is_finite() {
+            return Err(PhysicsError::NonFiniteValue);
+        }
+        if cell_volume <= 0.0 {
             return Err(PhysicsError::NonFiniteValue);
         }
 
@@ -717,7 +723,11 @@ impl StressEnergyContribution {
 
         for mu in 0..4 {
             for nu in 0..4 {
-                components[mu][nu] = self.weight * p[mu] * p[nu] / cell_volume;
+                let component = self.weight * p[mu] * p[nu] / cell_volume;
+                if !component.is_finite() {
+                    return Err(PhysicsError::NonFiniteValue);
+                }
+                components[mu][nu] = component;
             }
         }
 
@@ -749,11 +759,7 @@ impl StressEnergyGrid {
         let index = self.grid.nearest_cell_index(contribution.position)?;
         let tensor = contribution.tensor_density(self.grid.cell_volume())?;
 
-        for mu in 0..4 {
-            for nu in 0..4 {
-                self.cells[index].components[mu][nu] += tensor.components[mu][nu];
-            }
-        }
+        self.cells[index] += tensor;
 
         Ok(index)
     }

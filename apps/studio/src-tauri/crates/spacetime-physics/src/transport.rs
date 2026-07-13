@@ -108,12 +108,7 @@ impl<M: MetricField> CurvedTransportContext<M> {
         accumulator: &mut StressEnergyGrid,
         contribution: StressEnergyContribution,
     ) -> Result<Option<usize>, PhysicsError> {
-        if self.backreaction_policy.updates_metric()
-            || matches!(
-                self.backreaction_policy.channel,
-                BackreactionChannel::MaterialState | BackreactionChannel::RadiationHydrodynamics
-            )
-        {
+        if self.backreaction_policy.deposits_stress_energy() {
             return accumulator.deposit_nearest(contribution).map(Some);
         }
 
@@ -162,5 +157,9 @@ impl BackreactionPolicy {
             self.channel,
             BackreactionChannel::StressEnergyMetricEvolution
         )
+    }
+
+    pub const fn deposits_stress_energy(self) -> bool {
+        !matches!(self.channel, BackreactionChannel::None)
     }
 }

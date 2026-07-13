@@ -5,12 +5,15 @@
 //! layouts behind the kernel seam. Later behavior-driven slices may promote validated
 //! physical or numerical choices without exposing raw storage policy.
 
+use crate::packet_deposition::{
+    GeodesicPacketHistory, PacketDepositionAdapter, PacketDepositionReport,
+};
 use crate::{
-    AlgebraicBssnGaugeEnforcer, BoundaryConditions3, BssnCellState, BssnGeometryStepper,
-    BssnGridFields, ConservativeMatterCell, ConservativeMatterGrid, CoordinateTime,
-    CoupledBssnMatterState, CoupledBssnMatterStepper, EvolutionGridField3, IdealGasEquationOfState,
-    NoopMatterRadiationStepper, PhysicsError, StressEnergyTensor, SymmetricSpatialTensor2,
-    TimeDuration, UniformGrid3, vec3,
+    AlgebraicBssnGaugeEnforcer, BackreactionPolicy, BoundaryConditions3, BssnCellState,
+    BssnGeometryStepper, BssnGridFields, ConservativeMatterCell, ConservativeMatterGrid,
+    CoordinateTime, CoupledBssnMatterState, CoupledBssnMatterStepper, EvolutionGridField3,
+    IdealGasEquationOfState, NoopMatterRadiationStepper, PhysicsError, StressEnergyTensor,
+    SymmetricSpatialTensor2, TimeDuration, UniformGrid3, vec3,
 };
 
 const INTERNAL_GHOST_WIDTH: usize = 2;
@@ -55,6 +58,7 @@ pub enum KernelStateKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct KernelState {
     inner: CoupledBssnMatterState<IdealGasEquationOfState>,
+    packet_deposition: PacketDepositionEvidence,
 }
 
 impl KernelState {
@@ -75,6 +79,7 @@ impl KernelState {
 
         Ok(Self {
             inner: CoupledBssnMatterState::new(geometry, matter),
+            packet_deposition: PacketDepositionEvidence::NOT_EVALUATED,
         })
     }
 
@@ -88,6 +93,25 @@ impl KernelState {
         } else {
             KernelStateKind::NotFlatEmpty
         }
+    }
+
+    pub const fn packet_deposition_evidence(&self) -> PacketDepositionEvidence {
+        self.packet_deposition
+    }
+
+    pub fn deposit_packet_histories(
+        &mut self,
+        histories: &[GeodesicPacketHistory],
+        policy: BackreactionPolicy,
+    ) -> Result<PacketDepositionReport, PhysicsError> {
+        let report = PacketDepositionAdapter.deposit(&mut self.inner.matter, histories, policy)?;
+        self.packet_deposition.record(PacketDepositionEvidence {
+            status: EvidenceStatus::Evaluated,
+            deposited_packet_count: report.diagnostics.deposited_packet_count,
+            passive_packet_count: report.diagnostics.passive_packet_count,
+            rejected_packet_count: report.diagnostics.rejected_packet_count,
+        });
+        Ok(report)
     }
 
     fn is_flat_empty(&self) -> bool {
@@ -181,6 +205,30 @@ pub struct FacetEvidence {
     pub status: EvidenceStatus,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct PacketDepositionEvidence {
+    pub status: EvidenceStatus,
+    pub deposited_packet_count: usize,
+    pub passive_packet_count: usize,
+    pub rejected_packet_count: usize,
+}
+
+impl PacketDepositionEvidence {
+    const NOT_EVALUATED: Self = Self {
+        status: EvidenceStatus::NotEvaluated,
+        deposited_packet_count: 0,
+        passive_packet_count: 0,
+        rejected_packet_count: 0,
+    };
+
+    fn record(&mut self, evidence: Self) {
+        self.status = EvidenceStatus::Evaluated;
+        self.deposited_packet_count += evidence.deposited_packet_count;
+        self.passive_packet_count += evidence.passive_packet_count;
+        self.rejected_packet_count += evidence.rejected_packet_count;
+    }
+}
+
 impl FacetEvidence {
     const NOT_EVALUATED: Self = Self {
         status: EvidenceStatus::NotEvaluated,
@@ -194,7 +242,7 @@ pub struct KernelDiagnostics {
     pub bssn: BssnEvidence,
     pub grhd: FacetEvidence,
     pub radiation: FacetEvidence,
-    pub packet_deposition: FacetEvidence,
+    pub packet_deposition: PacketDepositionEvidence,
     pub amr: FacetEvidence,
     pub verification: FacetEvidence,
 }
@@ -284,6 +332,8 @@ impl DynamicalSpacetimeKernel {
             AlgebraicConstraintStatus::Violated
         };
 
+        let packet_deposition = next_state.packet_deposition;
+        next_state.packet_deposition = PacketDepositionEvidence::NOT_EVALUATED;
         Ok(KernelStepResult {
             state: next_state,
             diagnostics: KernelDiagnostics {
@@ -304,7 +354,7 @@ impl DynamicalSpacetimeKernel {
                 },
                 grhd: FacetEvidence::NOT_EVALUATED,
                 radiation: FacetEvidence::NOT_EVALUATED,
-                packet_deposition: FacetEvidence::NOT_EVALUATED,
+                packet_deposition,
                 amr: FacetEvidence::NOT_EVALUATED,
                 verification: FacetEvidence::NOT_EVALUATED,
             },
