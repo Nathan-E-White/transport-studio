@@ -34,6 +34,8 @@ Tauri-specific code must not:
 
 The Native Execution Contract v2 makes this boundary concrete. The caller supplies the Run Session ID, the Rust contract crate converts the Compiled Transport Problem and maps engine results into ordered canonical events, and the TypeScript contract package validates the response. Expected version, request, and execution failures are `runFailed` events. Tauri neither owns those DTOs nor interprets failure meaning.
 
+Run Session orchestration is a dedicated runtime-neutral external store. Toy and native runtimes implement the same adapter shape: immutable metadata plus asynchronous canonical event execution. The store owns caller identity, strict event reduction, the exact Run Input Record, stale-scene presentation guards, and optional versioned NDJSON journal sequencing. Host sinks may write bytes, but do not define journal meaning.
+
 ## Consequences
 
 - Browser-only development can continue to surface bridge-unavailable diagnostics without pretending native execution is wired.
@@ -41,6 +43,7 @@ The Native Execution Contract v2 makes this boundary concrete. The caller suppli
 - Future runtimes can reuse the same contracts through their own adapters.
 - Tauri remains useful for desktop packaging and IPC, but domain and engine boundaries remain portable.
 - More adapter code may exist at the edge, but that duplication protects the deeper contract.
+- Optional journal sinks receive backpressured records after preflight; capture failure is diagnosed without turning host I/O into execution semantics.
 
 ## TDD Guidance
 

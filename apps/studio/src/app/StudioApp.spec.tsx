@@ -112,8 +112,10 @@ const mocks = vi.hoisted(() => {
         }
     ];
     const runNativePhotonSmokeBackend = vi.fn<
-        (problem: unknown, bridge?: NativePhotonSmokeBridge) => Promise<readonly TransportBackendEvent[]>
-    >(async () => nativeBridgeUnavailableEvents);
+        (problem: unknown, sessionId: string, bridge?: NativePhotonSmokeBridge) => Promise<readonly TransportBackendEvent[]>
+    >(async (_problem, sessionId) => nativeBridgeUnavailableEvents.map((event) => (
+        "runId" in event ? {...event, runId: sessionId} : event
+    )));
     const createTauriNativePhotonSmokeBridge = vi.fn<() => NativePhotonSmokeBridge | undefined>(() => undefined);
 
     return {
@@ -254,6 +256,9 @@ vi.mock("../panels/RunPanel", () => ({
         diagnostics: readonly { message: string }[];
         sceneStats: { geometry: number; materials: number; sources: number; tallies: number };
         freshness: "empty" | "fresh" | "stale";
+        renderingBlock: {message: string} | null;
+        resultView: "current" | "submitted";
+        onResultViewChange: (view: "current" | "submitted") => void;
     }) => (
         <section aria-label="Run panel">
             <h2>Run panel</h2>
@@ -262,6 +267,10 @@ vi.mock("../panels/RunPanel", () => ({
             <p>run panel tracks: {props.tracks.length}</p>
             <p>run panel diagnostics: {props.diagnostics.length}</p>
             <p>run results freshness: {props.freshness === "fresh" ? "current" : props.freshness}</p>
+            {props.renderingBlock && <p>{props.renderingBlock.message}</p>}
+            {props.renderingBlock && props.resultView === "current" && (
+                <button type="button" onClick={() => props.onResultViewChange("submitted")}>View submitted scene</button>
+            )}
             {props.diagnostics.map((diagnostic) => <p key={diagnostic.message}>{diagnostic.message}</p>)}
             <p>run panel scene
                 stats: {props.sceneStats.geometry}/{props.sceneStats.materials}/{props.sceneStats.sources}/{props.sceneStats.tallies}</p>
@@ -301,7 +310,11 @@ describe("StudioApp spec", () => {
         mocks.createTauriNativePhotonSmokeBridge.mockClear();
         mocks.runToyPhotonTransport.mockClear();
         mocks.validateProject.mockClear();
-        mocks.runNativePhotonSmokeBackend.mockResolvedValue(mocks.nativeBridgeUnavailableEvents);
+        mocks.runNativePhotonSmokeBackend.mockImplementation(async (_problem, sessionId) => (
+            mocks.nativeBridgeUnavailableEvents.map((event) => (
+                "runId" in event ? {...event, runId: sessionId} : event
+            ))
+        ));
         mocks.createTauriNativePhotonSmokeBridge.mockReturnValue(undefined);
     });
 
@@ -363,12 +376,12 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("inspector entity: Dose Tally")).toBeTruthy();
     });
 
-    it("runs the toy photon simulation, enters run mode, and summarizes terminal track outcomes", () => {
+    it("runs the toy photon simulation, enters run mode, and summarizes terminal track outcomes", async () => {
         render(<StudioApp/>);
 
         fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
 
-        expect(mocks.runToyPhotonTransport).toHaveBeenCalledTimes(1);
+        await waitFor(() => expect(mocks.runToyPhotonTransport).toHaveBeenCalledTimes(1));
         expect(mocks.runToyPhotonTransport).toHaveBeenCalledWith({
             id: "compiled-current-scene",
             settings: {
@@ -401,7 +414,7 @@ describe("StudioApp spec", () => {
                 histories: 4,
                 seed: 314159
             }
-        }, "1:1", undefined);
+        }, expect.any(String), undefined);
         expect(screen.getByText("RUN MODE")).toBeTruthy();
         expect(screen.getByText("active run tab: diagnostics")).toBeTruthy();
         expect(screen.getByText("run panel backend: native")).toBeTruthy();
@@ -435,22 +448,41 @@ describe("StudioApp spec", () => {
         });
     });
 
-    it("retains prior tracks while rendering Run Session freshness after authoring changes", () => {
+    it("blocks stale tracks on the current scene and offers the submitted-scene view", async () => {
         render(<StudioApp/>);
         fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
-        expect(screen.getByText("run results freshness: current")).toBeTruthy();
+        await waitFor(() => expect(screen.getByText("run results freshness: current")).toBeTruthy());
         expect(screen.getByText("run panel tracks: 4")).toBeTruthy();
 
         fireEvent.click(screen.getByRole("button", {name: "Hide Shield Slab"}));
 
-        expect(screen.getByText("run results freshness: stale")).toBeTruthy();
+        await waitFor(() => expect(screen.getByText("run results freshness: stale")).toBeTruthy());
+        expect(screen.getByText("run panel tracks: 0")).toBeTruthy();
+        expect(screen.getByText(/Results were submitted from Editable Scene revision/)).toBeTruthy();
+        fireEvent.click(screen.getByRole("button", {name: "View submitted scene"}));
         expect(screen.getByText("run panel tracks: 4")).toBeTruthy();
+    });
+
+    it("keeps the prior completed session when a later compile fails", async () => {
+        render(<StudioApp/>);
+        fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
+        await waitFor(() => expect(screen.getByText("run panel tracks: 4")).toBeTruthy());
+
+        mocks.compileTransportProblem.mockImplementationOnce(() => ({
+            ok: false,
+            diagnostics: [{level: "error", code: "source.missing", message: "A source is required."}],
+        }) as never);
+        fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
+
+        await waitFor(() => expect(screen.getByText("source.missing: A source is required.")).toBeTruthy());
+        expect(screen.getByText("run panel tracks: 4")).toBeTruthy();
+        expect(mocks.runToyPhotonTransport).toHaveBeenCalledTimes(1);
     });
 
     it("renders native Rust tracks and warning diagnostics when the Tauri bridge succeeds", async () => {
         const bridge = {runPhotonSmoke: vi.fn()};
         mocks.createTauriNativePhotonSmokeBridge.mockReturnValue(bridge);
-        mocks.runNativePhotonSmokeBackend.mockResolvedValue([
+        const successfulEvents = [
             {type: "backendMetadata", metadata: mocks.nativeBackendMetadata},
             {
                 type: "problemAccepted",
@@ -522,7 +554,10 @@ describe("StudioApp spec", () => {
                     diagnostics: []
                 }
             }
-        ] satisfies readonly TransportBackendEvent[]);
+        ] satisfies readonly TransportBackendEvent[];
+        mocks.runNativePhotonSmokeBackend.mockImplementation(async (_problem, sessionId) => (
+            successfulEvents.map((event) => "runId" in event ? {...event, runId: sessionId} : event)
+        ));
         render(<StudioApp/>);
 
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
@@ -534,7 +569,7 @@ describe("StudioApp spec", () => {
                 histories: 4,
                 seed: 314159
             }
-        }, "1:1", bridge);
+        }, expect.any(String), bridge);
         expect(screen.getByText("run panel backend: native")).toBeTruthy();
         expect(screen.getByText("run panel diagnostics: 2")).toBeTruthy();
         expect(screen.getByText("physics_data.simple_coefficients: Native photon backend used simple coefficients because tabular cross-section data was not supplied.")).toBeTruthy();
@@ -542,10 +577,11 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("active run tab: run")).toBeTruthy();
     });
 
-    it("lets the user inspect run-panel tabs without rerunning transport", () => {
+    it("lets the user inspect run-panel tabs without rerunning transport", async () => {
         render(<StudioApp/>);
 
         fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
+        await waitFor(() => expect(mocks.runToyPhotonTransport).toHaveBeenCalledTimes(1));
         fireEvent.click(screen.getByRole("button", {name: "Open Tracks Tab"}));
 
         expect(screen.getByText("active run tab: tracks")).toBeTruthy();
@@ -557,11 +593,11 @@ describe("StudioApp spec", () => {
         expect(mocks.runToyPhotonTransport).toHaveBeenCalledTimes(1);
     });
 
-    it("lets the user hide viewport overlays without losing the underlying run results", () => {
+    it("lets the user hide viewport overlays without losing the underlying run results", async () => {
         render(<StudioApp/>);
 
         fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
-        expect(screen.getByText("viewport tracks: 4")).toBeTruthy();
+        await waitFor(() => expect(screen.getByText("viewport tracks: 4")).toBeTruthy());
         expect(screen.getByText("viewport tallies visible: true")).toBeTruthy();
         expect(screen.getByText("viewport diagnostics visible: true")).toBeTruthy();
 

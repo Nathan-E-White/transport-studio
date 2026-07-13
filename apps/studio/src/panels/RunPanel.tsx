@@ -1,6 +1,10 @@
 import type { Diagnostic, RunConfiguration, TrackSample } from "@transport/domain";
 import type { BottomTab } from "../app/StudioApp";
-import type {RunSessionFreshness} from "../app/runSession";
+import type {
+  RunRenderingBlock,
+  RunResultView,
+  RunSessionFreshness,
+} from "../app/runSession";
 
 interface RunPanelProps {
   readonly config: RunConfiguration;
@@ -10,11 +14,25 @@ interface RunPanelProps {
   readonly onTabChange: (tab: BottomTab) => void;
   readonly sceneStats: { geometry: number; materials: number; sources: number; tallies: number };
   readonly freshness: RunSessionFreshness;
+  readonly renderingBlock: RunRenderingBlock | null;
+  readonly resultView: RunResultView;
+  readonly onResultViewChange: (view: RunResultView) => void;
 }
 
 const tabs: readonly BottomTab[] = ["run", "tallies", "tracks", "diagnostics", "console"];
 
-export function RunPanel({ config, diagnostics, tracks, activeTab, onTabChange, sceneStats, freshness }: RunPanelProps) {
+export function RunPanel({
+  config,
+  diagnostics,
+  tracks,
+  activeTab,
+  onTabChange,
+  sceneStats,
+  freshness,
+  renderingBlock,
+  resultView,
+  onResultViewChange,
+}: RunPanelProps) {
   const escaped = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
   const absorbed = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
 
@@ -34,6 +52,16 @@ export function RunPanel({ config, diagnostics, tracks, activeTab, onTabChange, 
             <Metric label="absorbed" value={absorbed} />
             <Metric label="diagnostics" value={diagnostics.length} />
             <Metric label="results" value={freshness === "fresh" ? "current" : freshness} />
+            {renderingBlock && (
+              <div className="dock-copy" role="status">
+                {renderingBlock.message}
+                {resultView === "current" ? (
+                  <button type="button" onClick={() => onResultViewChange("submitted")}>View submitted scene</button>
+                ) : (
+                  <button type="button" onClick={() => onResultViewChange("current")}>Return to current scene</button>
+                )}
+              </div>
+            )}
           </div>
         )}
         {activeTab === "tallies" && (
