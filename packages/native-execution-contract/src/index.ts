@@ -85,13 +85,19 @@ function assertNativeExecutionSequence(
   if (terminal?.type !== "runCompleted" && terminal?.type !== "runFailed") {
     throw new Error("Native execution response must end with exactly one terminal event.");
   }
+  const middleOrder: Record<string, number> = {
+    runProgress: 0,
+    trackSamples: 1,
+    tallyDelta: 2,
+    diagnostic: 3,
+  };
+  let previousPhase = -1;
   for (const event of events.slice(3, -1)) {
-    if (event.type !== "runProgress"
-      && event.type !== "trackSamples"
-      && event.type !== "tallyDelta"
-      && event.type !== "diagnostic") {
+    const phase = middleOrder[event.type];
+    if (phase === undefined || phase < previousPhase) {
       throw new Error(`Native execution event '${event.type}' is out of lifecycle order.`);
     }
+    previousPhase = phase;
   }
 }
 

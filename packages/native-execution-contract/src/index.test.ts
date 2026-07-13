@@ -167,6 +167,20 @@ describe("Native Execution Contract v2", () => {
       contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
       events: [...successEvents.slice(0, -1), fixture.eventExamples[8], fixture.eventExamples[7]],
     })).toThrow("is out of lifecycle order");
+    for (const events of [
+      [...successEvents.slice(0, 3), successEvents[4], successEvents[3], ...successEvents.slice(5)],
+      [...successEvents.slice(0, 4), successEvents[5], successEvents[4], ...successEvents.slice(6)],
+      [...successEvents.slice(0, 5), successEvents[6], successEvents[5], successEvents[7]],
+    ]) {
+      expect(() => parseNativeExecutionResponse({
+        contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+        events,
+      })).toThrow("is out of lifecycle order");
+    }
+    expect(parseNativeExecutionResponse({
+      contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
+      events: [...successEvents.slice(0, 4), successEvents[3], ...successEvents.slice(4, 7), successEvents[6], successEvents[7]],
+    }).events).toHaveLength(10);
     expect(parseNativeExecutionResponse({
       contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
       events: [fixture.eventExamples[8]],
