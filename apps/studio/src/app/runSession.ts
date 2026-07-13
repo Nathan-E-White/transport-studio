@@ -10,12 +10,22 @@ import type {
     TransportTallyDelta,
     TransportTrackSample,
 } from "@transport/domain";
+import {NATIVE_RUST_PHOTON_BACKEND_ID, VISUAL_TS_BACKEND_ID} from "@transport/domain";
 import type {TransportProblem} from "@transport/domain/transport/TransportProblem";
 
 export type RunSessionStatus = "prepared" | "running" | "completed" | "failed";
 export type RunResultView = "current" | "submitted";
 export type RunJournalStatus = "disabled" | "capturing" | "complete" | "incomplete";
 export type RunSessionFreshness = "empty" | "fresh" | "stale";
+export type RunSessionPhase =
+    | "awaiting-acceptance"
+    | "accepted"
+    | "started"
+    | "progress"
+    | "tracks"
+    | "tallies"
+    | "diagnostics"
+    | "terminal";
 
 export interface RunSessionDiagnostic extends Diagnostic {
     readonly code: string;
@@ -59,7 +69,7 @@ export interface RunSessionState {
         readonly status: RunJournalStatus;
         readonly finalSequence: number;
     };
-    readonly phase: number;
+    readonly phase: RunSessionPhase;
 }
 
 export interface RunRenderingBlock {
@@ -153,6 +163,15 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
     }
 
     async function start(run: StartRunOptions): Promise<StartRunResult> {
+        if (run.problem.status !== "compiled") {
+            return {
+                started: false,
+                diagnostic: diagnostic(
+                    "run.session.problem_not_compiled",
+                    `Run Session requires a compiled problem; received '${run.problem.status}'.`,
+                ),
+            };
+        }
         if (executionActive) {
             return {
                 started: false,
@@ -199,15 +218,18 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
             terminalFailure: null,
             input,
             journal: Object.freeze({status: run.sink ? "capturing" : "disabled", finalSequence: 0}),
-            phase: -1,
+            phase: "awaiting-acceptance",
         });
         publish({...snapshot, sceneFingerprint: input.sourceSceneFingerprint, current: session, resultView: "current", renderingBlock: null});
+        const publishSession = () => snapshot.current?.id === sessionId
+            ? publishCurrent(session)
+            : snapshot;
 
         const journal = createJournal(run.sink, input, sessionId, run.adapter.metadata, now);
         const openingFailure = await journal.open();
         if (openingFailure) {
             session = withJournalFailure(session, openingFailure, journal.sequence());
-            publishCurrent(session);
+            publishSession();
         }
 
         try {
@@ -217,7 +239,7 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
                     session = withJournalFailure(session, journalFailure, journal.sequence());
                 }
                 session = reduceBackendEvent(session, event);
-                publishCurrent(session);
+                publishSession();
                 if (session.status === "failed" && session.terminalFailure?.code === "run.session.protocol_violation") break;
             }
         } catch (error) {
@@ -225,12 +247,12 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
                 "run.adapter.rejected",
                 errorMessage(error, "Run execution adapter rejected."),
             ));
-            publishCurrent(session);
+            publishSession();
         }
 
         if (session.status !== "completed" && session.status !== "failed") {
             session = protocolViolation(session, "Adapter event sequence ended without a terminal event.");
-            publishCurrent(session);
+            publishSession();
         }
 
         const closingFailure = await journal.close(session);
@@ -245,7 +267,7 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
                 }),
             });
         }
-        publishCurrent(session);
+        publishSession();
         executionActive = false;
         return {started: true, sessionId};
     }
@@ -308,7 +330,13 @@ export function selectRunDiagnostics(snapshot: RunSessionStoreSnapshot): readonl
 
 export function selectRunBackend(snapshot: RunSessionStoreSnapshot): Project["runConfiguration"]["backend"] {
     if (!snapshot.current) return "visual-ts";
-    return snapshot.current.adapterMetadata.id === "visual-ts" ? "visual-ts" : "native";
+    switch (snapshot.current.adapterMetadata.id) {
+        case VISUAL_TS_BACKEND_ID: return "visual-ts";
+        case NATIVE_RUST_PHOTON_BACKEND_ID: return "native";
+        case "web-worker": return "web-worker";
+        case "webgpu": return "webgpu";
+        default: return snapshot.current.input.submittedScene.project.runConfiguration.backend;
+    }
 }
 
 export function selectRunFreshness(snapshot: RunSessionStoreSnapshot): RunSessionFreshness {
@@ -373,29 +401,36 @@ function reduceBackendEvent(state: RunSessionState, event: TransportBackendEvent
         case "backendMetadata":
             return protocolViolation(state, "Adapter metadata must be supplied by the adapter, not repeated in its event sequence.");
         case "problemAccepted":
-            if (state.phase !== -1 || event.problemId !== state.input.problem.id) {
+            if (state.phase !== "awaiting-acceptance" || event.problemId !== state.input.problem.id) {
                 return protocolViolation(state, "Problem acceptance was missing, duplicated, or referred to another problem.");
             }
-            return Object.freeze({...appendDiagnostics(state, event.diagnostics), phase: 0});
+            return Object.freeze({...appendDiagnostics(state, event.diagnostics), phase: "accepted"});
         case "runStarted":
-            if (state.phase !== 0 || event.problemId !== state.input.problem.id) {
+            if (state.phase !== "accepted" || event.problemId !== state.input.problem.id) {
                 return protocolViolation(state, "Run start must follow acceptance for the submitted problem.");
             }
-            return Object.freeze({...state, status: "running", provenance: event.provenance, phase: 1});
+            return Object.freeze({
+                ...state,
+                status: "running",
+                provenance: deepFreeze(structuredClone(event.provenance)),
+                phase: "started",
+            });
         case "runProgress":
-            return reduceMiddle(state, event, 2, {
+            return reduceMiddle(state, event, "progress", {
                 progress: Object.freeze({completedHistories: event.completedHistories, totalHistories: event.totalHistories}),
             });
         case "trackSamples":
-            return reduceMiddle(state, event, 3, {
-                tracks: Object.freeze([...state.tracks, ...event.samples.map(convertTransportTrackSample)]),
+            return reduceMiddle(state, event, "tracks", {
+                tracks: deepFreeze([...state.tracks, ...event.samples.map(convertTransportTrackSample)]),
             });
         case "tallyDelta":
-            return reduceMiddle(state, event, 4, {tallies: Object.freeze([...state.tallies, event.delta])});
+            return reduceMiddle(state, event, "tallies", {
+                tallies: deepFreeze([...state.tallies, structuredClone(event.delta)]),
+            });
         case "diagnostic":
-            return reduceMiddle(appendDiagnostics(state, [event.diagnostic]), event, 5, {});
+            return reduceMiddle(appendDiagnostics(state, [event.diagnostic]), event, "diagnostics", {});
         case "runCompleted":
-            if (state.status !== "running" || state.phase < 1) {
+            if (state.status !== "running" || phaseRank(state.phase) < phaseRank("started")) {
                 return protocolViolation(state, "Completion must follow run start.");
             }
             return Object.freeze({
@@ -405,15 +440,15 @@ function reduceBackendEvent(state: RunSessionState, event: TransportBackendEvent
                     completedHistories: event.summary.completedHistories,
                     totalHistories: event.summary.totalHistories,
                 }),
-                summary: event.summary,
-                phase: 6,
+                summary: deepFreeze(structuredClone(event.summary)),
+                phase: "terminal",
             });
         case "runFailed":
             return Object.freeze({
                 ...appendDiagnostics(state, [event.diagnostic]),
                 status: "failed",
-                terminalFailure: event.diagnostic,
-                phase: 6,
+                terminalFailure: deepFreeze(structuredClone(event.diagnostic)),
+                phase: "terminal",
             });
     }
 }
@@ -421,10 +456,10 @@ function reduceBackendEvent(state: RunSessionState, event: TransportBackendEvent
 function reduceMiddle(
     state: RunSessionState,
     event: TransportBackendEvent,
-    phase: number,
+    phase: Exclude<RunSessionPhase, "awaiting-acceptance" | "accepted" | "started" | "terminal">,
     patch: Partial<RunSessionState>,
 ): RunSessionState {
-    if (state.status !== "running" || phase < state.phase) {
+    if (state.status !== "running" || phaseRank(phase) < phaseRank(state.phase)) {
         return protocolViolation(state, `Event '${event.type}' is out of lifecycle order.`);
     }
     return Object.freeze({...state, ...patch, phase});
@@ -435,18 +470,18 @@ function protocolViolation(state: RunSessionState, message: string): RunSessionS
 }
 
 function failSession(state: RunSessionState, failure: RunSessionDiagnostic): RunSessionState {
-    const backendFailure: TransportBackendDiagnostic = {
+    const backendFailure: TransportBackendDiagnostic = Object.freeze({
         level: "error",
         code: failure.code,
         message: failure.message,
         runId: state.id,
-    };
+    });
     return Object.freeze({
         ...state,
         status: "failed",
         diagnostics: Object.freeze([...state.diagnostics, failure]),
         terminalFailure: backendFailure,
-        phase: 6,
+        phase: "terminal",
     });
 }
 
@@ -580,7 +615,7 @@ function diagnostic(
 }
 
 function convertTransportTrackSample(sample: TransportTrackSample): TrackSample {
-    return {
+    return deepFreeze({
         historyId: sample.historyId,
         events: sample.events.map((event) => ({
             historyId: event.historyId,
@@ -595,7 +630,22 @@ function convertTransportTrackSample(sample: TransportTrackSample): TrackSample 
             regionId: event.entityId,
             reason: event.reason,
         })) as TrackSample["events"],
-    };
+    });
+}
+
+const PHASE_ORDER: Readonly<Record<RunSessionPhase, number>> = Object.freeze({
+    "awaiting-acceptance": 0,
+    accepted: 1,
+    started: 2,
+    progress: 3,
+    tracks: 4,
+    tallies: 5,
+    diagnostics: 6,
+    terminal: 7,
+});
+
+function phaseRank(phase: RunSessionPhase): number {
+    return PHASE_ORDER[phase];
 }
 
 function stableSerialize(value: unknown): string {

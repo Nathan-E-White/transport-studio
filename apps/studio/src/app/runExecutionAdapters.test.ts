@@ -1,5 +1,5 @@
 import {describe, expect, it, vi} from "vitest";
-import type {Project, TrackSample, TransportBackendEvent} from "@transport/domain";
+import type {TrackSample, TransportBackendEvent} from "@transport/domain";
 import type {TransportProblem} from "@transport/domain/transport/TransportProblem";
 import {createNativeExecutionAdapter, createToyExecutionAdapter} from "./runExecutionAdapters";
 
@@ -10,7 +10,7 @@ describe("Run Session execution adapters", () => {
             position: {x: 1, y: 2, z: 3}, direction: {x: 1, y: 0, z: 0},
             energy: 2.5, weight: 0.75, time: 4, materialId: "m-1" as never, regionId: "g-1" as never, reason: "fixture",
         }]}];
-        const adapter = createToyExecutionAdapter(project, {runToy: vi.fn(() => ({tracks}))});
+        const adapter = createToyExecutionAdapter({visibleHistoryBudget: 1}, {runToy: vi.fn(() => ({tracks}))});
         const events: TransportBackendEvent[] = [];
         for await (const event of adapter.execute({sessionId: "session-1", problem})) events.push(event);
 
@@ -46,7 +46,7 @@ describe("Run Session execution adapters", () => {
     });
 
     it("does not invent an empty track batch", async () => {
-        const adapter = createToyExecutionAdapter(project, {runToy: vi.fn(() => ({tracks: []}))});
+        const adapter = createToyExecutionAdapter({visibleHistoryBudget: 1}, {runToy: vi.fn(() => ({tracks: []}))});
         const events: TransportBackendEvent[] = [];
         for await (const event of adapter.execute({sessionId: "session-1", problem})) events.push(event);
         expect(events.map((event) => event.type)).toEqual([
@@ -69,10 +69,6 @@ describe("Run Session execution adapters", () => {
         }}]);
     });
 });
-
-const project = {
-    runConfiguration: {visibleHistoryBudget: 1},
-} as Project;
 
 const problem = {
     id: "problem-1",

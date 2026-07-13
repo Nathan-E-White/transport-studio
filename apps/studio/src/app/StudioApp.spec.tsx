@@ -135,6 +135,7 @@ const mocks = vi.hoisted(() => {
             ok: true;
             value: {
                 id: string;
+                status: "compiled";
                 settings: {
                     histories: number;
                     seed: number;
@@ -145,6 +146,7 @@ const mocks = vi.hoisted(() => {
             ok: true,
             value: {
                 id: "compiled-current-scene",
+                status: "compiled",
                 settings: {
                     histories: 4,
                     seed: 314159
@@ -384,6 +386,7 @@ describe("StudioApp spec", () => {
         await waitFor(() => expect(mocks.runToyPhotonTransport).toHaveBeenCalledTimes(1));
         expect(mocks.runToyPhotonTransport).toHaveBeenCalledWith({
             id: "compiled-current-scene",
+            status: "compiled",
             settings: {
                 histories: 4,
                 seed: 314159
@@ -410,6 +413,7 @@ describe("StudioApp spec", () => {
         expect(mocks.createTauriNativePhotonSmokeBridge).toHaveBeenCalledTimes(1);
         expect(mocks.runNativePhotonSmokeBackend).toHaveBeenCalledWith({
             id: "compiled-current-scene",
+            status: "compiled",
             settings: {
                 histories: 4,
                 seed: 314159
@@ -565,6 +569,7 @@ describe("StudioApp spec", () => {
         await waitFor(() => expect(screen.getByText("run panel tracks: 1")).toBeTruthy());
         expect(mocks.runNativePhotonSmokeBackend).toHaveBeenCalledWith({
             id: "compiled-current-scene",
+            status: "compiled",
             settings: {
                 histories: 4,
                 seed: 314159

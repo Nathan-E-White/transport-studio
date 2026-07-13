@@ -93,6 +93,7 @@ describe("strict external Run Session store", () => {
         await store.start({project: fixtureProject(), problem: fixtureProblem(), adapter});
         expect(steps).toEqual(["invalid"]);
         expect(store.getSnapshot().current?.terminalFailure?.code).toBe("run.session.protocol_violation");
+        expect(Object.isFrozen(store.getSnapshot().current?.terminalFailure)).toBe(true);
     });
 
     it("allows repeated middle phases and completion immediately after start", async () => {
@@ -109,7 +110,7 @@ describe("strict external Run Session store", () => {
         ];
         const repeatedStore = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
         await repeatedStore.start({project: fixtureProject(), problem: fixtureProblem(), adapter: adapterFrom(repeated)});
-        expect(repeatedStore.getSnapshot().current).toMatchObject({status: "completed", phase: 6});
+        expect(repeatedStore.getSnapshot().current).toMatchObject({status: "completed", phase: "terminal"});
         expect(repeatedStore.getSnapshot().current?.tallies).toHaveLength(2);
         expect(repeatedStore.getSnapshot().current?.diagnostics.map((item) => item.code)).toEqual(["one", "two"]);
 
@@ -129,8 +130,26 @@ describe("strict external Run Session store", () => {
             },
         }])});
         expect(store.getSnapshot().current).toMatchObject({
-            status: "failed", terminalFailure: {code: "native.contract.invalid"}, phase: 6,
+            status: "failed", terminalFailure: {code: "native.contract.invalid"}, phase: "terminal",
         });
+    });
+
+    it("rejects an uncompiled problem before allocating or executing a session", async () => {
+        const adapter = adapterFrom(canonicalEvents("session-1"));
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+
+        const result = await store.start({
+            project: fixtureProject(),
+            problem: {...fixtureProblem(), status: "validated"},
+            adapter,
+        });
+
+        expect(result).toMatchObject({
+            started: false,
+            diagnostic: {code: "run.session.problem_not_compiled"},
+        });
+        expect(adapter.execute).not.toHaveBeenCalled();
+        expect(store.getSnapshot().current).toBeNull();
     });
 
     it("rejects concurrent starts while retaining one current session", async () => {
@@ -152,6 +171,55 @@ describe("strict external Run Session store", () => {
         expect(second).toMatchObject({started: false, diagnostic: {code: "run.session.concurrent_unsupported"}});
         release();
         await first;
+    });
+
+    it("does not resurrect an active session after clear releases it", async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const adapter: RunExecutionAdapter = {
+            metadata,
+            async *execute() {
+                yield accepted();
+                yield started("session-1");
+                await gate;
+                yield completed("session-1");
+            },
+        };
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+        const running = store.start({project: fixtureProject(), problem: fixtureProblem(), adapter});
+        await vi.waitFor(() => expect(store.getSnapshot().current?.status).toBe("running"));
+
+        store.clear();
+        release();
+        await running;
+
+        expect(store.getSnapshot().current).toBeNull();
+    });
+
+    it("copies and deeply freezes adapter-owned result values", async () => {
+        const provenance = started("session-1").provenance;
+        const delta = {tallyId: "t-1", scores: [1]};
+        const summary = completed("session-1").summary;
+        const events: TransportBackendEvent[] = [
+            accepted(),
+            {...started("session-1"), provenance},
+            {type: "tallyDelta", runId: "session-1", delta},
+            {...completed("session-1"), summary},
+        ];
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+        await store.start({project: fixtureProject(), problem: fixtureProblem(), adapter: adapterFrom(events)});
+
+        (provenance.warnings as string[]).push("mutated");
+        (delta.scores as number[])[0] = 99;
+        (summary.diagnostics as unknown as Array<{message: string}>).push({message: "mutated"});
+
+        const current = store.getSnapshot().current!;
+        expect(current.provenance?.warnings).toEqual([]);
+        expect(current.tallies[0]?.scores).toEqual([1]);
+        expect(current.summary?.diagnostics).toEqual([]);
+        expect(Object.isFrozen(current.provenance?.warnings)).toBe(true);
+        expect(Object.isFrozen(current.tallies[0]?.scores)).toBe(true);
+        expect(Object.isFrozen(current.summary?.diagnostics)).toBe(true);
     });
 
     it("retains a prior completed session when compilation fails outside the store", async () => {
@@ -414,7 +482,7 @@ describe("strict external Run Session store", () => {
         expect(selectRenderableTallies(store.getSnapshot())).toHaveLength(0);
 
         await store.start({project, problem: fixtureProblem(), adapter: adapterFrom(canonicalEvents("session-1"))});
-        expect(selectRunBackend(store.getSnapshot())).toBe("native");
+        expect(selectRunBackend(store.getSnapshot())).toBe("visual-ts");
         expect(selectRunFreshness(store.getSnapshot())).toBe("fresh");
         expect(selectRunDiagnostics(store.getSnapshot())).toEqual([{
             code: "fixture.info", severity: "info", message: "fixture.info: Fixture.", entityId: undefined,

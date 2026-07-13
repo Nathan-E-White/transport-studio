@@ -1,5 +1,4 @@
 import type {
-    Project,
     TrackSample,
     TransportBackendEvent,
     TransportBackendMetadata,
@@ -19,6 +18,10 @@ import type {RunExecutionAdapter} from "./runSession";
 
 export interface ToyExecutionDependencies {
     readonly runToy?: typeof runToyPhotonTransport;
+}
+
+export interface ToyExecutionOptions {
+    readonly visibleHistoryBudget: number;
 }
 
 export interface NativeExecutionDependencies {
@@ -44,14 +47,14 @@ export const toyBackendMetadata: TransportBackendMetadata = {
 };
 
 export function createToyExecutionAdapter(
-    project: Project,
+    options: ToyExecutionOptions,
     dependencies: ToyExecutionDependencies = {},
 ): RunExecutionAdapter {
     return {
         metadata: toyBackendMetadata,
         async *execute({sessionId, problem}) {
             const result = (dependencies.runToy ?? runToyPhotonTransport)(problem, {
-                visibleHistoryBudget: project.runConfiguration.visibleHistoryBudget,
+                visibleHistoryBudget: options.visibleHistoryBudget,
             });
             const tracks = result.tracks.map(toTransportTrackSample);
             yield {type: "problemAccepted", problemId: problem.id, diagnostics: []};

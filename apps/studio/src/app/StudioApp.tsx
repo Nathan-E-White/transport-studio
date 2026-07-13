@@ -88,7 +88,9 @@ function StudioWorkbench() {
     }, [project, runSessionStore]);
 
     async function runDemo() {
-        await startCompiledRun(createToyExecutionAdapter(project));
+        await startCompiledRun(createToyExecutionAdapter({
+            visibleHistoryBudget: project.runConfiguration.visibleHistoryBudget,
+        }));
     }
 
     async function runNative() {
