@@ -390,6 +390,124 @@ mod tests {
     }
 
     #[test]
+    fn analytic_intersections_respect_translation_and_boundary_direction() {
+        for entity in [
+            GeometryEntity::Box {
+                id: "translated-box".to_string(),
+                name: "Translated Box".to_string(),
+                material_id: "mat-void".to_string(),
+                transform: Transform3 {
+                    position: Vec3::new(5.0, 0.0, 0.0),
+                    rotation: Vec3::ZERO,
+                },
+                size: Vec3::new(2.0, 2.0, 2.0),
+            },
+            GeometryEntity::Sphere {
+                id: "translated-sphere".to_string(),
+                name: "Translated Sphere".to_string(),
+                material_id: "mat-void".to_string(),
+                transform: Transform3 {
+                    position: Vec3::new(5.0, 0.0, 0.0),
+                    rotation: Vec3::ZERO,
+                },
+                radius: 1.0,
+            },
+            GeometryEntity::Cylinder {
+                id: "translated-cylinder".to_string(),
+                name: "Translated Cylinder".to_string(),
+                material_id: "mat-void".to_string(),
+                transform: Transform3 {
+                    position: Vec3::new(5.0, 0.0, 0.0),
+                    rotation: Vec3::ZERO,
+                },
+                radius: 1.0,
+                height: 2.0,
+            },
+        ] {
+            let hit = crate::geometry::nearest_intersection(&[entity], Vec3::ZERO, Vec3::X)
+                .expect("translated entity should intersect the +x ray");
+            assert_close(hit.entry_distance, 4.0);
+            assert_close(hit.exit_distance, 6.0);
+            assert_close(hit.path_length(), 2.0);
+        }
+
+        let centered_box = GeometryEntity::Box {
+            id: "box".to_string(),
+            name: "Box".to_string(),
+            material_id: "mat-void".to_string(),
+            transform: centered_transform(),
+            size: Vec3::new(2.0, 2.0, 2.0),
+        };
+        assert!(
+            crate::geometry::nearest_intersection(
+                std::slice::from_ref(&centered_box),
+                Vec3::new(-2.0, 1.0, 0.0),
+                Vec3::X,
+            )
+            .is_some()
+        );
+        assert!(
+            crate::geometry::nearest_intersection(
+                &[centered_box],
+                Vec3::new(-2.0, 1.01, 0.0),
+                Vec3::X,
+            )
+            .is_none()
+        );
+
+        let scaled_direction_box = GeometryEntity::Box {
+            id: "scaled-direction-box".to_string(),
+            name: "Scaled Direction Box".to_string(),
+            material_id: "mat-void".to_string(),
+            transform: centered_transform(),
+            size: Vec3::new(2.0, 2.0, 2.0),
+        };
+        let scaled_hit = crate::geometry::nearest_intersection(
+            &[scaled_direction_box],
+            Vec3::new(-5.0, 0.25, -0.5),
+            Vec3::new(2.0, 0.0, 0.0),
+        )
+        .unwrap();
+        assert_close(scaled_hit.entry_distance, 2.0);
+        assert_close(scaled_hit.exit_distance, 3.0);
+
+        let tangent_sphere = GeometryEntity::Sphere {
+            id: "sphere".to_string(),
+            name: "Sphere".to_string(),
+            material_id: "mat-void".to_string(),
+            transform: centered_transform(),
+            radius: 1.0,
+        };
+        assert!(
+            crate::geometry::nearest_intersection(
+                &[tangent_sphere],
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::X,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn geometry_vectors_preserve_componentwise_algebra_and_norms() {
+        let lhs = Vec3::new(1.0, 2.0, 3.0);
+        let rhs = Vec3::new(4.0, 5.0, 7.0);
+
+        assert_eq!(lhs.dot(rhs), 35.0);
+        assert_close(lhs.norm(), 14.0_f64.sqrt());
+        let normalized = lhs.normalized_or_x();
+        assert_close(normalized.x, 1.0 / 14.0_f64.sqrt());
+        assert_close(normalized.y, 2.0 / 14.0_f64.sqrt());
+        assert_close(normalized.z, 3.0 / 14.0_f64.sqrt());
+        assert_eq!(Vec3::ZERO.normalized_or_x(), Vec3::X);
+
+        assert_eq!(lhs + rhs, Vec3::new(5.0, 7.0, 10.0));
+        assert_eq!(rhs - lhs, Vec3::new(3.0, 3.0, 4.0));
+        assert_eq!(-lhs, Vec3::new(-1.0, -2.0, -3.0));
+        assert_eq!(lhs * 2.5, Vec3::new(2.5, 5.0, 7.5));
+    }
+
+    #[test]
     fn track_length_tally_scores_supported_entity_path_lengths() {
         let result = run_photon_smoke(&beam_problem(Material {
             id: "mat-void".to_string(),
