@@ -11,6 +11,11 @@ const config = {
   concurrency: 2,
   tsconfigFile: "tsconfig.stryker.json",
   reporters: ["progress", "clear-text", "html"],
+  ignorePatterns: [
+    "apps/studio/src-tauri/target/**",
+    "**/target/**",
+    "devs/**",
+  ],
   incremental: true,
   incrementalFile: "reports/stryker-incremental.json",
   mutate: [

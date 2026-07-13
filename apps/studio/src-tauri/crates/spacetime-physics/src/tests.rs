@@ -122,6 +122,60 @@ fn vec3_addition_and_dot_product_work() {
 }
 
 #[test]
+fn vec3_algebra_preserves_components_norm_and_orientation() {
+    let lhs = vec3::new(1.0, 2.0, 3.0);
+    let rhs = vec3::new(4.0, 5.0, 7.0);
+
+    assert_eq!(lhs.cross(rhs), vec3::new(-1.0, 5.0, -3.0));
+    assert_abs_diff_eq!(lhs.norm(), 14.0_f64.sqrt());
+    assert_eq!(lhs.normalized().unwrap(), lhs / 14.0_f64.sqrt());
+
+    let mut assigned = lhs;
+    assigned += rhs;
+    assert_eq!(assigned, vec3::new(5.0, 7.0, 10.0));
+    assigned -= vec3::new(2.0, 3.0, 4.0);
+    assert_eq!(assigned, vec3::new(3.0, 4.0, 6.0));
+
+    assert_eq!(rhs - lhs, vec3::new(3.0, 3.0, 4.0));
+    assert_eq!(lhs * 2.0, vec3::new(2.0, 4.0, 6.0));
+    assert_eq!(rhs / 2.0, vec3::new(2.0, 2.5, 3.5));
+    assert_eq!(-lhs, vec3::new(-1.0, -2.0, -3.0));
+}
+
+#[test]
+fn time_newtypes_preserve_coordinate_and_proper_arithmetic() {
+    let coordinate = CoordinateTime::from_seconds(10.0);
+    let duration = TimeDuration::from_seconds(4.0);
+    assert_eq!((coordinate - duration).seconds(), 6.0);
+    assert_eq!(
+        (coordinate - CoordinateTime::from_seconds(3.0)).seconds(),
+        7.0
+    );
+    assert_eq!((duration + TimeDuration::from_seconds(3.0)).seconds(), 7.0);
+    assert_eq!((duration - TimeDuration::from_seconds(1.5)).seconds(), 2.5);
+    assert_eq!((duration * 2.5).seconds(), 10.0);
+    assert_eq!((duration / 2.0).seconds(), 2.0);
+    assert_eq!((-duration).seconds(), -4.0);
+
+    let proper = ProperTime::from_seconds(9.0);
+    let proper_duration = ProperDuration::from_seconds(3.0);
+    assert_eq!(proper.seconds(), 9.0);
+    assert_eq!((proper + proper_duration).seconds(), 12.0);
+    assert_eq!((proper - proper_duration).seconds(), 6.0);
+    assert_eq!((proper - ProperTime::from_seconds(2.0)).seconds(), 7.0);
+    assert_eq!(
+        (proper_duration + ProperDuration::from_seconds(2.0)).seconds(),
+        5.0
+    );
+    assert_eq!(
+        (proper_duration - ProperDuration::from_seconds(1.0)).seconds(),
+        2.0
+    );
+    assert_eq!((proper_duration * 2.5).seconds(), 7.5);
+    assert_eq!((proper_duration / 1.5).seconds(), 2.0);
+}
+
+#[test]
 fn galilean_boost_preserves_coordinate_time() {
     let boost = GalileanBoost::new(vec3::new(10.0, 0.0, 0.0));
     let event = GalileanEvent::new(
@@ -133,6 +187,63 @@ fn galilean_boost_preserves_coordinate_time() {
 
     assert_eq!(transformed.t, CoordinateTime::from_seconds(2.0));
     assert_eq!(transformed.r, vec3::new(80.0, 0.0, 0.0));
+}
+
+#[test]
+fn nontrivial_frame_and_worldline_geometry_preserves_exact_invariants() {
+    let galilean = GalileanBoost::new(vec3::new(1.0, 2.0, 3.0));
+    assert_eq!(
+        galilean.transform_velocity(vec3::new(7.0, 8.0, 9.0)),
+        vec3::new(6.0, 6.0, 6.0)
+    );
+
+    let boost = LorentzBoost::new(vec3::new(6.0, 0.0, 0.0), 10.0).unwrap();
+    assert_eq!(boost.beta(), vec3::new(0.6, 0.0, 0.0));
+    assert_abs_diff_eq!(boost.beta_squared(), 0.36);
+    assert_abs_diff_eq!(boost.gamma(), 1.25);
+    let transformed = boost.transform_four_vector(FourVec::new(10.0, vec3::new(2.0, 3.0, 4.0)));
+    assert_abs_diff_eq!(transformed.ct, 11.0);
+    assert_abs_diff_eq!(transformed.spatial.x, -5.0, epsilon = 1.0e-12);
+    assert_abs_diff_eq!(transformed.spatial.y, 3.0);
+    assert_abs_diff_eq!(transformed.spatial.z, 4.0);
+
+    let start = WorldlineEvent::new(CoordinateTime::from_seconds(2.0), vec3::new(1.0, 2.0, 3.0));
+    let end = WorldlineEvent::new(CoordinateTime::from_seconds(5.0), vec3::new(7.0, 8.0, 9.0));
+    let displacement = start.displacement_to(end);
+    assert_eq!(displacement.dt.seconds(), 3.0);
+    assert_eq!(displacement.dr, vec3::splat(6.0));
+    assert_eq!(
+        displacement.to_four_vec(10.0),
+        FourVec::new(30.0, vec3::splat(6.0))
+    );
+    assert_eq!(displacement.coordinate_velocity(), Some(vec3::splat(2.0)));
+    assert_abs_diff_eq!(displacement.coordinate_speed().unwrap(), 12.0_f64.sqrt());
+    assert_abs_diff_eq!(displacement.interval_squared(10.0).unwrap(), 792.0);
+
+    let segment = WorldlineSegment::new(start, end);
+    assert_eq!(segment.spatial_displacement(), vec3::splat(6.0));
+    assert_eq!(segment.coordinate_velocity(), Some(vec3::splat(2.0)));
+
+    let lightlike =
+        SpacetimeDisplacement::new(TimeDuration::from_seconds(1.0), vec3::new(10.0, 0.0, 0.0));
+    assert_eq!(lightlike.proper_duration(10.0).unwrap().seconds(), 0.0);
+
+    let gamma = LorentzFactor::from_speed(6.0, 10.0).unwrap();
+    assert_abs_diff_eq!(gamma.value(), 1.25);
+    let proper = gamma.coordinate_to_proper_duration(TimeDuration::from_seconds(5.0));
+    assert_abs_diff_eq!(proper.seconds(), 4.0);
+    assert_abs_diff_eq!(gamma.proper_to_coordinate_duration(proper).seconds(), 5.0);
+
+    let spatial_lhs = vec3::new(1.0, 2.0, 3.0);
+    let spatial_rhs = vec3::new(4.0, 5.0, 7.0);
+    assert_eq!(EuclideanMetric.inner(spatial_lhs, spatial_rhs), 35.0);
+    assert_eq!(
+        MinkowskiMetricPlusMinusMinusMinus.inner(
+            FourVec::new(6.0, spatial_lhs),
+            FourVec::new(7.0, spatial_rhs),
+        ),
+        7.0
+    );
 }
 
 #[test]
@@ -253,6 +364,98 @@ fn finite_difference_curvature_operator_returns_zero_for_flat_grid_metric() {
             }
         }
     }
+}
+
+#[test]
+fn curvature_stencil_and_metric_inverse_enforce_nontrivial_geometry() {
+    let grid = UniformGrid3::new(vec3::ZERO, vec3::splat(1.0), [2, 2, 2]);
+    let undersized = EvolutionGridField3::cell_centered_with_ghosts(
+        grid,
+        1,
+        BoundaryConditions3::OUTFLOW,
+        SymmetricSpatialTensor2::IDENTITY,
+    )
+    .unwrap();
+    assert_eq!(
+        validate_curvature_stencil(&undersized, FiniteDifferenceOrder::Second).unwrap_err(),
+        PhysicsError::InvalidGrid
+    );
+
+    let metric = SymmetricSpatialTensor2::new([[4.0, 1.0, 2.0], [1.0, 3.0, 0.5], [2.0, 0.5, 5.0]]);
+    let inverse = inverse_spatial_metric(metric).unwrap();
+    let full = metric.to_full();
+    for row in 0..3 {
+        for column in 0..3 {
+            let product = (0..3)
+                .map(|inner| full.components[row][inner] * inverse.components[inner][column])
+                .sum::<f64>();
+            assert_abs_diff_eq!(
+                product,
+                if row == column { 1.0 } else { 0.0 },
+                epsilon = 1.0e-12
+            );
+        }
+    }
+
+    assert_eq!(
+        inverse_spatial_metric(SymmetricSpatialTensor2::diagonal(1.0, 0.0, 1.0)).unwrap_err(),
+        PhysicsError::SingularMetric
+    );
+
+    let tensor = SymmetricSpatialTensor2::diagonal(1.0, 2.0, 4.0);
+    assert_abs_diff_eq!(trace_with_inverse(tensor, SpatialTensor2::IDENTITY), 7.0);
+    assert_abs_diff_eq!(
+        double_contract_symmetric(tensor, SpatialTensor2::IDENTITY),
+        21.0
+    );
+}
+
+#[test]
+fn finite_difference_curvature_detects_a_nonflat_conformal_metric() {
+    let grid = UniformGrid3::new(vec3::ZERO, vec3::splat(1.0), [5, 5, 5]);
+    let mut metric = EvolutionGridField3::cell_centered_with_ghosts(
+        grid,
+        2,
+        BoundaryConditions3::OUTFLOW,
+        SymmetricSpatialTensor2::IDENTITY,
+    )
+    .unwrap();
+
+    for k in 0..5 {
+        for j in 0..5 {
+            for i in 0..5 {
+                let x = i as f64 - 2.0;
+                let y = j as f64 - 2.0;
+                let z = k as f64 - 2.0;
+                let conformal_scale = 1.0 + 0.05 * (x * x + y * y + z * z);
+                metric
+                    .set_interior(
+                        i,
+                        j,
+                        k,
+                        SymmetricSpatialTensor2::diagonal(
+                            conformal_scale,
+                            conformal_scale,
+                            conformal_scale,
+                        ),
+                    )
+                    .unwrap();
+            }
+        }
+    }
+    metric.apply_boundary_conditions().unwrap();
+
+    let operator = FiniteDifferenceCurvatureOperator::SECOND_ORDER;
+    let scalar = operator.ricci_scalar_at(&metric, [2, 2, 2]).unwrap();
+    let tensor = operator.ricci_tensor_at(&metric, [2, 2, 2]).unwrap();
+    assert!(scalar.abs() > 1.0e-6);
+    assert!(
+        tensor
+            .components
+            .iter()
+            .flatten()
+            .any(|value| value.abs() > 1.0e-6)
+    );
 }
 
 #[test]
@@ -389,13 +592,81 @@ fn curved_transport_context_exposes_adaptive_timelike_and_null_steps() {
         epsilon = 1.0e-12
     );
     assert_abs_diff_eq!(ray.invariant(&context.metric), 0.0, epsilon = 1.0e-12);
+    assert_abs_diff_eq!(context.invariant(particle), c * c, epsilon = 1.0e-12);
+    assert_abs_diff_eq!(
+        particle.invariant_error(&context.metric, 80.0),
+        20.0,
+        epsilon = 1.0e-12
+    );
+}
+
+#[test]
+fn adaptive_geodesic_stepper_rejects_invalid_configuration() {
+    let defaults = AdaptiveGeodesicConfig::DEFAULT;
+    let invalid_configs = [
+        AdaptiveGeodesicConfig {
+            tolerance: 0.0,
+            ..defaults
+        },
+        AdaptiveGeodesicConfig {
+            invariant_tolerance: -1.0,
+            ..defaults
+        },
+        AdaptiveGeodesicConfig {
+            min_step: AffineStep::new(0.0),
+            ..defaults
+        },
+        AdaptiveGeodesicConfig {
+            max_step: AffineStep::new(0.0),
+            ..defaults
+        },
+        AdaptiveGeodesicConfig {
+            max_substeps: 0,
+            ..defaults
+        },
+        AdaptiveGeodesicConfig {
+            safety_factor: 0.0,
+            ..defaults
+        },
+        AdaptiveGeodesicConfig {
+            min_scale: 0.0,
+            ..defaults
+        },
+        AdaptiveGeodesicConfig {
+            min_scale: 2.0,
+            max_scale: 1.0,
+            ..defaults
+        },
+    ];
+
+    for config in invalid_configs {
+        let result = AdaptiveGeodesicStepper::new(config).step_null(
+            &MinkowskiMetricField,
+            SpacetimeCoordinate::new([0.0; 4], CoordinateChartKind::Cartesian),
+            FourVec::new(1.0, vec3::new(1.0, 0.0, 0.0)),
+            AffineStep::new(0.1),
+        );
+        assert_eq!(result.unwrap_err(), PhysicsError::InvalidStep);
+    }
 }
 
 #[test]
 fn weak_field_constant_potential_has_zero_connection() {
-    let metric = WeakFieldMetric::new(ConstantPotential::new(-0.01), 10.0);
+    let potential = ConstantPotential::new(-0.01);
+    let metric = WeakFieldMetric::new(potential, 10.0);
     let x = SpacetimeCoordinate::new([0.0, 1.0, 2.0, 3.0], CoordinateChartKind::Cartesian);
 
+    assert_abs_diff_eq!(potential.value_at(x), -0.01);
+    assert_eq!(potential.gradient_at(x), [0.0; 4]);
+    let covariant = metric.covariant_metric_at(x);
+    assert_abs_diff_eq!(covariant.components[0][0], 0.9998, epsilon = 1.0e-12);
+    assert_abs_diff_eq!(covariant.components[1][1], -1.0002, epsilon = 1.0e-12);
+    let inverse = metric.inverse_metric_at(x);
+    assert_abs_diff_eq!(
+        inverse.components[0][0] * covariant.components[0][0],
+        1.0,
+        epsilon = 1.0e-12
+    );
     assert_eq!(metric.christoffel_symbols_at(x), ChristoffelSymbols::ZERO);
 }
 
@@ -433,6 +704,78 @@ fn diagonal_local_frame_scales_coordinate_components() {
 
     assert!(local.ct < 2.0);
     assert!(local.spatial.x > 3.0);
+
+    let exact_frame = DiagonalLocalFrame::from_metric(CovariantTensor2::new([
+        [4.0, 0.0, 0.0, 0.0],
+        [0.0, -9.0, 0.0, 0.0],
+        [0.0, 0.0, -16.0, 0.0],
+        [0.0, 0.0, 0.0, -25.0],
+    ]))
+    .unwrap();
+    assert_eq!(exact_frame.temporal_scale, 2.0);
+    assert_eq!(exact_frame.spatial_scale, vec3::new(3.0, 4.0, 5.0));
+    assert_eq!(
+        exact_frame.coordinate_to_local_components(FourVec::new(2.0, vec3::new(3.0, 5.0, 7.0),)),
+        FourVec::new(4.0, vec3::new(9.0, 20.0, 35.0))
+    );
+
+    assert_eq!(
+        DiagonalLocalFrame::from_metric(CovariantTensor2::new([
+            [1.0, 0.1, 0.0, 0.0],
+            [0.1, -1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 0.0],
+            [0.0, 0.0, 0.0, -1.0],
+        ]))
+        .unwrap_err(),
+        PhysicsError::SingularMetric
+    );
+    assert_eq!(
+        DiagonalLocalFrame::from_metric(CovariantTensor2::new([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 0.0],
+            [0.0, 0.0, 0.0, -1.0],
+        ]))
+        .unwrap_err(),
+        PhysicsError::SingularMetric
+    );
+}
+
+#[test]
+fn ideal_gas_pressure_enforces_its_finite_physical_domain() {
+    let eos = IdealGasEquationOfState::new(5.0 / 3.0);
+    assert_abs_diff_eq!(
+        eos.pressure(2.0, vec3::new(2.0, 0.0, 0.0), 4.0).unwrap(),
+        2.0,
+        epsilon = 1.0e-12
+    );
+
+    for (candidate, density, momentum, energy) in [
+        (IdealGasEquationOfState::new(f64::NAN), 1.0, vec3::ZERO, 1.0),
+        (IdealGasEquationOfState::new(1.0), 1.0, vec3::ZERO, 1.0),
+        (eos, 0.0, vec3::ZERO, 1.0),
+        (eos, f64::NAN, vec3::ZERO, 1.0),
+        (eos, 1.0, vec3::new(f64::NAN, 0.0, 0.0), 1.0),
+        (eos, 1.0, vec3::new(0.0, f64::NAN, 0.0), 1.0),
+        (eos, 1.0, vec3::new(0.0, 0.0, f64::NAN), 1.0),
+        (eos, 1.0, vec3::ZERO, f64::NAN),
+    ] {
+        assert_eq!(
+            candidate.pressure(density, momentum, energy).unwrap_err(),
+            PhysicsError::NonFiniteValue
+        );
+    }
+}
+
+#[test]
+fn scalar_field_totals_and_hydro_primitives_preserve_cell_scaling() {
+    let field = ScalarField1D::new(0.25, vec![2.0, 4.0, 6.0]).unwrap();
+    assert_abs_diff_eq!(field.total(), 3.0, epsilon = 1.0e-12);
+
+    let conservative = primitive_to_conservative(2.0, 3.0, 4.0, 1.5);
+    assert_abs_diff_eq!(conservative.density, 2.0, epsilon = 1.0e-12);
+    assert_abs_diff_eq!(conservative.momentum, 6.0, epsilon = 1.0e-12);
+    assert_abs_diff_eq!(conservative.total_energy, 17.0, epsilon = 1.0e-12);
 }
 
 #[test]
@@ -792,13 +1135,17 @@ fn vertex_centered_evolution_grid_has_one_more_interior_point_per_axis() {
 #[test]
 fn adm_grid_fields_hold_solver_core_variables() {
     let grid = UniformGrid3::new(vec3::ZERO, vec3::splat(1.0), [2, 1, 1]);
-    let fields = AdmGridFields::flat_cartesian(grid, CoordinateTime::from_seconds(0.0)).unwrap();
+    let mut fields =
+        AdmGridFields::flat_cartesian(grid, CoordinateTime::from_seconds(0.0)).unwrap();
+    fields.lapse.set_interior(0, 0, 0, 2.0).unwrap();
+    fields.apply_boundary_conditions().unwrap();
     let cell = fields.cell_state(0).unwrap();
 
     assert_eq!(fields.grid, grid);
     assert_eq!(fields.lapse.interior_len(), 2);
     assert_eq!(fields.lapse.ghost_zones, GhostZones::symmetric(1));
-    assert_eq!(cell.lapse, 1.0);
+    assert_eq!(cell.lapse, 2.0);
+    assert_eq!(*fields.lapse.get_storage(0, 1, 1).unwrap(), 2.0);
     assert_eq!(cell.shift, vec3::ZERO);
     assert_eq!(cell.spatial_metric, SymmetricSpatialTensor2::IDENTITY);
     assert_eq!(cell.extrinsic_curvature, SymmetricSpatialTensor2::ZERO);
@@ -848,7 +1195,10 @@ fn adm_grid_fields_reject_mismatched_component_grids() {
 #[test]
 fn bssn_grid_fields_hold_conformal_solver_variables() {
     let grid = UniformGrid3::new(vec3::ZERO, vec3::splat(1.0), [1, 2, 1]);
-    let fields = BssnGridFields::flat_cartesian(grid, CoordinateTime::from_seconds(0.0)).unwrap();
+    let mut fields =
+        BssnGridFields::flat_cartesian(grid, CoordinateTime::from_seconds(0.0)).unwrap();
+    fields.lapse.set_interior(0, 0, 0, 2.0).unwrap();
+    fields.apply_boundary_conditions().unwrap();
     let cell = fields.cell_state(1).unwrap();
 
     assert_eq!(fields.grid, grid);
@@ -858,6 +1208,7 @@ fn bssn_grid_fields_hold_conformal_solver_variables() {
         GhostZones::symmetric(1)
     );
     assert_eq!(cell.lapse, 1.0);
+    assert_eq!(*fields.lapse.get_storage(0, 1, 1).unwrap(), 2.0);
     assert_eq!(cell.shift, vec3::ZERO);
     assert_eq!(cell.conformal_metric, SymmetricSpatialTensor2::IDENTITY);
     assert_eq!(cell.conformal_factor, 0.0);
@@ -894,6 +1245,9 @@ fn explicit_boundary_faces_can_be_configured_independently() {
 
 #[test]
 fn finite_difference_derivatives_match_polynomial_fields() {
+    assert_eq!(FiniteDifferenceOrder::Second.ghost_radius(), 1);
+    assert_eq!(FiniteDifferenceOrder::Fourth.ghost_radius(), 2);
+
     let grid = UniformGrid3::new(vec3::ZERO, vec3::splat(1.0), [5, 1, 1]);
     let mut field =
         EvolutionGridField3::cell_centered_with_ghosts(grid, 2, BoundaryConditions3::OUTFLOW, 0.0)
@@ -911,6 +1265,12 @@ fn finite_difference_derivatives_match_polynomial_fields() {
     let second = FiniteDifferenceOperator::SECOND_ORDER
         .second_derivative(&field, GridAxis::X)
         .unwrap();
+    let fourth_order_first = FiniteDifferenceOperator::FOURTH_ORDER
+        .first_derivative(&field, GridAxis::X)
+        .unwrap();
+    let fourth_order_second = FiniteDifferenceOperator::FOURTH_ORDER
+        .second_derivative(&field, GridAxis::X)
+        .unwrap();
 
     assert_abs_diff_eq!(
         *first.get_interior(2, 0, 0).unwrap(),
@@ -919,6 +1279,16 @@ fn finite_difference_derivatives_match_polynomial_fields() {
     );
     assert_abs_diff_eq!(
         *second.get_interior(2, 0, 0).unwrap(),
+        2.0,
+        epsilon = 1.0e-12
+    );
+    assert_abs_diff_eq!(
+        *fourth_order_first.get_interior(2, 0, 0).unwrap(),
+        4.0,
+        epsilon = 1.0e-12
+    );
+    assert_abs_diff_eq!(
+        *fourth_order_second.get_interior(2, 0, 0).unwrap(),
         2.0,
         epsilon = 1.0e-12
     );
@@ -1049,6 +1419,42 @@ fn adm_constraint_diagnostics_are_zero_for_flat_cartesian_data() {
 }
 
 #[test]
+fn adm_momentum_constraint_detects_spatially_varying_curvature() {
+    let grid = UniformGrid3::new(vec3::ZERO, vec3::splat(1.0), [5, 3, 3]);
+    let mut fields = AdmGridFields::flat_cartesian_with_ghosts(
+        grid,
+        CoordinateTime::ZERO,
+        2,
+        BoundaryConditions3::OUTFLOW,
+    )
+    .unwrap();
+
+    for k in 0..3 {
+        for j in 0..3 {
+            for i in 0..5 {
+                fields
+                    .extrinsic_curvature
+                    .set_interior(
+                        i,
+                        j,
+                        k,
+                        SymmetricSpatialTensor2::diagonal(0.0, i as f64, 0.0),
+                    )
+                    .unwrap();
+            }
+        }
+    }
+
+    let diagnostics = ConstraintDiagnosticsOperator::SECOND_ORDER
+        .adm_constraints(&fields)
+        .unwrap();
+    let momentum = diagnostics.momentum.get_interior(2, 1, 1).unwrap();
+    assert_abs_diff_eq!(momentum.x, -1.0, epsilon = 1.0e-12);
+    assert_abs_diff_eq!(momentum.y, 0.0, epsilon = 1.0e-12);
+    assert_abs_diff_eq!(momentum.z, 0.0, epsilon = 1.0e-12);
+}
+
+#[test]
 fn bssn_constraint_diagnostics_are_zero_for_flat_cartesian_data() {
     let grid = UniformGrid3::new(vec3::ZERO, vec3::splat(1.0), [3, 3, 3]);
     let fields = BssnGridFields::flat_cartesian_with_ghosts(
@@ -1122,6 +1528,15 @@ fn bssn_algebraic_constraint_enforcement_normalizes_metric_and_trace() {
         0.0,
         epsilon = 1.0e-12
     );
+
+    fields
+        .conformal_metric
+        .set_interior(0, 0, 0, SymmetricSpatialTensor2::diagonal(-1.0, 1.0, 1.0))
+        .unwrap();
+    assert_eq!(
+        enforce_bssn_algebraic_constraints(&mut fields).unwrap_err(),
+        PhysicsError::SingularMetric
+    );
 }
 
 #[test]
@@ -1158,6 +1573,7 @@ fn scalar_reductions_report_norms_and_non_finite_counts() {
 
     assert_eq!(reduction.count, 3);
     assert_eq!(reduction.non_finite_count, 1);
+    assert!(!reduction.is_finite());
     assert_abs_diff_eq!(reduction.min, -2.0, epsilon = 1.0e-12);
     assert_abs_diff_eq!(reduction.max, 1.0, epsilon = 1.0e-12);
     assert_abs_diff_eq!(reduction.mean, -0.5, epsilon = 1.0e-12);
