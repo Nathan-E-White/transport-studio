@@ -1,0 +1,92 @@
+{
+  "contractVersion": "1.0.0",
+  "requiredCommand": "cargo test -p spacetime-physics",
+  "tiers": [
+    {
+      "id": "crate-tests",
+      "name": "Crate seam tests",
+      "status": "required",
+      "testTargets": [
+        {
+          "seam": "kernel-seam",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/kernel_interface.rs",
+          "evidenceTest": "flat_empty_dynamical_spacetime_state_advances_through_the_canonical_kernel_seam"
+        },
+        {
+          "seam": "primitive-recovery",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/valencia_recovery.rs",
+          "evidenceTest": "ideal_gas_roundtrips_primitive_conserved_primitive"
+        }
+      ]
+    },
+    {
+      "id": "fixed-background",
+      "name": "Fixed-background and component tests",
+      "status": "required",
+      "testTargets": [
+        {
+          "seam": "geodesic-invariants",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/grid_metric_adapter.rs",
+          "evidenceTest": "flat_grid_adapter_preserves_null_geodesic_invariant"
+        },
+        {
+          "seam": "packet-deposition",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/packet_deposition.rs",
+          "evidenceTest": "enabled_history_changes_total_stress_energy_only_through_the_adapter"
+        },
+        {
+          "seam": "grhd-toy-step",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/valencia_flux_step.rs",
+          "evidenceTest": "flat_valencia_shock_step_moves_mass_and_momentum_across_the_interface"
+        },
+        {
+          "seam": "m1-radiation",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/gray_m1_radiation.rs",
+          "evidenceTest": "intermediate_m1_closure_preserves_energy_as_the_pressure_trace"
+        },
+        {
+          "seam": "amr-single-block-adapter",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/single_block_amr.rs",
+          "evidenceTest": "root_block_matches_uniform_grid_indexing_and_field_access"
+        }
+      ]
+    },
+    {
+      "id": "coupled-toy",
+      "name": "Coupled toy tests",
+      "status": "required",
+      "testTargets": [
+        {
+          "seam": "imex-exchange",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/radiation_matter_exchange.rs",
+          "evidenceTest": "stiff_local_exchange_conserves_matter_plus_radiation_energy"
+        },
+        {
+          "seam": "bssn-source-projection",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/bssn_source_projection.rs",
+          "evidenceTest": "controlled_total_source_changes_geometry_and_preserves_constraint_residuals"
+        },
+        {
+          "seam": "kernel-seam",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/coupled_kernel_toy.rs",
+          "evidenceTest": "public_kernel_step_connects_grhd_m1_packets_and_sourced_geometry"
+        }
+      ]
+    }
+  ],
+  "deferredGates": [
+    "tov-static-star",
+    "bondi-michel-accretion",
+    "amr-convergence",
+    "strong-field-constraint-preservation",
+    "primary-monte-carlo-radiation",
+    "tabulated-eos",
+    "grmhd-tests"
+  ],
+  "promotionPolicy": {
+    "solverId": "relativistic-multiphysics",
+    "currentStatus": "blocked",
+    "requiredTierIds": ["crate-tests", "fixed-background", "coupled-toy"],
+    "unlockCondition": "all-required-tiers-pass-and-explicit-capability-review"
+  }
+}
