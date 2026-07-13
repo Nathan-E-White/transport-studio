@@ -56,6 +56,20 @@ impl SpatialTensor2 {
 
         trace
     }
+
+    pub fn apply_to_vector(self, vector: Vec3) -> Vec3 {
+        Vec3::new(
+            self.components[0][0] * vector.x
+                + self.components[0][1] * vector.y
+                + self.components[0][2] * vector.z,
+            self.components[1][0] * vector.x
+                + self.components[1][1] * vector.y
+                + self.components[1][2] * vector.z,
+            self.components[2][0] * vector.x
+                + self.components[2][1] * vector.y
+                + self.components[2][2] * vector.z,
+        )
+    }
 }
 
 /// Symmetric rank-2 spatial tensor used for gamma_ij, K_ij, and A_ij.
@@ -97,6 +111,10 @@ impl SymmetricSpatialTensor2 {
 
     pub fn trace(self) -> f64 {
         self.to_full().trace()
+    }
+
+    pub fn apply_to_vector(self, vector: Vec3) -> Vec3 {
+        self.to_full().apply_to_vector(vector)
     }
 }
 
