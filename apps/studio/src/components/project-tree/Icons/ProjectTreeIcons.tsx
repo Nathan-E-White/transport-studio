@@ -1,7 +1,7 @@
 
 
 import { ProjectTreeNode } from "../../../state/editor";
-import { useProjectTreeIcons } from "./ProjectTreeIconsContext";
+import {buildProjectTreeIconModel} from "./ProjectTreeIconsModels";
 
 export interface ProjectTreeIconsProps {
   readonly node: ProjectTreeNode;
@@ -13,8 +13,7 @@ export function ProjectTreeIcons({
   node,
   decorative = true,
 }: Readonly<ProjectTreeIconsProps>) {
-  const { getIconForNode } = useProjectTreeIcons();
-  const icon = getIconForNode(node);
+  const icon = buildProjectTreeIconModel({node});
 
   return (
     <span

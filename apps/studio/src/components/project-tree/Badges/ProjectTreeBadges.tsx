@@ -1,14 +1,20 @@
 import {ProjectTreeNode} from "../../../state/editor";
-import {useProjectTreeBadges} from "./ProjectTreeBadgesProvider";
-import {getProjectTreeBadgeClassName} from "./projectTreeBadgesModel";
+import {selectVisibility, useEditorStore} from "../../../state/editor";
+import {getProjectTreeBadgeClassName, getProjectTreeBadges} from "./projectTreeBadgesModel";
 
 export interface ProjectTreeBadgesProps {
     readonly node: ProjectTreeNode;
 }
 
 export function ProjectTreeBadges({node}: ProjectTreeBadgesProps) {
-    const {getBadgesForNode} = useProjectTreeBadges();
-    const badges = getBadgesForNode(node);
+    const {state} = useEditorStore();
+    const badges = getProjectTreeBadges({
+        node,
+        visibility: selectVisibility(state),
+        validationErrors: state.validation.errors,
+        validationWarnings: state.validation.warnings,
+        staleReasons: state.stale.reasons,
+    });
 
     if (badges.length === 0) {
         return null;

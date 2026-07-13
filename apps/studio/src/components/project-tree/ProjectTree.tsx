@@ -10,12 +10,9 @@ import {
   selectVisibility,
   useEditorStore,
 } from "../../state/editor";
-import {ProjectTreeBadgesScope} from "./Badges/ProjectTreeBadgesScope";
 import {ProjectTreeEmptyState} from "./EmptyState/ProjectTreeEmptyState";
 import {ProjectTreeGroup, ProjectTreeMetadataDraft} from "./Group/ProjectTreeGroup";
-import {ProjectTreeIconsScope} from "./Icons/ProjectTreeIconsScope";
 import {ProjectTreeBoundary} from "./ProjectTreeBoundary";
-import {ProjectTreeProvider} from "./ProjectTreeProvider";
 
 export interface ProjectTreeProps {
   readonly diagnostics: readonly Diagnostic[];
@@ -120,14 +117,7 @@ function ProjectTreeInner({
   }, [dispatch, drafts]);
 
   return (
-    <ProjectTreeProvider
-      selectedEntityId={selectedEntityId}
-      editingEntityId={editingEntityId}
-      onRequestEdit={requestEdit}
-      allowDelete
-    >
-      <ProjectTreeIconsScope>
-        <ProjectTreeBadgesScope>
+    <>
           <section className="panel project-panel" aria-label="Project tree">
             <div className="panel-header">
               <div>
@@ -186,14 +176,13 @@ function ProjectTreeInner({
                       }}
                       onSaveDraft={saveDraft}
                       onCancelDraft={() => setEditingEntityId(undefined)}
+                      onRequestEdit={requestEdit}
                     />
                   ))
               )}
             </div>
           </section>
-        </ProjectTreeBadgesScope>
-      </ProjectTreeIconsScope>
-    </ProjectTreeProvider>
+    </>
   );
 }
 

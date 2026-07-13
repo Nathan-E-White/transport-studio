@@ -1,5 +1,5 @@
 import type {FormEvent} from "react";
-import type {ProjectTreeNode} from "../../../state/editor";
+import type {EditorEntityRef, ProjectTreeNode} from "../../../state/editor";
 import {ProjectTreeEntityRow} from "../EntityRow/ProjectTreeEntityRow";
 import {ProjectTreeIcons} from "../Icons/ProjectTreeIcons";
 
@@ -16,6 +16,7 @@ export interface ProjectTreeGroupProps {
   readonly onDraftChange: (node: ProjectTreeNode, draft: ProjectTreeMetadataDraft) => void;
   readonly onSaveDraft: (node: ProjectTreeNode) => void;
   readonly onCancelDraft: () => void;
+  readonly onRequestEdit: (ref: EditorEntityRef) => void;
 }
 
 export function ProjectTreeGroup({
@@ -25,6 +26,7 @@ export function ProjectTreeGroup({
   onDraftChange,
   onSaveDraft,
   onCancelDraft,
+  onRequestEdit,
 }: Readonly<ProjectTreeGroupProps>) {
   const children = node.children ?? [];
 
@@ -43,7 +45,7 @@ export function ProjectTreeGroup({
 
           return (
             <div className="project-tree-group__row-shell" key={child.id}>
-              <ProjectTreeEntityRow node={child}/>
+              <ProjectTreeEntityRow node={child} onRequestEdit={onRequestEdit}/>
               {isEditing ? (
                 <form
                   className="project-tree-edit"
