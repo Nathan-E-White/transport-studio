@@ -13,6 +13,7 @@ pub mod kernel;
 pub mod matter;
 pub mod metric;
 pub mod numerics;
+pub mod packet_deposition;
 pub mod physics_v1;
 pub mod radiation;
 pub mod tensor;

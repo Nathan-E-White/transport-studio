@@ -1,4 +1,4 @@
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, AddAssign, Mul, Sub};
 
 use serde::{Deserialize, Serialize};
 
@@ -462,5 +462,24 @@ impl StressEnergyTensor {
 
     pub const fn new(components: [[f64; 4]; 4]) -> Self {
         Self { components }
+    }
+}
+
+impl Add for StressEnergyTensor {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        self += rhs;
+        self
+    }
+}
+
+impl AddAssign for StressEnergyTensor {
+    fn add_assign(&mut self, rhs: Self) {
+        for (mu, row) in self.components.iter_mut().enumerate() {
+            for (nu, value) in row.iter_mut().enumerate() {
+                *value += rhs.components[mu][nu];
+            }
+        }
     }
 }

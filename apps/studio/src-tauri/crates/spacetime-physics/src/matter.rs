@@ -389,7 +389,7 @@ impl<Eos: EquationOfState> ConservativeMatterGrid<Eos> {
         let deposited = *self
             .radiation_particle_stress_energy
             .get_interior(i, j, k)?;
-        Ok(add_stress_energy(matter, deposited))
+        Ok(matter + deposited)
     }
 
     pub fn stress_energy_field(
@@ -432,7 +432,7 @@ impl<Eos: EquationOfState> ConservativeMatterGrid<Eos> {
             ijk[0],
             ijk[1],
             ijk[2],
-            add_stress_energy(current, tensor),
+            current + tensor,
         )?;
 
         Ok(index)
@@ -463,18 +463,6 @@ impl<Eos: EquationOfState> StressEnergySource<SpacetimeCoordinate> for Conservat
         self.total_stress_energy_at_cell(ijk[0], ijk[1], ijk[2])
             .unwrap_or(StressEnergyTensor::ZERO)
     }
-}
-
-fn add_stress_energy(lhs: StressEnergyTensor, rhs: StressEnergyTensor) -> StressEnergyTensor {
-    let mut components = lhs.components;
-
-    for (mu, row) in components.iter_mut().enumerate() {
-        for (nu, value) in row.iter_mut().enumerate() {
-            *value += rhs.components[mu][nu];
-        }
-    }
-
-    StressEnergyTensor::new(components)
 }
 
 fn lapse_from_covariant_metric(metric: CovariantTensor2) -> Result<f64, PhysicsError> {
