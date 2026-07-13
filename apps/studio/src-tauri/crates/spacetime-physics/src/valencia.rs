@@ -186,9 +186,7 @@ pub fn primitive_to_conserved<E: ValenciaEquationOfState>(
         return Err(PhysicsError::InvalidStep);
     }
     let pressure = eos.pressure(rho, primitive.specific_internal_energy)?;
-    if !pressure.is_finite()
-        || (primitive.pressure - pressure).abs() > 1e-10 * (1.0 + pressure.abs())
-    {
+    if !pressure_matches_eos(primitive.pressure, pressure) {
         return Err(PhysicsError::InvalidStep);
     }
     let lorentz = 1.0 / (1.0 - v2).sqrt();
@@ -200,6 +198,12 @@ pub fn primitive_to_conserved<E: ValenciaEquationOfState>(
         momentum_density: covariant_velocity * (geometry.volume_factor * q),
         energy_excluding_rest_mass: geometry.volume_factor * (q - pressure - d),
     })
+}
+
+pub(crate) fn pressure_matches_eos(actual: f64, expected: f64) -> bool {
+    actual.is_finite()
+        && expected.is_finite()
+        && (actual - expected).abs() <= 1e-10 * (1.0 + expected.abs())
 }
 
 pub fn recover_primitives<E: ValenciaEquationOfState>(
