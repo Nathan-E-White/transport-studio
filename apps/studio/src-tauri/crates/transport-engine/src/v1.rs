@@ -4,27 +4,61 @@ use crate::diagnostics::{
 pub const MOCK_FIELDS_SOLVER_ID: &str = "mock-fields";
 pub const GRAY_RADIATION_DIFFUSION_SOLVER_ID: &str = "gray-radiation-diffusion";
 pub const EULERIAN_HYDRO_SOLVER_ID: &str = "eulerian-hydro";
+pub const RELATIVISTIC_MULTIPHYSICS_SOLVER_ID: &str = "relativistic-multiphysics";
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum V1SolverStatus {
     Runnable,
     Gated,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum V1ClaimStatus {
+    Solved,
+    ValidatedOnly,
+    Substrate,
+    Gated,
+    FutureTrack,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum V1CapabilityState {
+    RunnableSolved,
+    Gated,
+    GatedSubstrate,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct V1SolverCapability {
     pub id: &'static str,
     pub name: &'static str,
-    pub status: V1SolverStatus,
+    pub state: V1CapabilityState,
     pub supported_facets: &'static [&'static str],
     pub required_inputs: &'static [&'static str],
     pub emitted_outputs: &'static [&'static str],
 }
 
+impl V1SolverCapability {
+    pub const fn status(&self) -> V1SolverStatus {
+        match self.state {
+            V1CapabilityState::RunnableSolved => V1SolverStatus::Runnable,
+            V1CapabilityState::Gated | V1CapabilityState::GatedSubstrate => V1SolverStatus::Gated,
+        }
+    }
+
+    pub const fn claim_status(&self) -> V1ClaimStatus {
+        match self.state {
+            V1CapabilityState::RunnableSolved => V1ClaimStatus::Solved,
+            V1CapabilityState::Gated => V1ClaimStatus::Gated,
+            V1CapabilityState::GatedSubstrate => V1ClaimStatus::Substrate,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct V1SolverInputBundle {
-    pub solver_id: String,
-    pub problem_id: String,
-    pub fingerprint: String,
+    solver_id: String,
+    problem_id: String,
+    fingerprint: String,
 }
 
 pub fn v1_solver_registry() -> Vec<V1SolverCapability> {
@@ -74,6 +108,18 @@ pub fn v1_solver_registry() -> Vec<V1SolverCapability> {
             &["criticality", "kinetics"],
         ),
         gated_v1("depletion", "Depletion", &["composition-evolution"]),
+        substrate_v1(
+            RELATIVISTIC_MULTIPHYSICS_SOLVER_ID,
+            "Relativistic Multiphysics",
+            &[
+                "bssn-geometry",
+                "valencia-hydrodynamics",
+                "gray-m1-radiation",
+                "matter-radiation-exchange",
+                "packet-deposition",
+                "single-block-diagnostics",
+            ],
+        ),
     ]
 }
 
@@ -90,12 +136,24 @@ pub fn prepare_v1_input_bundle(
         ));
     };
 
-    if capability.status != V1SolverStatus::Runnable {
-        return Err(error(
-            "solver.gated",
-            &format!("Solver \"{solver_id}\" is registered but gated for V1."),
-            None,
-        ));
+    match capability.state {
+        V1CapabilityState::RunnableSolved => {}
+        V1CapabilityState::GatedSubstrate => {
+            return Err(error(
+                "solver.substrate",
+                &format!(
+                    "Solver \"{solver_id}\" has kernel substrate only; product execution is disabled and no partial physics result will be produced."
+                ),
+                None,
+            ));
+        }
+        V1CapabilityState::Gated => {
+            return Err(error(
+                "solver.gated",
+                &format!("Solver \"{solver_id}\" is registered but gated for V1."),
+                None,
+            ));
+        }
     }
 
     Ok(V1SolverInputBundle {
@@ -145,15 +203,18 @@ pub fn run_v1_solver_bundle(bundle: &V1SolverInputBundle) -> V1ResultDataset {
 }
 
 pub fn compare_v1_results(left: &V1ResultDataset, right: &V1ResultDataset) -> V1ResultComparison {
-    let mut max_abs_delta = 0.0;
-    for (left_field, right_field) in left.fields.iter().zip(right.fields.iter()) {
-        for (left_value, right_value) in left_field.values.iter().zip(right_field.values.iter()) {
-            let delta = (left_value - right_value).abs();
-            if delta > max_abs_delta {
-                max_abs_delta = delta;
-            }
-        }
-    }
+    let max_abs_delta = left
+        .fields
+        .iter()
+        .zip(right.fields.iter())
+        .flat_map(|(left_field, right_field)| {
+            left_field
+                .values
+                .iter()
+                .zip(right_field.values.iter())
+                .map(|(left_value, right_value)| (left_value - right_value).abs())
+        })
+        .fold(0.0_f64, f64::max);
 
     let same_problem = left.fingerprint == right.fingerprint;
     let diagnostics = if same_problem {
@@ -189,7 +250,7 @@ fn runnable_v1(
     V1SolverCapability {
         id,
         name,
-        status: V1SolverStatus::Runnable,
+        state: V1CapabilityState::RunnableSolved,
         supported_facets,
         required_inputs,
         emitted_outputs,
@@ -204,7 +265,22 @@ fn gated_v1(
     V1SolverCapability {
         id,
         name,
-        status: V1SolverStatus::Gated,
+        state: V1CapabilityState::Gated,
+        supported_facets,
+        required_inputs: &[],
+        emitted_outputs: &["unsupported-diagnostic"],
+    }
+}
+
+fn substrate_v1(
+    id: &'static str,
+    name: &'static str,
+    supported_facets: &'static [&'static str],
+) -> V1SolverCapability {
+    V1SolverCapability {
+        id,
+        name,
+        state: V1CapabilityState::GatedSubstrate,
         supported_facets,
         required_inputs: &[],
         emitted_outputs: &["unsupported-diagnostic"],

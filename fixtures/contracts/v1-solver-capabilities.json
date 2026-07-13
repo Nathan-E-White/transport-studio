@@ -1,16 +1,55 @@
 {
-  "contractVersion": "1.0.0",
+  "contractVersion": "1.1.0",
   "statusLanguage": {
     "runnable": "May prepare and execute through the V1 solver path.",
-    "gated": "Registered for V1, but runnable preparation must reject it with a gated diagnostic.",
-    "placeholder": "Represented in domain and reporting contracts only; no runnable solver is claimed.",
-    "substrate": "Provides implementation building blocks or verification evidence only; no product-facing solver capability is claimed."
+    "gated": "Registered for V1, but runnable preparation must reject it with an explicit unsupported diagnostic and no result bundle.",
+    "placeholder": "Represented in domain and reporting contracts only; no runnable solver is claimed."
   },
+  "claimStatusLanguage": {
+    "solved": "A supported product path produces solver results.",
+    "validated-only": "Verification evidence exists, but it is not a supported product solver path.",
+    "substrate": "Implementation building blocks exist behind a non-runnable product boundary.",
+    "gated": "The capability is named, but product execution rejects it explicitly.",
+    "future-track": "The capability is deferred and no present implementation or validation claim is made."
+  },
+  "claims": [
+    {
+      "id": "v1-deterministic-solvers",
+      "name": "V1 deterministic solver paths",
+      "status": "solved",
+      "summary": "Mock fields, gray radiation diffusion, and Eulerian hydro remain runnable V1 product paths."
+    },
+    {
+      "id": "relativistic-coupled-kernel-validation",
+      "name": "Relativistic coupled-kernel verification",
+      "status": "validated-only",
+      "summary": "Controlled local and three-cell tests verify selected BSSN, Valencia, gray-M1, exchange, and packet-deposition invariants."
+    },
+    {
+      "id": "relativistic-multiphysics-kernel",
+      "name": "Relativistic multiphysics kernel",
+      "status": "substrate",
+      "summary": "Kernel building blocks exist for BSSN, Valencia hydrodynamics, gray-M1 radiation, exchange, packet deposition, and single-block diagnostics."
+    },
+    {
+      "id": "relativistic-multiphysics-product-run",
+      "name": "Relativistic multiphysics product run",
+      "status": "gated",
+      "summary": "Product execution is disabled and must return an unsupported diagnostic without partial physics output."
+    },
+    {
+      "id": "relativistic-multiphysics-future-tracks",
+      "name": "Relativistic multiphysics future tracks",
+      "status": "future-track",
+      "summary": "Strong-field production, primary Monte Carlo radiation, Berger-Oliger AMR, curvilinear charts, full GRMHD, tabulated EOS, TOV, Bondi/Michel, AMR convergence, and strong-field constraint preservation remain deferred."
+    }
+  ],
   "solvers": [
     {
       "id": "mock-fields",
       "name": "Mock Fields",
       "status": "runnable",
+      "claimStatus": "solved",
       "supportedFacets": ["rad-hydro-fields", "reporting"],
       "requiredInputs": [],
       "emittedOutputs": ["field-dataset"]
@@ -19,6 +58,7 @@
       "id": "gray-radiation-diffusion",
       "name": "Gray Radiation Diffusion",
       "status": "runnable",
+      "claimStatus": "solved",
       "supportedFacets": ["rad-hydro-fields", "diffusion", "marshak-waves"],
       "requiredInputs": ["radiation", "opacity"],
       "emittedOutputs": ["radiation-energy", "energy-diagnostics"]
@@ -27,6 +67,7 @@
       "id": "eulerian-hydro",
       "name": "Eulerian Hydro",
       "status": "runnable",
+      "claimStatus": "solved",
       "supportedFacets": ["material-state-fields", "shocks"],
       "requiredInputs": ["hydro", "eos"],
       "emittedOutputs": ["hydro-state", "mass-energy-diagnostics"]
@@ -35,6 +76,7 @@
       "id": "multigroup-radiation-diffusion",
       "name": "Multigroup Radiation Diffusion",
       "status": "gated",
+      "claimStatus": "gated",
       "supportedFacets": ["diffusion", "multigroup-opacity"],
       "requiredInputs": [],
       "emittedOutputs": ["unsupported-diagnostic"]
@@ -43,6 +85,7 @@
       "id": "discrete-ordinates",
       "name": "Discrete Ordinates",
       "status": "gated",
+      "claimStatus": "gated",
       "supportedFacets": ["radiation-angular-transport"],
       "requiredInputs": [],
       "emittedOutputs": ["unsupported-diagnostic"]
@@ -51,6 +94,7 @@
       "id": "implicit-monte-carlo",
       "name": "Implicit Monte Carlo",
       "status": "gated",
+      "claimStatus": "gated",
       "supportedFacets": ["radiation-monte-carlo"],
       "requiredInputs": [],
       "emittedOutputs": ["unsupported-diagnostic"]
@@ -59,6 +103,7 @@
       "id": "lagrangian-hydro",
       "name": "Lagrangian Hydro",
       "status": "gated",
+      "claimStatus": "gated",
       "supportedFacets": ["material-motion"],
       "requiredInputs": [],
       "emittedOutputs": ["unsupported-diagnostic"]
@@ -67,6 +112,7 @@
       "id": "ale-hydro",
       "name": "ALE Hydro",
       "status": "gated",
+      "claimStatus": "gated",
       "supportedFacets": ["material-motion", "remap"],
       "requiredInputs": [],
       "emittedOutputs": ["unsupported-diagnostic"]
@@ -75,6 +121,7 @@
       "id": "criticality-keff",
       "name": "Criticality keff",
       "status": "gated",
+      "claimStatus": "gated",
       "supportedFacets": ["criticality"],
       "requiredInputs": [],
       "emittedOutputs": ["unsupported-diagnostic"]
@@ -83,6 +130,7 @@
       "id": "point-kinetics",
       "name": "Point Kinetics",
       "status": "gated",
+      "claimStatus": "gated",
       "supportedFacets": ["criticality", "kinetics"],
       "requiredInputs": [],
       "emittedOutputs": ["unsupported-diagnostic"]
@@ -91,7 +139,17 @@
       "id": "depletion",
       "name": "Depletion",
       "status": "gated",
+      "claimStatus": "gated",
       "supportedFacets": ["composition-evolution"],
+      "requiredInputs": [],
+      "emittedOutputs": ["unsupported-diagnostic"]
+    },
+    {
+      "id": "relativistic-multiphysics",
+      "name": "Relativistic Multiphysics",
+      "status": "gated",
+      "claimStatus": "substrate",
+      "supportedFacets": ["bssn-geometry", "valencia-hydrodynamics", "gray-m1-radiation", "matter-radiation-exchange", "packet-deposition", "single-block-diagnostics"],
       "requiredInputs": [],
       "emittedOutputs": ["unsupported-diagnostic"]
     }

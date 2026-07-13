@@ -75,7 +75,7 @@ fn v1_orchestration_and_results_remain_available_from_the_root_facade() {
             .iter()
             .find(|solver| solver.id == "criticality-keff")
             .expect("criticality capability")
-            .status,
+            .status(),
         V1SolverStatus::Gated
     );
 
