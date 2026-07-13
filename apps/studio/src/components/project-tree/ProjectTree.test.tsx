@@ -1,5 +1,5 @@
 import {fireEvent, render, screen, within} from "@testing-library/react";
-import {describe, expect, it} from "vitest";
+import {describe, expect, it, vi} from "vitest";
 import type {Project} from "@transport/domain";
 import {IDENTITY_TRANSFORM} from "@transport/shared";
 import {ProjectTree, ProjectTreeProps} from "./ProjectTree";
@@ -89,6 +89,16 @@ function renderProjectTree(overrides: Partial<ProjectTreeProps> = {}) {
 }
 
 describe("ProjectTree", () => {
+  it("reports actionable failures through the consolidated public boundary", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<EditorStoreProvider><ProjectTree diagnostics={[]}/></EditorStoreProvider>);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Project tree unavailable.");
+    expect(screen.getByTitle("Project Tree requires an Editable Scene project")).toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith("Project tree crashed", expect.any(Error), expect.any(Object));
+    consoleError.mockRestore();
+  });
+
   it("renders fixed groups, counts, rows, and create controls", () => {
     renderProjectTree();
 
@@ -123,6 +133,15 @@ describe("ProjectTree", () => {
     expect(screen.getByRole("treeitem", {name: "Water, material"})).toHaveAttribute("aria-selected", "true");
   });
 
+  it("supports keyboard selection through the public tree interface", () => {
+    renderProjectTree();
+    const row = screen.getByRole("treeitem", {name: "Water, material"});
+
+    fireEvent.keyDown(row, {key: "Enter"});
+
+    expect(row).toHaveAttribute("aria-selected", "true");
+  });
+
   it("opens and saves the metadata editor", () => {
     renderProjectTree();
     const row = screen.getByRole("treeitem", {name: "Shield Slab, geometry"});
@@ -145,6 +164,7 @@ describe("ProjectTree", () => {
 
     fireEvent.click(within(row).getByRole("button", {name: "Lock this entity against editing"}));
     expect(row).toHaveAttribute("data-locked", "true");
+    expect(within(row).getByRole("button", {name: "Unlock this entity for editing"})).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(within(row).getByRole("button", {name: "Exclude this entity from the compiled transport problem"}));
     expect(screen.getByText("excluded")).toBeInTheDocument();
