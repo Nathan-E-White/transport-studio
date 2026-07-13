@@ -5,7 +5,7 @@
 //! `transport-engine`. This module deliberately stays thin so the Tauri host is
 //! an adapter instead of the physics implementation.
 
-pub const NATIVE_EXECUTION_CONTRACT_VERSION: &str = "1.0.0";
+pub const NATIVE_EXECUTION_CONTRACT_VERSION: &str = "2.0.0";
 
 use serde::{Deserialize, Serialize};
 use transport_engine::{
@@ -14,80 +14,162 @@ use transport_engine::{
     TransportProblem, Vec3,
 };
 
-pub fn execute_native_request(
-    request: NativeExecutionRequest,
-) -> Result<NativeExecutionSuccess, NativeExecutionFailure> {
-    if request.contract_version != NATIVE_EXECUTION_CONTRACT_VERSION {
-        return Err(NativeExecutionFailure {
-            contract_version: NATIVE_EXECUTION_CONTRACT_VERSION.to_string(),
-            code: "native.contract.version_mismatch".to_string(),
-            message: format!(
+pub fn execute_native_request(request: serde_json::Value) -> NativeExecutionResponse {
+    let run_id = request
+        .get("runSessionId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("invalid-native-session")
+        .to_string();
+    let received_version = request
+        .get("contractVersion")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("missing");
+    if received_version != NATIVE_EXECUTION_CONTRACT_VERSION {
+        return failure_response(
+            run_id,
+            "native.contract.version_mismatch",
+            format!(
                 "Unsupported native execution contract version '{}'; expected '{}'.",
-                request.contract_version, NATIVE_EXECUTION_CONTRACT_VERSION
+                received_version, NATIVE_EXECUTION_CONTRACT_VERSION
             ),
-        });
+        );
     }
 
-    let problem_dto: TransportProblemDto =
-        serde_json::from_value(request.problem).map_err(|error| NativeExecutionFailure {
-            contract_version: NATIVE_EXECUTION_CONTRACT_VERSION.to_string(),
-            code: "native.contract.invalid_request".to_string(),
-            message: format!("Native execution request payload is invalid: {error}"),
-        })?;
+    let request: NativeExecutionRequest = match serde_json::from_value(request) {
+        Ok(request) => request,
+        Err(error) => {
+            return failure_response(
+                run_id,
+                "native.contract.invalid_request",
+                format!("Native execution request envelope is invalid: {error}"),
+            );
+        }
+    };
+    let problem_dto: TransportProblemDto = match serde_json::from_value(request.problem) {
+        Ok(problem) => problem,
+        Err(error) => {
+            return failure_response(
+                request.run_session_id,
+                "native.contract.invalid_request",
+                format!("Native execution request payload is invalid: {error}"),
+            );
+        }
+    };
+    let run_id = request.run_session_id;
+    let problem_id = problem_dto.id.clone();
+    let seed = problem_dto.settings.seed;
     let problem = TransportProblem::from(problem_dto);
     let result = transport_engine::run_photon_smoke(&problem);
 
-    Ok(NativeExecutionSuccess {
-        contract_version: NATIVE_EXECUTION_CONTRACT_VERSION.to_string(),
-        payload: NativePhotonSmokePayload {
-            run_id: result.run_id,
+    let warnings: Vec<String> = result
+        .provenance
+        .used_simple_coefficients
+        .then_some("simple coefficient smoke kernel".to_string())
+        .into_iter()
+        .collect();
+    let diagnostics: Vec<BackendDiagnosticDto> = result
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            let mut diagnostic = BackendDiagnosticDto::from(diagnostic);
+            diagnostic.problem_id = Some(problem_id.clone());
+            diagnostic.run_id = Some(run_id.clone());
+            diagnostic
+        })
+        .collect();
+    let has_execution_error = diagnostics.iter().any(|diagnostic| diagnostic.level == "error");
+    let tracks: Vec<TrackSampleDto> = result.tracks.into_iter().map(TrackSampleDto::from).collect();
+    let tally_deltas: Vec<TallyDeltaDto> = result
+        .tally_deltas
+        .into_iter()
+        .map(TallyDeltaDto::from)
+        .collect();
+
+    let mut events = vec![
+        NativeExecutionEventDto::BackendMetadata {
+            metadata: BackendMetadataDto::native_photon(),
+        },
+        NativeExecutionEventDto::ProblemAccepted {
+            run_id: run_id.clone(),
+            problem_id: problem_id.clone(),
+            diagnostics: Vec::new(),
+        },
+        NativeExecutionEventDto::RunStarted {
+            run_id: run_id.clone(),
+            problem_id: problem_id.clone(),
+            provenance: RunProvenanceDto {
+                backend_id: transport_engine::NATIVE_PHOTON_BACKEND_ID.to_string(),
+                backend_version: env!("CARGO_PKG_VERSION").to_string(),
+                problem_id: problem_id.clone(),
+                seed,
+                data_policy: "hybrid-warning-mode".to_string(),
+                warnings,
+            },
+        },
+        NativeExecutionEventDto::RunProgress {
+            run_id: run_id.clone(),
             completed_histories: result.completed_histories,
             total_histories: result.total_histories,
-            tracks: result
-                .tracks
-                .into_iter()
-                .map(TrackSampleDto::from)
-                .collect(),
-            tally_deltas: result
-                .tally_deltas
-                .into_iter()
-                .map(TallyDeltaDto::from)
-                .collect(),
-            diagnostics: result
-                .diagnostics
-                .into_iter()
-                .map(BackendDiagnosticDto::from)
-                .collect(),
-            warnings: result
-                .provenance
-                .used_simple_coefficients
-                .then_some("simple coefficient smoke kernel".to_string())
-                .into_iter()
-                .collect(),
         },
-    })
+        NativeExecutionEventDto::TrackSamples {
+            run_id: run_id.clone(),
+            samples: tracks.clone(),
+        },
+    ];
+    events.extend(tally_deltas.iter().cloned().map(|delta| {
+        NativeExecutionEventDto::TallyDelta {
+            run_id: run_id.clone(),
+            delta,
+        }
+    }));
+    events.extend(diagnostics.iter().cloned().map(|diagnostic| {
+        NativeExecutionEventDto::Diagnostic {
+            run_id: run_id.clone(),
+            diagnostic,
+        }
+    }));
+    if has_execution_error {
+        events.push(NativeExecutionEventDto::RunFailed {
+            run_id: run_id.clone(),
+            diagnostic: BackendDiagnosticDto::error(
+                "native.execution.failed",
+                "Native photon execution reported one or more error diagnostics.",
+                Some(problem_id),
+                run_id,
+            ),
+        });
+    } else {
+        events.push(NativeExecutionEventDto::RunCompleted {
+            run_id,
+            summary: RunSummaryDto {
+                completed_histories: result.completed_histories,
+                total_histories: result.total_histories,
+                sampled_track_count: tracks.len(),
+                tally_count: tally_deltas.len(),
+                diagnostics,
+            },
+        });
+    }
+
+    NativeExecutionResponse {
+        contract_version: NATIVE_EXECUTION_CONTRACT_VERSION.to_string(),
+        events,
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeExecutionRequest {
     contract_version: String,
+    run_session_id: String,
     problem: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativeExecutionSuccess {
+pub struct NativeExecutionResponse {
     contract_version: String,
-    payload: NativePhotonSmokePayload,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeExecutionFailure {
-    contract_version: String,
-    code: String,
-    message: String,
+    events: Vec<NativeExecutionEventDto>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -283,18 +365,6 @@ struct RunSettingsDto {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativePhotonSmokePayload {
-    run_id: String,
-    tracks: Vec<TrackSampleDto>,
-    tally_deltas: Vec<TallyDeltaDto>,
-    diagnostics: Vec<BackendDiagnosticDto>,
-    completed_histories: u64,
-    total_histories: u64,
-    warnings: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct TrackSampleDto {
     history_id: String,
     events: Vec<ParticleEventDto>,
@@ -309,10 +379,13 @@ struct ParticleEventDto {
     event_type: String,
     position: Vec3Dto,
     direction: Vec3Dto,
+    #[serde(rename = "energyMeV")]
     energy_mev: f64,
     weight: f64,
     time: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     material_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     entity_id: Option<String>,
     reason: String,
 }
@@ -326,7 +399,7 @@ struct TallyDeltaDto {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BackendDiagnosticDto {
+struct BackendDiagnosticDto {
     level: String,
     code: String,
     message: String,
@@ -344,15 +417,138 @@ pub struct BackendDiagnosticDto {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-pub enum NativeBackendEventDto {
+enum NativeExecutionEventDto {
+    BackendMetadata {
+        metadata: BackendMetadataDto,
+    },
+    ProblemAccepted {
+        run_id: String,
+        problem_id: String,
+        diagnostics: Vec<BackendDiagnosticDto>,
+    },
+    RunStarted {
+        run_id: String,
+        problem_id: String,
+        provenance: RunProvenanceDto,
+    },
+    RunProgress {
+        run_id: String,
+        completed_histories: u64,
+        total_histories: u64,
+    },
+    TrackSamples {
+        run_id: String,
+        samples: Vec<TrackSampleDto>,
+    },
+    TallyDelta {
+        run_id: String,
+        delta: TallyDeltaDto,
+    },
     Diagnostic {
-        run_id: Option<String>,
+        run_id: String,
         diagnostic: BackendDiagnosticDto,
+    },
+    RunCompleted {
+        run_id: String,
+        summary: RunSummaryDto,
     },
     RunFailed {
-        run_id: Option<String>,
+        run_id: String,
         diagnostic: BackendDiagnosticDto,
     },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackendMetadataDto {
+    id: String,
+    name: String,
+    version: String,
+    description: String,
+    capabilities: BackendCapabilitiesDto,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackendCapabilitiesDto {
+    particles: Vec<String>,
+    geometry: Vec<String>,
+    sources: Vec<String>,
+    tallies: Vec<String>,
+    lifecycle: Vec<String>,
+    data_policy: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunProvenanceDto {
+    backend_id: String,
+    backend_version: String,
+    problem_id: String,
+    seed: u64,
+    data_policy: String,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunSummaryDto {
+    completed_histories: u64,
+    total_histories: u64,
+    sampled_track_count: usize,
+    tally_count: usize,
+    diagnostics: Vec<BackendDiagnosticDto>,
+}
+
+impl BackendMetadataDto {
+    fn native_photon() -> Self {
+        Self {
+            id: transport_engine::NATIVE_PHOTON_BACKEND_ID.to_string(),
+            name: "Native Rust Photon Smoke Kernel".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            description: "Deterministic native photon MC smoke backend with hybrid warning-mode material data.".to_string(),
+            capabilities: BackendCapabilitiesDto {
+                particles: vec!["photon".to_string()],
+                geometry: ["box", "sphere", "cylinder"].map(str::to_string).to_vec(),
+                sources: ["point-source", "beam-source", "isotropic-source"]
+                    .map(str::to_string)
+                    .to_vec(),
+                tallies: ["cell-flux", "track-length", "detector-hit"]
+                    .map(str::to_string)
+                    .to_vec(),
+                lifecycle: ["submit", "start"].map(str::to_string).to_vec(),
+                data_policy: "hybrid-warning-mode".to_string(),
+            },
+        }
+    }
+}
+
+impl BackendDiagnosticDto {
+    fn error(
+        code: &str,
+        message: impl Into<String>,
+        problem_id: Option<String>,
+        run_id: String,
+    ) -> Self {
+        Self {
+            level: "error".to_string(),
+            code: code.to_string(),
+            message: message.into(),
+            entity_id: None,
+            problem_id,
+            run_id: Some(run_id),
+        }
+    }
+}
+
+fn failure_response(run_id: String, code: &str, message: impl Into<String>) -> NativeExecutionResponse {
+    NativeExecutionResponse {
+        contract_version: NATIVE_EXECUTION_CONTRACT_VERSION.to_string(),
+        events: vec![NativeExecutionEventDto::RunFailed {
+            diagnostic: BackendDiagnosticDto::error(code, message, None, run_id.clone()),
+            run_id,
+        }],
+    }
 }
 
 impl From<TransportProblemDto> for TransportProblem {
@@ -683,51 +879,70 @@ mod tests {
     use super::*;
 
     #[test]
-    fn contract_consumes_the_shared_compatibility_fixture() {
+    fn contract_consumes_the_v2_conformance_corpus() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../../fixtures/contracts/native-execution-v1.json"
+            "../../../../../../fixtures/contracts/native-execution-v2.json"
         ))
         .expect("shared fixture should be valid JSON");
         let request: NativeExecutionRequest = serde_json::from_value(fixture["request"].clone())
             .expect("shared request should match the native adapter DTO");
         assert_eq!(request.contract_version, NATIVE_EXECUTION_CONTRACT_VERSION);
+        assert_eq!(request.run_session_id, "fixture-session");
         assert_eq!(serde_json::to_value(&request).unwrap(), fixture["request"]);
 
-        let success: NativeExecutionSuccess = serde_json::from_value(fixture["success"].clone())
-            .expect("shared success should match the native adapter DTO");
-        assert_eq!(serde_json::to_value(success).unwrap(), fixture["success"]);
-
-        let events: Vec<NativeBackendEventDto> = serde_json::from_value(
-            fixture["backendEvents"].clone(),
-        )
-        .expect("shared diagnostic and failure events should match the native adapter DTOs");
-        assert_eq!(
-            serde_json::to_value(events).unwrap(),
-            fixture["backendEvents"]
-        );
+        let events: Vec<NativeExecutionEventDto> =
+            serde_json::from_value(fixture["eventExamples"].clone())
+                .expect("every v2 event kind should match the Rust DTOs");
+        assert_eq!(serde_json::to_value(events).unwrap(), fixture["eventExamples"]);
     }
 
     #[test]
-    fn contract_rejects_version_mismatch_and_ignores_unknown_fields() {
+    fn valid_request_returns_ordered_events_with_the_caller_session_id() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../../fixtures/contracts/native-execution-v1.json"
+            "../../../../../../fixtures/contracts/native-execution-v2.json"
         ))
         .expect("shared fixture should be valid JSON");
         let mut request = fixture["request"].clone();
         request["additiveFutureField"] = serde_json::json!(true);
-        let compatible: NativeExecutionRequest = serde_json::from_value(request.clone())
-            .expect("unknown fields are ignored by the v1 compatibility rule");
-        assert!(execute_native_request(compatible).is_ok());
+        let response = execute_native_request(request);
+        let serialized = serde_json::to_value(&response).unwrap();
+        assert_eq!(serialized["contractVersion"], "2.0.0");
+        let events = serialized["events"].as_array().expect("events array");
+        assert_eq!(events[0]["type"], "backendMetadata");
+        assert_eq!(events[1]["type"], "problemAccepted");
+        assert_eq!(events[2]["type"], "runStarted");
+        assert_eq!(events[3]["type"], "runProgress");
+        assert_eq!(events[4]["type"], "trackSamples");
+        assert_eq!(events.last().unwrap()["type"], "runCompleted");
+        assert!(events.iter().skip(1).all(|event| event["runId"] == "fixture-session"));
+    }
 
-        request["contractVersion"] = serde_json::json!("0.0.0");
-        let mismatch: NativeExecutionRequest = serde_json::from_value(request).unwrap();
-        let failure = execute_native_request(mismatch).unwrap_err();
-        assert_eq!(failure.code, fixture["failure"]["code"]);
-        assert_eq!(failure.message, fixture["failure"]["message"]);
-        assert_eq!(serde_json::to_value(failure).unwrap(), fixture["failure"]);
+    #[test]
+    fn contract_rejects_v1_and_invalid_payloads_as_run_failed_events() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../../fixtures/contracts/native-execution-v2.json"
+        ))
+        .expect("shared fixture should be valid JSON");
+
+        let mismatch = execute_native_request(fixture["versionMismatchRequest"].clone());
+        let mismatch = serde_json::to_value(mismatch).unwrap();
+        assert_eq!(mismatch["events"][0]["type"], "runFailed");
+        assert_eq!(
+            mismatch["events"][0]["diagnostic"]["code"],
+            "native.contract.version_mismatch"
+        );
+        assert_eq!(mismatch["events"][0]["runId"], "fixture-session");
+
+        let invalid = execute_native_request(fixture["invalidRequest"].clone());
+        let invalid = serde_json::to_value(invalid).unwrap();
+        assert_eq!(invalid["events"][0]["type"], "runFailed");
+        assert_eq!(
+            invalid["events"][0]["diagnostic"]["code"],
+            "native.contract.invalid_request"
+        );
 
         assert!(
-            serde_json::from_value::<Vec<NativeBackendEventDto>>(
+            serde_json::from_value::<Vec<NativeExecutionEventDto>>(
                 serde_json::json!([{"type": "futureEvent"}])
             )
             .is_err()
@@ -735,20 +950,22 @@ mod tests {
     }
 
     #[test]
-    fn contract_reports_invalid_problem_payloads_as_wire_failures() {
-        let request = NativeExecutionRequest {
-            contract_version: NATIVE_EXECUTION_CONTRACT_VERSION.to_string(),
-            problem: serde_json::json!({"id": "missing-required-fields"}),
-        };
+    fn engine_error_diagnostics_terminate_as_run_failed() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../../fixtures/contracts/native-execution-v2.json"
+        ))
+        .expect("shared fixture should be valid JSON");
+        let mut request = fixture["request"].clone();
+        request["problem"]["sources"] = serde_json::json!([]);
 
-        let failure = execute_native_request(request).unwrap_err();
+        let response = serde_json::to_value(execute_native_request(request)).unwrap();
+        let events = response["events"].as_array().expect("events");
 
-        assert_eq!(failure.contract_version, NATIVE_EXECUTION_CONTRACT_VERSION);
-        assert_eq!(failure.code, "native.contract.invalid_request");
-        assert!(
-            failure
-                .message
-                .starts_with("Native execution request payload is invalid:")
-        );
+        assert!(events.iter().any(|event| {
+            event["type"] == "diagnostic"
+                && event["diagnostic"]["code"] == "problem.sources.empty"
+        }));
+        assert_eq!(events.last().unwrap()["type"], "runFailed");
+        assert_eq!(events.last().unwrap()["runId"], "fixture-session");
     }
 }

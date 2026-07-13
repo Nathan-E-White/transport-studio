@@ -53,6 +53,7 @@ export type RunSessionAction =
 export interface NativeRunSessionDependencies {
     readonly runBackend?: (
         problem: TransportProblem,
+        runSessionId: string,
         bridge?: NativePhotonSmokeBridge,
     ) => Promise<readonly TransportBackendEvent[]>;
 }
@@ -223,6 +224,7 @@ export async function createNativeRunActions(
     try {
         events = await (dependencies.runBackend ?? runNativePhotonSmokeBackend)(
             compileResult.value,
+            attemptId,
             bridge,
         );
     } catch (error) {

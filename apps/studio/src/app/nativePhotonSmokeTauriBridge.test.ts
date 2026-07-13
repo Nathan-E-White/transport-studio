@@ -1,9 +1,9 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {
     createNativeExecutionRequest,
-    createNativePhotonSmokeFixtureProblem,
     NATIVE_EXECUTION_CONTRACT_VERSION,
-} from "@transport/transport-worker";
+} from "@transport/native-execution-contract";
+import {createNativePhotonSmokeFixtureProblem} from "@transport/transport-worker";
 import {createTauriNativePhotonSmokeBridge, RUN_PHOTON_SMOKE_COMMAND} from "./nativePhotonSmokeTauriBridge";
 import {invoke} from "@tauri-apps/api/core";
 
@@ -25,37 +25,24 @@ describe("createTauriNativePhotonSmokeBridge", () => {
 
     it("invokes the native smoke command with the compiled problem payload", async () => {
         const problem = createNativePhotonSmokeFixtureProblem();
-        const payload = {
-            runId: "native-fixture-run",
-            tracks: [],
-            tallyDeltas: [],
-            diagnostics: [],
-            completedHistories: 16,
-            totalHistories: 16,
-            warnings: ["simple coefficient smoke kernel"],
-        };
         (window as Window & {__TAURI_INTERNALS__?: unknown}).__TAURI_INTERNALS__ = {};
-        const response = {contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION, payload};
+        const response = {contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION, events: []};
         invokeMock.mockResolvedValue(response);
 
         const bridge = createTauriNativePhotonSmokeBridge();
 
-        const request = createNativeExecutionRequest(problem);
+        const request = createNativeExecutionRequest("fixture-session", problem);
         await expect(bridge?.runPhotonSmoke(request)).resolves.toBe(response);
         expect(invokeMock).toHaveBeenCalledWith(RUN_PHOTON_SMOKE_COMMAND, {request});
     });
 
-    it("translates a structured native contract failure", async () => {
-        const failure = {
-            contractVersion: NATIVE_EXECUTION_CONTRACT_VERSION,
-            code: "native.contract.version_mismatch",
-            message: "version mismatch",
-        };
+    it("leaves adapter transport rejection for the runtime-neutral worker to convert", async () => {
+        const failure = new Error("IPC unavailable");
         (window as Window & {__TAURI_INTERNALS__?: unknown}).__TAURI_INTERNALS__ = {};
         invokeMock.mockRejectedValue(failure);
 
         const bridge = createTauriNativePhotonSmokeBridge();
-        await expect(bridge?.runPhotonSmoke(createNativeExecutionRequest(createNativePhotonSmokeFixtureProblem())))
+        await expect(bridge?.runPhotonSmoke(createNativeExecutionRequest("fixture-session", createNativePhotonSmokeFixtureProblem())))
             .rejects.toEqual(failure);
     });
 });

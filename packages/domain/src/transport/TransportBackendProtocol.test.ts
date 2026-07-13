@@ -37,6 +37,7 @@ describe("TransportBackendProtocol", () => {
             id: NATIVE_RUST_PHOTON_BACKEND_ID,
             capabilities: {
                 particles: ["photon"],
+                lifecycle: ["submit", "start"],
                 dataPolicy: "hybrid-warning-mode",
             },
         });

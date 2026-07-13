@@ -1,0 +1,137 @@
+{
+  "contractVersion": "2.0.0",
+  "compatibility": {
+    "unknownFields": "ignore",
+    "unknownEventKinds": "reject",
+    "v1Requests": "reject"
+  },
+  "request": {
+    "contractVersion": "2.0.0",
+    "runSessionId": "fixture-session",
+    "problem": {
+      "id": "fixture-photon-shielding",
+      "name": "Native Photon Smoke Fixture",
+      "status": "compiled",
+      "geometry": {
+        "entities": [{
+          "id": "shield-box",
+          "kind": "box",
+          "name": "Shield Box",
+          "materialId": "mat-water",
+          "transform": {
+            "position": {"x": 0, "y": 0, "z": 0},
+            "rotation": {"x": 0, "y": 0, "z": 0}
+          },
+          "size": {"x": 2, "y": 4, "z": 4}
+        }],
+        "surfaces": [],
+        "regions": []
+      },
+      "materials": [{
+        "id": "mat-water",
+        "name": "Water Shield",
+        "density": 1,
+        "nuclides": [{"nuclide": "H1", "fraction": 2, "basis": "atom"}],
+        "color": "#38bdf8"
+      }],
+      "sources": [{
+        "id": "beam-1",
+        "kind": "beam-source",
+        "name": "Photon Beam",
+        "particle": "photon",
+        "position": {"x": -4, "y": 0, "z": 0},
+        "direction": {"x": 1, "y": 0, "z": 0},
+        "energyMeV": 1,
+        "energy": {"kind": "monoenergetic", "energyMeV": 1},
+        "angular": {"kind": "directional", "direction": {"x": 1, "y": 0, "z": 0}},
+        "strength": 1,
+        "enabled": true
+      }],
+      "tallies": [{
+        "id": "shield-track-length",
+        "kind": "cell-flux",
+        "name": "Shield Track Length",
+        "particle": "photon",
+        "entityId": "shield-box",
+        "target": {"kind": "entity", "entityId": "shield-box"},
+        "response": "flux",
+        "enabled": true
+      }],
+      "settings": {"histories": 16, "seed": 1337, "particles": ["photon"]},
+      "metadata": {
+        "sourceSceneId": "fixture-photon-shielding",
+        "targetBackendId": "native-rust-photon-smoke",
+        "tags": ["mwe", "native-photon-smoke"],
+        "compilerVersion": "transport-domain-compiler-1"
+      }
+    }
+  },
+  "eventExamples": [
+    {
+      "type": "backendMetadata",
+      "metadata": {
+        "id": "native-rust-photon-smoke",
+        "name": "Native Rust Photon Smoke Kernel",
+        "version": "0.1.0",
+        "description": "Deterministic native photon MC smoke backend with hybrid warning-mode material data.",
+        "capabilities": {
+          "particles": ["photon"],
+          "geometry": ["box", "sphere", "cylinder"],
+          "sources": ["point-source", "beam-source", "isotropic-source"],
+          "tallies": ["cell-flux", "track-length", "detector-hit"],
+          "lifecycle": ["submit", "start"],
+          "dataPolicy": "hybrid-warning-mode"
+        }
+      }
+    },
+    {"type": "problemAccepted", "runId": "fixture-session", "problemId": "fixture-photon-shielding", "diagnostics": []},
+    {
+      "type": "runStarted",
+      "runId": "fixture-session",
+      "problemId": "fixture-photon-shielding",
+      "provenance": {
+        "backendId": "native-rust-photon-smoke",
+        "backendVersion": "0.1.0",
+        "problemId": "fixture-photon-shielding",
+        "seed": 1337,
+        "dataPolicy": "hybrid-warning-mode",
+        "warnings": ["simple coefficient smoke kernel"]
+      }
+    },
+    {"type": "runProgress", "runId": "fixture-session", "completedHistories": 16, "totalHistories": 16},
+    {"type": "trackSamples", "runId": "fixture-session", "samples": [{"historyId": "h-0", "events": [{"historyId": "h-0", "particleId": "p-0", "type": "birth", "position": {"x": -4.0, "y": 0.0, "z": 0.0}, "direction": {"x": 1.0, "y": 0.0, "z": 0.0}, "energyMeV": 1.0, "weight": 1.0, "time": 0.0, "reason": "native photon birth"}]}]},
+    {"type": "tallyDelta", "runId": "fixture-session", "delta": {"tallyId": "shield-track-length", "scores": [12.5]}},
+    {"type": "diagnostic", "runId": "fixture-session", "diagnostic": {"level": "warning", "code": "physics_data.simple_coefficients", "message": "simple coefficient smoke kernel", "problemId": "fixture-photon-shielding", "runId": "fixture-session"}},
+    {"type": "runCompleted", "runId": "fixture-session", "summary": {"completedHistories": 16, "totalHistories": 16, "sampledTrackCount": 0, "tallyCount": 1, "diagnostics": []}},
+    {"type": "runFailed", "runId": "fixture-session", "diagnostic": {"level": "error", "code": "native.contract.version_mismatch", "message": "Unsupported native execution contract version '1.0.0'; expected '2.0.0'.", "runId": "fixture-session"}}
+  ],
+  "successResponse": {
+    "contractVersion": "2.0.0",
+    "events": [
+      {"type": "problemAccepted", "runId": "fixture-session", "problemId": "fixture-photon-shielding", "diagnostics": []},
+      {"type": "runProgress", "runId": "fixture-session", "completedHistories": 16, "totalHistories": 16},
+      {"type": "runCompleted", "runId": "fixture-session", "summary": {"completedHistories": 16, "totalHistories": 16, "sampledTrackCount": 0, "tallyCount": 1, "diagnostics": []}}
+    ]
+  },
+  "bridgeUnavailableEvent": {
+    "type": "runFailed",
+    "runId": "fixture-session",
+    "diagnostic": {
+      "level": "error",
+      "code": "native.bridge.unavailable",
+      "message": "Native Rust photon backend bridge is not available in this runtime.",
+      "problemId": "fixture-photon-shielding",
+      "runId": "fixture-session"
+    }
+  },
+  "versionMismatchRequest": {
+    "contractVersion": "1.0.0",
+    "runSessionId": "fixture-session",
+    "problem": {}
+  },
+  "invalidRequest": {
+    "contractVersion": "2.0.0",
+    "runSessionId": "fixture-session",
+    "problem": {"id": "missing-required-fields"}
+  }
+}

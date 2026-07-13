@@ -37,6 +37,7 @@
         "@theatre/r3f": "latest",
         "@transport/domain": "workspace:*",
         "@transport/frontend": "workspace:*",
+        "@transport/native-execution-contract": "workspace:*",
         "@transport/shared": "workspace:*",
         "@transport/transport-visual": "workspace:*",
         "@transport/transport-worker": "workspace:*",
@@ -80,6 +81,13 @@
       "name": "@transport/materials",
       "version": "0.0.0",
     },
+    "packages/native-execution-contract": {
+      "name": "@transport/native-execution-contract",
+      "version": "2.0.0",
+      "dependencies": {
+        "@transport/domain": "workspace:*",
+      },
+    },
     "packages/particles": {
       "name": "@transport/particles",
       "version": "0.0.0",
@@ -103,12 +111,16 @@
     "packages/transport-visual": {
       "name": "@transport/transport-visual",
       "version": "0.0.0",
+      "dependencies": {
+        "@transport/domain": "workspace:*",
+      },
     },
     "packages/transport-worker": {
       "name": "@transport/transport-worker",
       "version": "0.0.0",
       "dependencies": {
         "@transport/domain": "workspace:*",
+        "@transport/native-execution-contract": "workspace:*",
       },
     },
     "packages/validation": {
@@ -401,6 +413,8 @@
     "@transport/geometry": ["@transport/geometry@workspace:packages/geometry"],
 
     "@transport/materials": ["@transport/materials@workspace:packages/materials"],
+
+    "@transport/native-execution-contract": ["@transport/native-execution-contract@workspace:packages/native-execution-contract"],
 
     "@transport/particles": ["@transport/particles@workspace:packages/particles"],
 

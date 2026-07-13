@@ -1,13 +1,12 @@
 {
-  "name": "@transport/transport-worker",
-  "version": "0.0.0",
+  "name": "@transport/native-execution-contract",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
-    "@transport/domain": "workspace:*",
-    "@transport/native-execution-contract": "workspace:*"
+    "@transport/domain": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
