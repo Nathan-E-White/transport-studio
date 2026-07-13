@@ -13,6 +13,7 @@ pub mod matter;
 pub mod metric;
 pub mod numerics;
 pub mod physics_v1;
+pub mod radiation;
 pub mod tensor;
 mod transport;
 pub mod units;

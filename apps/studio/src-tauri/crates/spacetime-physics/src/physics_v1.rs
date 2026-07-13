@@ -31,6 +31,7 @@ pub enum SolverSupportStatus {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum RadiationTransportMode {
     None,
+    GrayM1,
     GrayDiffusion,
     MultigroupDiffusion,
     DiscreteOrdinates,
