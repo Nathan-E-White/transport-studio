@@ -282,7 +282,7 @@ describe("native Run Session adapter", () => {
             },
         }];
         const runBackend = vi.fn<
-            (problem: TransportProblem, bridge?: NativePhotonSmokeBridge) => Promise<readonly TransportBackendEvent[]>
+            (problem: TransportProblem, runSessionId: string, bridge?: NativePhotonSmokeBridge) => Promise<readonly TransportBackendEvent[]>
         >(async () => events);
         const actions = await createNativeRunActions(
             successfulCompile(),

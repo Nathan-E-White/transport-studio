@@ -22,6 +22,10 @@ The authoring intent that decides whether an editable entity participates in the
 
 The lifecycle of one attempt to analyze or execute a Compiled Transport Problem. A Run Session includes selected backend, diagnostics, progress, result tracks or tallies, provenance, and UI outcome state, but not the native runtime adapter that happens to perform a call.
 
+### Native Execution Contract
+
+The versioned, runtime-neutral message vocabulary used to submit a Compiled Transport Problem under a caller-owned Run Session ID and return an ordered canonical event sequence. Its Rust and TypeScript owners validate the same fixture-first contract; Tauri and other hosts only transport opaque requests and typed responses.
+
 ### Capability Status
 
 A product-facing statement of what a solver, backend, or model facet may honestly do right now. Capability Status distinguishes runnable behavior from gated, stubbed, substrate, placeholder, future, or verification-only work so the workbench does not over-claim physics maturity.

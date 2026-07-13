@@ -401,7 +401,7 @@ describe("StudioApp spec", () => {
                 histories: 4,
                 seed: 314159
             }
-        }, undefined);
+        }, "1:1", undefined);
         expect(screen.getByText("RUN MODE")).toBeTruthy();
         expect(screen.getByText("active run tab: diagnostics")).toBeTruthy();
         expect(screen.getByText("run panel backend: native")).toBeTruthy();
@@ -534,7 +534,7 @@ describe("StudioApp spec", () => {
                 histories: 4,
                 seed: 314159
             }
-        }, bridge);
+        }, "1:1", bridge);
         expect(screen.getByText("run panel backend: native")).toBeTruthy();
         expect(screen.getByText("run panel diagnostics: 2")).toBeTruthy();
         expect(screen.getByText("physics_data.simple_coefficients: Native photon backend used simple coefficients because tabular cross-section data was not supplied.")).toBeTruthy();

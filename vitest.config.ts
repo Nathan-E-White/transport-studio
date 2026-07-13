@@ -7,6 +7,7 @@ const workspacePackages = [
   "frontend",
   "geometry",
   "materials",
+  "native-execution-contract",
   "particles",
   "project-io",
   "shared",

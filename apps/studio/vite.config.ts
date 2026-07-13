@@ -30,6 +30,10 @@ export default defineConfig({
         find: "@transport/transport-worker",
         replacement: fileURLToPath(new URL("../../packages/transport-worker/src/index.ts", import.meta.url)),
       },
+      {
+        find: "@transport/native-execution-contract",
+        replacement: fileURLToPath(new URL("../../packages/native-execution-contract/src/index.ts", import.meta.url)),
+      },
     ],
   },
   server: { port: 5173 },

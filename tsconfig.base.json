@@ -50,6 +50,12 @@
       "@transport/materials/*": [
         "packages/materials/src/*"
       ],
+      "@transport/native-execution-contract": [
+        "packages/native-execution-contract/src/index.ts"
+      ],
+      "@transport/native-execution-contract/*": [
+        "packages/native-execution-contract/src/*"
+      ],
       "@transport/particles": [
         "packages/particles/src/index.ts"
       ],

@@ -119,7 +119,7 @@ export const nativeRustPhotonBackendMetadata: TransportBackendMetadata = {
         geometry: ["box", "sphere", "cylinder"],
         sources: ["point-source", "beam-source", "isotropic-source"],
         tallies: ["cell-flux", "track-length", "detector-hit"],
-        lifecycle: ["submit", "start", "cancel"],
+        lifecycle: ["submit", "start"],
         dataPolicy: "hybrid-warning-mode",
     },
 };

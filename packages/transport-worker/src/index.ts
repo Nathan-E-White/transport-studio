@@ -14,22 +14,9 @@ import {
 import type {TransportProblem} from "@transport/domain/transport/TransportProblem";
 import {
   createNativeExecutionRequest,
-  parseNativeExecutionSuccess,
+  parseNativeExecutionResponse,
   type NativeExecutionRequest,
-  type NativePhotonSmokePayload,
-} from "./nativeExecutionContract";
-
-export {
-  createNativeExecutionRequest,
-  NATIVE_EXECUTION_CONTRACT_VERSION,
-  parseNativeBackendEvents,
-  parseNativeExecutionFailure,
-  parseNativeExecutionSuccess,
-  type NativeExecutionFailure,
-  type NativeExecutionRequest,
-  type NativeExecutionSuccess,
-  type NativePhotonSmokePayload,
-} from "./nativeExecutionContract";
+} from "@transport/native-execution-contract";
 
 export {
   createNativePhotonSmokeFixtureProblem,
@@ -59,60 +46,38 @@ export interface NativePhotonSmokeBridge {
 
 export async function runNativePhotonSmokeBackend(
   problem: TransportProblem,
+  runSessionId: string,
   bridge?: NativePhotonSmokeBridge,
 ): Promise<readonly TransportBackendEvent[]> {
-  const runId = `native-${problem.settings.seed}`;
-
   if (!bridge) {
     return [
       { type: "backendMetadata", metadata: nativeRustPhotonBackendMetadata },
       {
         type: "runFailed",
-        runId,
-        diagnostic: nativeBridgeUnavailableDiagnostic(problem.id, runId),
+        runId: runSessionId,
+        diagnostic: nativeBridgeUnavailableDiagnostic(problem.id, runSessionId),
       },
     ];
   }
 
-  const response = parseNativeExecutionSuccess(await bridge.runPhotonSmoke(createNativeExecutionRequest(problem)));
-  const payload = response.payload;
-
-  return [
-    { type: "backendMetadata", metadata: nativeRustPhotonBackendMetadata },
-    { type: "problemAccepted", problemId: problem.id, diagnostics: payload.diagnostics },
-    {
-      type: "runStarted",
-      runId: payload.runId,
+  try {
+    const response = parseNativeExecutionResponse(
+      await bridge.runPhotonSmoke(createNativeExecutionRequest(runSessionId, problem)),
+    );
+    return response.events;
+  } catch (error) {
+    const diagnostic: TransportBackendDiagnostic = {
+      level: "error",
+      code: "native.adapter.transport_failure",
+      message: error instanceof Error ? error.message : "Native adapter transport failed.",
       problemId: problem.id,
-      provenance: {
-        backendId: NATIVE_RUST_PHOTON_BACKEND_ID,
-        backendVersion: nativeRustPhotonBackendMetadata.version,
-        problemId: problem.id,
-        seed: problem.settings.seed,
-        dataPolicy: "hybrid-warning-mode",
-        warnings: payload.warnings,
-      },
-    },
-    {
-      type: "runProgress",
-      runId: payload.runId,
-      completedHistories: payload.completedHistories,
-      totalHistories: payload.totalHistories,
-    },
-    { type: "trackSamples", runId: payload.runId, samples: payload.tracks },
-    ...payload.tallyDeltas.map((delta): TransportBackendEvent => ({ type: "tallyDelta", runId: payload.runId, delta })),
-    {
-      type: "runCompleted",
-      runId: payload.runId,
-      summary: {
-        completedHistories: payload.completedHistories,
-        totalHistories: payload.totalHistories,
-        sampledTrackCount: payload.tracks.length,
-        tallyCount: payload.tallyDeltas.length,
-        diagnostics: payload.diagnostics,
-      },
-    },
-  ];
+      runId: runSessionId,
+    };
+    return [
+      {type: "backendMetadata", metadata: nativeRustPhotonBackendMetadata},
+      {type: "runFailed", runId: runSessionId, diagnostic},
+    ];
+  }
 }
 
 function nativeBridgeUnavailableDiagnostic(problemId: string, runId: string): TransportBackendDiagnostic {

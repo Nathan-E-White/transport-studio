@@ -21,7 +21,7 @@ Run orchestration, Run Session outcomes, solver Capability Status, Compiled Prob
 Tauri-specific code may:
 
 - expose desktop commands;
-- translate between Tauri IPC payloads and runtime-neutral contracts;
+- transport opaque JSON requests and typed runtime-neutral responses;
 - provide a native bridge adapter to frontend/domain code;
 - own desktop launch configuration such as dev server startup and webview loading.
 
@@ -31,6 +31,8 @@ Tauri-specific code must not:
 - become the only source of truth for native backend contracts;
 - make TypeScript domain validation or Rust engine behavior depend on desktop launch semantics;
 - promote gated solver behavior by virtue of a native command existing.
+
+The Native Execution Contract v2 makes this boundary concrete. The caller supplies the Run Session ID, the Rust contract crate converts the Compiled Transport Problem and maps engine results into ordered canonical events, and the TypeScript contract package validates the response. Expected version, request, and execution failures are `runFailed` events. Tauri neither owns those DTOs nor interprets failure meaning.
 
 ## Consequences
 

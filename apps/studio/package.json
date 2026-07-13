@@ -21,6 +21,7 @@
   "dependencies": {
     "@transport/domain": "workspace:*",
     "@transport/frontend": "workspace:*",
+    "@transport/native-execution-contract": "workspace:*",
     "@transport/shared": "workspace:*",
     "@transport/transport-worker": "workspace:*",
     "@transport/transport-visual": "workspace:*",
