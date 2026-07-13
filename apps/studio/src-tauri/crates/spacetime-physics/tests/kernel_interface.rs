@@ -1,7 +1,8 @@
 use spacetime_physics::kernel::{
     AlgebraicConstraintStatus, DynamicalSpacetimeKernel, EvidenceStatus,
-    FLAT_BSSN_CONSTRAINT_TOLERANCE, GaugePolicy, GaugeVariableStatus, KernelConfig, KernelState,
-    KernelStateKind, KernelStepError,
+    FLAT_BSSN_CONSTRAINT_TOLERANCE, GaugePolicy, GaugeVariableStatus, GrhdEvidence, KernelConfig,
+    KernelState, KernelStateKind, KernelStepError, RadiationKernelEvidence,
+    StressEnergyAccountingEvidence,
 };
 use spacetime_physics::{CoordinateTime, TimeDuration, UniformGrid3, vec3};
 
@@ -42,10 +43,14 @@ fn flat_empty_dynamical_spacetime_state_advances_through_the_canonical_kernel_se
     );
     assert!(result.diagnostics.bssn.hamiltonian_linf <= FLAT_BSSN_CONSTRAINT_TOLERANCE);
     assert!(result.diagnostics.bssn.momentum_linf <= FLAT_BSSN_CONSTRAINT_TOLERANCE);
-    assert_eq!(result.diagnostics.grhd.status, EvidenceStatus::NotEvaluated);
+    assert_eq!(result.diagnostics.grhd, GrhdEvidence::NotEvaluated);
     assert_eq!(
-        result.diagnostics.radiation.status,
-        EvidenceStatus::NotEvaluated
+        result.diagnostics.radiation,
+        RadiationKernelEvidence::NotEvaluated
+    );
+    assert_eq!(
+        result.diagnostics.stress_energy,
+        StressEnergyAccountingEvidence::NotEvaluated
     );
     assert_eq!(
         result.diagnostics.packet_deposition.status,
