@@ -11,10 +11,12 @@ export type PhysicsSolverId =
     | "ale-hydro"
     | "criticality-keff"
     | "point-kinetics"
-    | "depletion";
+    | "depletion"
+    | "relativistic-multiphysics";
 
 export type SolverSupportStatus = "runnable" | "gated" | "placeholder";
 export type ModelFacetStatus = "runnable" | "stubbed" | "gated";
+export type ProductCapabilityStatus = "solved" | "validated-only" | "substrate" | "gated" | "future-track";
 export type RegionKind =
     | "vacuum"
     | "gas"
@@ -236,14 +238,19 @@ export interface ExperimentSpec {
     readonly problem: PhysicsProblemSpec;
 }
 
-export interface SolverCapability {
+interface SolverCapabilityBase {
     readonly id: PhysicsSolverId;
     readonly name: string;
-    readonly status: SolverSupportStatus;
     readonly supportedFacets: readonly string[];
     readonly requiredInputs: readonly string[];
     readonly emittedOutputs: readonly string[];
 }
+
+export type SolverCapability = SolverCapabilityBase & (
+    | { readonly status: "runnable"; readonly claimStatus: "solved" }
+    | { readonly status: "gated"; readonly claimStatus: "gated" | "substrate" }
+    | { readonly status: "placeholder"; readonly claimStatus: "validated-only" | "future-track" }
+);
 
 export const V1_SOLVER_CAPABILITIES: readonly SolverCapability[] = [
     runnable("mock-fields", "Mock Fields", ["rad-hydro-fields", "reporting"], [], ["field-dataset"]),
@@ -257,6 +264,22 @@ export const V1_SOLVER_CAPABILITIES: readonly SolverCapability[] = [
     gated("criticality-keff", "Criticality keff", ["criticality"]),
     gated("point-kinetics", "Point Kinetics", ["criticality", "kinetics"]),
     gated("depletion", "Depletion", ["composition-evolution"]),
+    substrate("relativistic-multiphysics", "Relativistic Multiphysics", ["bssn-geometry", "valencia-hydrodynamics", "gray-m1-radiation", "matter-radiation-exchange", "packet-deposition", "single-block-diagnostics"]),
+];
+
+export interface ProductCapabilityClaim {
+    readonly id: string;
+    readonly name: string;
+    readonly status: ProductCapabilityStatus;
+    readonly summary: string;
+}
+
+export const PRODUCT_CAPABILITY_CLAIMS: readonly ProductCapabilityClaim[] = [
+    claim("v1-deterministic-solvers", "V1 deterministic solver paths", "solved", "Mock fields, gray radiation diffusion, and Eulerian hydro remain runnable V1 product paths."),
+    claim("relativistic-coupled-kernel-validation", "Relativistic coupled-kernel verification", "validated-only", "Controlled local and three-cell tests verify selected BSSN, Valencia, gray-M1, exchange, and packet-deposition invariants."),
+    claim("relativistic-multiphysics-kernel", "Relativistic multiphysics kernel", "substrate", "Kernel building blocks exist for BSSN, Valencia hydrodynamics, gray-M1 radiation, exchange, packet deposition, and single-block diagnostics."),
+    claim("relativistic-multiphysics-product-run", "Relativistic multiphysics product run", "gated", "Product execution is disabled and must return an unsupported diagnostic without partial physics output."),
+    claim("relativistic-multiphysics-future-tracks", "Relativistic multiphysics future tracks", "future-track", "Strong-field production, primary Monte Carlo radiation, Berger-Oliger AMR, curvilinear charts, full GRMHD, tabulated EOS, TOV, Bondi/Michel, AMR convergence, and strong-field constraint preservation remain deferred."),
 ];
 
 export type ValidationCategory =
@@ -294,6 +317,7 @@ export interface ExperimentReport {
     readonly title: "Experiment";
     readonly fingerprint: string;
     readonly sections: readonly ExperimentReportSection[];
+    readonly capabilityClaims: readonly ProductCapabilityClaim[];
     readonly validation: PhysicsValidationReport;
 }
 
@@ -311,8 +335,10 @@ export function validatePhysicsProblem(problem: PhysicsProblemSpec): PhysicsVali
         diagnostics.push({
             level: "error",
             category: "solver",
-            code: "physics.solver.gated",
-            message: `Solver "${solver.id}" is registered for V1 but not runnable yet.`,
+            code: solver.claimStatus === "substrate" ? "physics.solver.substrate" : "physics.solver.gated",
+            message: solver.claimStatus === "substrate"
+                ? `Solver "${solver.id}" has kernel substrate only; product execution is disabled and no partial physics result will be produced.`
+                : `Solver "${solver.id}" is registered for V1 but not runnable yet.`,
             solverId: solver.id,
         });
     }
@@ -359,6 +385,7 @@ export function createExperimentReport(experiment: ExperimentSpec): ExperimentRe
             section("Diagnostics / tallies / probes", "runnable", [...problem.diagnostics.probes, ...problem.diagnostics.tallies]),
             section("Solver run configuration", getSolverCapability(problem.run.solverId)?.status === "runnable" ? "runnable" : "gated", [problem.run.solverId]),
         ],
+        capabilityClaims: PRODUCT_CAPABILITY_CLAIMS,
         validation: validatePhysicsProblem(problem),
     };
 }
@@ -422,11 +449,19 @@ function validateCoupling(coupling: CouplingGraphSpec): readonly PhysicsValidati
 }
 
 function runnable(id: PhysicsSolverId, name: string, facets: readonly string[], requiredInputs: readonly string[], emittedOutputs: readonly string[]): SolverCapability {
-    return { id, name, status: "runnable", supportedFacets: facets, requiredInputs, emittedOutputs };
+    return { id, name, status: "runnable", claimStatus: "solved", supportedFacets: facets, requiredInputs, emittedOutputs };
 }
 
 function gated(id: PhysicsSolverId, name: string, facets: readonly string[]): SolverCapability {
-    return { id, name, status: "gated", supportedFacets: facets, requiredInputs: [], emittedOutputs: ["unsupported-diagnostic"] };
+    return { id, name, status: "gated", claimStatus: "gated", supportedFacets: facets, requiredInputs: [], emittedOutputs: ["unsupported-diagnostic"] };
+}
+
+function substrate(id: PhysicsSolverId, name: string, facets: readonly string[]): SolverCapability {
+    return { id, name, status: "gated", claimStatus: "substrate", supportedFacets: facets, requiredInputs: [], emittedOutputs: ["unsupported-diagnostic"] };
+}
+
+function claim(id: string, name: string, status: ProductCapabilityStatus, summary: string): ProductCapabilityClaim {
+    return { id, name, status, summary };
 }
 
 function section(title: string, status: ModelFacetStatus, lines: readonly string[]): ExperimentReportSection {

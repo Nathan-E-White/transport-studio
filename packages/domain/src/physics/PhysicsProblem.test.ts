@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import solverCapabilityContract from "../../../../fixtures/contracts/v1-solver-capabilities.json";
 import {
+    PRODUCT_CAPABILITY_CLAIMS,
     V1_SOLVER_CAPABILITIES,
     createExperimentReport,
     fingerprintPhysicsProblem,
@@ -11,8 +12,18 @@ import {
 
 describe("PhysicsProblem V1 contracts", () => {
     it("matches the shared versioned solver capability contract", () => {
-        expect(solverCapabilityContract.contractVersion).toBe("1.0.0");
+        expect(solverCapabilityContract.contractVersion).toBe("1.1.0");
         expect(V1_SOLVER_CAPABILITIES).toEqual(solverCapabilityContract.solvers);
+        expect(PRODUCT_CAPABILITY_CLAIMS).toEqual(solverCapabilityContract.claims);
+        expect(Object.keys(solverCapabilityContract.statusLanguage).sort()).toEqual(["gated", "placeholder", "runnable"]);
+        expect(Object.keys(solverCapabilityContract.claimStatusLanguage).sort()).toEqual(["future-track", "gated", "solved", "substrate", "validated-only"]);
+        expect(
+            solverCapabilityContract.solvers.every((solver) =>
+                solver.status === "runnable"
+                    ? solver.claimStatus === "solved"
+                    : solver.status === "gated" && (solver.claimStatus === "gated" || solver.claimStatus === "substrate"),
+            ),
+        ).toBe(true);
     });
 
     it("keeps every planned solver visible in the capability registry", () => {
@@ -28,7 +39,41 @@ describe("PhysicsProblem V1 contracts", () => {
             "criticality-keff",
             "point-kinetics",
             "depletion",
+            "relativistic-multiphysics",
         ]);
+    });
+
+    it("labels relativistic multiphysics as substrate without making it runnable", () => {
+        const capability = V1_SOLVER_CAPABILITIES.find((solver) => solver.id === "relativistic-multiphysics");
+        expect(capability).toMatchObject({ status: "gated", claimStatus: "substrate" });
+
+        const validation = validatePhysicsProblem({
+            ...baseProblem(),
+            run: { solverId: "relativistic-multiphysics" },
+        });
+
+        expect(validation.ok).toBe(false);
+        expect(validation.diagnostics).toEqual([
+            expect.objectContaining({
+                level: "error",
+                code: "physics.solver.substrate",
+                solverId: "relativistic-multiphysics",
+            }),
+        ]);
+    });
+
+    it("reports the complete product claim vocabulary without promoting future tracks", () => {
+        const report = createExperimentReport({ problem: baseProblem() });
+
+        expect(new Set(report.capabilityClaims.map((claim) => claim.status))).toEqual(
+            new Set(["solved", "validated-only", "substrate", "gated", "future-track"]),
+        );
+        expect(report.capabilityClaims.find((claim) => claim.id === "relativistic-multiphysics-product-run")).toMatchObject({
+            status: "gated",
+        });
+        expect(report.capabilityClaims.find((claim) => claim.id === "relativistic-multiphysics-future-tracks")).toMatchObject({
+            status: "future-track",
+        });
     });
 
     it("validates runnable gray diffusion and reports all experiment sections", () => {
@@ -77,7 +122,8 @@ describe("PhysicsProblem V1 contracts", () => {
                 run: { solverId: capability.id },
             }).diagnostics;
 
-            expect(diagnostics.map((diagnostic) => diagnostic.code), solver.id).toContain("physics.solver.gated");
+            const expectedCode = solver.claimStatus === "substrate" ? "physics.solver.substrate" : "physics.solver.gated";
+            expect(diagnostics.map((diagnostic) => diagnostic.code), solver.id).toContain(expectedCode);
         }
     });
 

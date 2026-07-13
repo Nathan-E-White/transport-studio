@@ -82,6 +82,7 @@ mod tests {
                 "criticality-keff",
                 "point-kinetics",
                 "depletion",
+                "relativistic-multiphysics",
             ]
         );
         assert_eq!(
@@ -89,7 +90,7 @@ mod tests {
                 .iter()
                 .find(|solver| solver.id == "criticality-keff")
                 .expect("criticality solver")
-                .status,
+                .status(),
             V1SolverStatus::Gated
         );
     }
@@ -106,9 +107,16 @@ mod tests {
                 serde_json::json!({
                     "id": solver.id,
                     "name": solver.name,
-                    "status": match solver.status {
+                    "status": match solver.status() {
                         V1SolverStatus::Runnable => "runnable",
                         V1SolverStatus::Gated => "gated",
+                    },
+                    "claimStatus": match solver.claim_status() {
+                        V1ClaimStatus::Solved => "solved",
+                        V1ClaimStatus::ValidatedOnly => "validated-only",
+                        V1ClaimStatus::Substrate => "substrate",
+                        V1ClaimStatus::Gated => "gated",
+                        V1ClaimStatus::FutureTrack => "future-track",
                     },
                     "supportedFacets": solver.supported_facets,
                     "requiredInputs": solver.required_inputs,
@@ -117,20 +125,42 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(contract["contractVersion"], "1.0.0");
+        assert_eq!(contract["contractVersion"], "1.1.0");
         assert_eq!(contract["solvers"], serde_json::Value::Array(registry));
+    }
+
+    #[test]
+    fn relativistic_multiphysics_is_substrate_and_cannot_prepare_a_run() {
+        let capability = v1_solver_registry()
+            .into_iter()
+            .find(|solver| solver.id == "relativistic-multiphysics")
+            .expect("relativistic multiphysics capability");
+
+        assert_eq!(capability.state, V1CapabilityState::GatedSubstrate);
+        assert_eq!(capability.status(), V1SolverStatus::Gated);
+        assert_eq!(capability.claim_status(), V1ClaimStatus::Substrate);
+        let diagnostic =
+            prepare_v1_input_bundle("relativistic-multiphysics", "problem-1", "fingerprint-1")
+                .expect_err("substrate must not produce a runnable bundle");
+        assert_eq!(diagnostic.code, "solver.substrate");
+        assert!(diagnostic.message.contains("kernel substrate"));
     }
 
     #[test]
     fn v1_gated_solvers_return_unsupported_diagnostic() {
         for solver in v1_solver_registry()
             .into_iter()
-            .filter(|solver| solver.status == V1SolverStatus::Gated)
+            .filter(|solver| solver.status() == V1SolverStatus::Gated)
         {
             let diagnostic = prepare_v1_input_bundle(solver.id, "problem-1", "fingerprint-1")
                 .expect_err("gated solver");
 
-            assert_eq!(diagnostic.code, "solver.gated", "{}", solver.id);
+            let expected_code = if solver.claim_status() == V1ClaimStatus::Substrate {
+                "solver.substrate"
+            } else {
+                "solver.gated"
+            };
+            assert_eq!(diagnostic.code, expected_code, "{}", solver.id);
         }
     }
 
@@ -145,6 +175,78 @@ mod tests {
         assert!(comparison.same_problem);
         assert_close(comparison.max_abs_delta, 0.0);
         assert_eq!(first.fields[0].values, second.fields[0].values);
+        assert_eq!(first.fields[0].values.len(), 8);
+        assert!(
+            first.fields[0]
+                .values
+                .iter()
+                .all(|value| (0.0..=1.0).contains(value))
+        );
+        assert!(
+            first.fields[0]
+                .values
+                .windows(2)
+                .any(|pair| pair[0] != pair[1])
+        );
+
+        let gray = run_v1_solver_bundle(
+            &prepare_v1_input_bundle(
+                GRAY_RADIATION_DIFFUSION_SOLVER_ID,
+                "problem-1",
+                "fingerprint-1",
+            )
+            .expect("gray bundle"),
+        );
+        assert_eq!(gray.fields.len(), 1);
+        assert_eq!(gray.fields[0].name, "radiation-energy");
+        assert_eq!(
+            gray.fields[0].values,
+            vec![0.20, 0.16, 0.11, 0.07, 0.04, 0.02, 0.01, 0.0]
+        );
+
+        let hydro = run_v1_solver_bundle(
+            &prepare_v1_input_bundle(EULERIAN_HYDRO_SOLVER_ID, "problem-1", "fingerprint-1")
+                .expect("hydro bundle"),
+        );
+        assert_eq!(
+            hydro
+                .fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["density", "pressure"]
+        );
+        assert_eq!(
+            hydro.fields[0].values,
+            vec![1.0, 0.95, 0.80, 0.45, 0.20, 0.125]
+        );
+        assert_eq!(
+            hydro.fields[1].values,
+            vec![1.0, 0.92, 0.72, 0.38, 0.16, 0.10]
+        );
+    }
+
+    #[test]
+    fn v1_result_comparison_reports_the_largest_field_delta() {
+        let left = V1ResultDataset {
+            solver_id: "mock-fields".into(),
+            problem_id: "problem-1".into(),
+            fingerprint: "fingerprint-1".into(),
+            fields: vec![V1FieldDataset {
+                name: "field".into(),
+                values: vec![0.0, 4.0, -3.0],
+            }],
+            diagnostics: vec![],
+        };
+        let right = V1ResultDataset {
+            fields: vec![V1FieldDataset {
+                name: "field".into(),
+                values: vec![1.0, 1.5, -4.0],
+            }],
+            ..left.clone()
+        };
+
+        assert_close(compare_v1_results(&left, &right).max_abs_delta, 2.5);
     }
 
     #[test]
