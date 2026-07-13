@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useReducer, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore} from "react";
 import type {
     Diagnostic,
     SceneEntity,
@@ -20,12 +20,18 @@ import {
     type EditorMode as StoreEditorMode,
 } from "../state/editor";
 import {
-    createNativeRunActions,
-    createRunSession,
-    createToyRunActions,
-    reduceRunSession,
-    type RunSessionAction,
+    createRunSessionStore,
+    selectRenderableTracks,
+    selectRenderingBlock,
+    selectResultView,
+    selectRunBackend,
+    selectRunDiagnostics,
+    selectRunFreshness,
+    selectSubmittedProject,
+    type RunSessionStore,
+    type RunSessionStoreSnapshot,
 } from "./runSession";
+import {createNativeExecutionAdapter, createToyExecutionAdapter} from "./runExecutionAdapters";
 
 export type EditorMode = StoreEditorMode;
 export type BottomTab = EditorBottomDockTab;
@@ -41,105 +47,83 @@ function StudioWorkbench() {
     const {state, dispatch} = useEditorStore();
     const project = state.scene.project!;
     const selectedEntityId = getPrimarySelection(state.selection)?.id;
-    const [runSession, dispatchRunSession] = useReducer(
-        reduceRunSession,
-        project.runConfiguration.backend,
-        createRunSession,
-    );
-    const runAttemptSequence = useRef(0);
-    const runSessionRef = useRef(runSession);
+    const runSessionStoreRef = useRef<RunSessionStore | null>(null);
+    if (runSessionStoreRef.current === null) {
+        runSessionStoreRef.current = createRunSessionStore({initialProject: project});
+    }
+    const runSessionStore = runSessionStoreRef.current;
+    const tracks = useRunSessionSelector(runSessionStore, selectRenderableTracks);
+    const runDiagnostics = useRunSessionSelector(runSessionStore, selectRunDiagnostics);
+    const runBackend = useRunSessionSelector(runSessionStore, selectRunBackend);
+    const freshness = useRunSessionSelector(runSessionStore, selectRunFreshness);
+    const renderingBlock = useRunSessionSelector(runSessionStore, selectRenderingBlock);
+    const resultView = useRunSessionSelector(runSessionStore, selectResultView);
+    const submittedProject = useRunSessionSelector(runSessionStore, selectSubmittedProject);
+    const [compileDiagnostics, setCompileDiagnostics] = useState<readonly Diagnostic[]>([]);
     const [showTracks, setShowTracks] = useState(true);
     const [showTallies, setShowTallies] = useState(true);
     const [showDiagnostics, setShowDiagnostics] = useState(true);
-    const tracks = runSession.tracks;
     const mode = state.shell.activeMode;
     const bottomTab = state.shell.bottomDockTab;
 
     const diagnostics = useMemo<readonly Diagnostic[]>(() => [
         ...validateProject(project),
-        ...runSession.diagnostics,
-    ], [project, runSession.diagnostics]);
+        ...compileDiagnostics,
+        ...runDiagnostics,
+    ], [project, compileDiagnostics, runDiagnostics]);
     const runConfiguration = useMemo(() => ({
         ...project.runConfiguration,
-        backend: runSession.backend,
-    }), [project.runConfiguration, runSession.backend]);
-    const selectedEntity = project.scene.entities.find((entity) => entity.id === selectedEntityId);
-    const sceneStats = useMemo(() => getSceneStats(project.scene.entities), [project]);
+        backend: runBackend,
+    }), [project.runConfiguration, runBackend]);
+    const presentationProject = resultView === "submitted" && renderingBlock && submittedProject
+        ? submittedProject
+        : project;
+    const selectedEntity = presentationProject.scene.entities.find((entity) => entity.id === selectedEntityId);
+    const sceneStats = useMemo(() => getSceneStats(presentationProject.scene.entities), [presentationProject]);
     const escapedCount = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
     const absorbedCount = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
 
     useEffect(() => {
-        runSessionRef.current = runSession;
-    }, [runSession]);
+        void runSessionStore.updateEditableScene(project);
+    }, [project, runSessionStore]);
 
-    useEffect(() => {
-        dispatchRunSession({type: "scene-changed"});
-    }, [project]);
-
-    function runDemo() {
-        const attemptId = nextAttemptId(runSession.sceneRevision);
-        applyRunActions(createToyRunActions(
-            project,
-            compileTransportProblem(project),
-            runSession.sceneRevision,
-            attemptId,
-        ));
+    async function runDemo() {
+        await startCompiledRun(createToyExecutionAdapter({
+            visibleHistoryBudget: project.runConfiguration.visibleHistoryBudget,
+        }));
     }
 
     async function runNative() {
-        const sceneRevision = runSession.sceneRevision;
-        const attemptId = nextAttemptId(sceneRevision);
-        const starting: RunSessionAction = {
-            type: "compilation-started",
-            backend: "native",
-            sceneRevision,
-            attemptId,
-        };
-        applyRunActions([starting]);
+        await startCompiledRun(createNativeExecutionAdapter(createTauriNativePhotonSmokeBridge()));
+    }
+
+    async function startCompiledRun(adapter: ReturnType<typeof createToyExecutionAdapter>) {
+        await runSessionStore.updateEditableScene(project);
         const compileResult = compileTransportProblem(project);
-        const actions = await createNativeRunActions(
-            compileResult,
-            sceneRevision,
-            attemptId,
-            createTauriNativePhotonSmokeBridge(),
-        );
-        applyRunActions(actions);
+        setCompileDiagnostics(compileResult.diagnostics.map((item) => ({
+            severity: item.level,
+            message: `${item.code}: ${item.message}`,
+            entityId: item.entityId as Diagnostic["entityId"],
+        })));
+        if (!compileResult.ok || !compileResult.value) {
+            dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
+            return;
+        }
+        dispatch({type: "set-mode", mode: "run"});
+        dispatch({type: "set-bottom-dock-tab", tab: "run"});
+        const result = await runSessionStore.start({project, problem: compileResult.value, adapter});
+        if (!result.started) {
+            setCompileDiagnostics((current) => [...current, result.diagnostic]);
+            dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
+        } else if (runSessionStore.getSnapshot().current?.status === "failed") {
+            dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
+        }
     }
 
     function clearResults() {
-        dispatchRunSession({type: "clear"});
+        runSessionStore.clear();
+        setCompileDiagnostics([]);
         dispatch({type: "set-bottom-dock-tab", tab: "run"});
-    }
-
-    function nextAttemptId(sceneRevision: number): string {
-        runAttemptSequence.current += 1;
-        return `${sceneRevision}:${runAttemptSequence.current}`;
-    }
-
-    function applyRunActions(actions: readonly RunSessionAction[]) {
-        let activeRevision = runSessionRef.current.sceneRevision;
-        let activeAttempt = runSessionRef.current.attemptId;
-        for (const action of actions) {
-            if (action.type === "compilation-started") {
-                activeRevision = action.sceneRevision;
-                activeAttempt = action.attemptId;
-            } else if (
-                "attemptId" in action
-                && (action.sceneRevision !== activeRevision || action.attemptId !== activeAttempt)
-            ) {
-                continue;
-            }
-            dispatchRunSession(action);
-            if (action.type === "compilation-started") {
-                dispatch({type: "set-mode", mode: "run"});
-                dispatch({type: "set-bottom-dock-tab", tab: "run"});
-            } else if (
-                action.type === "compilation-failed"
-                || (action.type === "backend-event" && action.event.type === "runFailed")
-            ) {
-                dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
-            }
-        }
     }
 
     function selectEntity(entityId: string | undefined) {
@@ -173,7 +157,7 @@ function StudioWorkbench() {
 
                 <div className="toolbar-actions">
                     <StyleSelectorBoundary/>
-                    <button className="primary-button" onClick={runDemo}>▶ Run Toy Photons</button>
+                    <button className="primary-button" onClick={() => void runDemo()}>▶ Run Toy Photons</button>
                     <button onClick={() => void runNative()}>Run Native Rust</button>
                     <button onClick={clearResults}>Clear</button>
                 </div>
@@ -187,7 +171,7 @@ function StudioWorkbench() {
 
             <main className="viewport-region">
                 <TransportViewport
-                    project={project}
+                    project={presentationProject}
                     tracks={showTracks ? tracks : []}
                     selectedEntityId={selectedEntityId}
                     onSelect={(entityId) => selectEntity(entityId)}
@@ -212,7 +196,7 @@ function StudioWorkbench() {
 
             <aside className="right-panel">
                 <InspectorPanel entity={selectedEntity} diagnostics={diagnostics} tracks={tracks}
-                                project={project}/>
+                                project={presentationProject}/>
             </aside>
 
             <footer className="bottom-panel">
@@ -223,11 +207,26 @@ function StudioWorkbench() {
                     activeTab={bottomTab}
                     onTabChange={(tab) => dispatch({type: "set-bottom-dock-tab", tab})}
                     sceneStats={sceneStats}
-                    freshness={runSession.freshness}
+                    freshness={freshness}
+                    renderingBlock={renderingBlock}
+                    resultView={resultView}
+                    onResultViewChange={(view) => runSessionStore.setResultView(view)}
                 />
             </footer>
         </div>
     );
+}
+
+function useRunSessionSelector<T>(
+    store: RunSessionStore,
+    selector: (snapshot: RunSessionStoreSnapshot) => T,
+): T {
+    const subscribe = useCallback(
+        (listener: () => void) => store.subscribeSelector(selector, listener),
+        [store, selector],
+    );
+    const getSnapshot = useCallback(() => selector(store.getSnapshot()), [store, selector]);
+    return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 function getSceneStats(entities: readonly SceneEntity[]) {

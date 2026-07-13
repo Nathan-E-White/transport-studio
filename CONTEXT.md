@@ -20,7 +20,11 @@ The authoring intent that decides whether an editable entity participates in the
 
 ### Run Session
 
-The lifecycle of one attempt to analyze or execute a Compiled Transport Problem. A Run Session includes selected backend, diagnostics, progress, result tracks or tallies, provenance, and UI outcome state, but not the native runtime adapter that happens to perform a call.
+The strict runtime-neutral lifecycle of one attempt to execute a successfully prepared Compiled Transport Problem. A Run Session assigns caller-owned identity, consumes one ordered asynchronous backend event sequence, and owns status, diagnostics, progress, presentation-safe results, provenance, terminal outcome, and its Run Input Record. Compilation and host-specific runtime adapters remain outside it.
+
+### Run Input Record
+
+The immutable record of exactly what a Run Session submitted. It contains the normalized Compiled Transport Problem and SHA-256 fingerprint, source Editable Scene revision and fingerprint, a lightweight submitted-scene snapshot, and fingerprinted references to any heavy assets. It proves exact submitted input; semantic equivalence between differently encoded inputs is a separate future concern.
 
 ### Native Execution Contract
 
