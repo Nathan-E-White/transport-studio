@@ -1,12 +1,20 @@
-import type { Project, RunConfiguration, TrackSample } from "@transport/domain";
+import {TransportSourceContract, type TrackSample} from "@transport/domain";
+import type {TransportProblem} from "@transport/domain/transport/TransportProblem";
 
 export interface VisualTransportRunResult {
   readonly tracks: readonly TrackSample[];
 }
 
-export function runToyPhotonTransport(project: Project, config: RunConfiguration): VisualTransportRunResult {
-  const source = project.scene.entities.find((entity) => entity.kind === "source");
-  const visibleCount = Math.min(config.visibleHistoryBudget, config.histories);
+export interface VisualTransportRunOptions {
+  readonly visibleHistoryBudget: number;
+}
+
+export function runToyPhotonTransport(
+  problem: TransportProblem,
+  options: VisualTransportRunOptions,
+): VisualTransportRunResult {
+  const source = problem.sources[0];
+  const visibleCount = Math.min(options.visibleHistoryBudget, problem.settings.histories);
 
   const tracks: TrackSample[] = Array.from({ length: visibleCount }, (_, index) => {
     const y = (index - visibleCount / 2) * 0.08;
@@ -17,9 +25,9 @@ export function runToyPhotonTransport(project: Project, config: RunConfiguration
           historyId: `h-${index}`,
           particleId: `p-${index}`,
           type: "birth",
-          position: source?.transform.position ?? { x: -8, y, z: 0 },
+          position: source && "position" in source ? source.position : { x: -8, y, z: 0 },
           direction: { x: 1, y: 0, z: 0 },
-          energy: source && source.kind === "source" ? source.energy : 1,
+          energy: source ? TransportSourceContract.getRepresentativeEnergyMeV(source.energy) : 1,
           weight: 1,
           time: 0,
           reason: "toy photon birth"

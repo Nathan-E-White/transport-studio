@@ -19,6 +19,8 @@ export function createInitialProject(): Project {
           locked: false,
           transform: IDENTITY_TRANSFORM,
           color: "#7aa2ff",
+          density: 1,
+          nuclides: [{nuclide: "H1", fraction: 1}],
           attenuationCoefficient: 0.65,
           scatterProbability: 0.25,
           absorptionProbability: 0.35,
@@ -58,7 +60,8 @@ export function createInitialProject(): Project {
           visible: true,
           locked: false,
           transform: { ...IDENTITY_TRANSFORM, position: { x: 8, y: 0, z: 0 }, scale: { x: 0.1, y: 5, z: 5 } },
-          tallyKind: "detector-hit",
+          tallyKind: "track-length",
+          targetEntityId: shieldId,
           particleTypes: ["photon"],
           bins: [1, 16, 16]
         }

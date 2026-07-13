@@ -34,10 +34,10 @@ test("opens the studio shell and runs the main browser flows", async ({page}) =>
 
   await page.getByRole("button", {name: "Run Native Rust"}).click();
   await expect(page.locator(".run-dock")).toContainText(
-    "tally.target.missing: Tally \"Detector Plane\" must define its target entity before compilation.",
+    "material.toy-coefficients.lossy: Material \"Toy Shield\" toy transport coefficients are not part of the compiled material contract and were omitted.",
   );
   await expect(page.locator(".run-dock")).toContainText(
-    "material.density.invalid: Material \"Toy Shield\" must have a finite non-negative density before compilation.",
+    "native.bridge.unavailable: Native Rust photon backend bridge is not available in this runtime.",
   );
 
   await assertStableStudioShell(page, failures);

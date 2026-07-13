@@ -15,7 +15,6 @@ import {
     EditorDirtyReason,
     EditorStaleState,
     markCompiled,
-    markRunResultsFresh,
     markSceneClean,
     markSceneDirty,
     markValidated,
@@ -77,29 +76,12 @@ export interface EditorDiagnostic {
     readonly code?: string;
 }
 
-export interface EditorRunResultState {
-    readonly status: EditorRunStatus;
-    readonly activeRunId: string | null;
-    readonly lastCompletedRunId: string | null;
-}
-
-export type EditorRunStatus =
-    | "idle"
-    | "validating"
-    | "compiling"
-    | "running"
-    | "paused"
-    | "completed"
-    | "cancelled"
-    | "failed";
-
 export interface EditorStoreState {
     readonly shell: EditorShellState;
     readonly scene: EditorSceneState;
     readonly selection: EditorSelectionState;
     readonly validation: EditorValidationState;
     readonly stale: EditorStaleState;
-    readonly run: EditorRunResultState;
 }
 
 export type EditorStoreAction =
@@ -128,11 +110,8 @@ export type EditorStoreAction =
     | { readonly type: "set-validation-result"; readonly errors: readonly EditorDiagnostic[]; readonly warnings: readonly EditorDiagnostic[] }
     | { readonly type: "mark-validated" }
     | { readonly type: "mark-compiled" }
-    | { readonly type: "mark-run-results-fresh" }
     | { readonly type: "mark-scene-clean" }
-    | { readonly type: "mark-scene-dirty"; readonly reason: EditorDirtyReason }
-
-    | { readonly type: "set-run-status"; readonly status: EditorRunStatus; readonly runId?: string | null };
+    | { readonly type: "mark-scene-dirty"; readonly reason: EditorDirtyReason };
 
 export const initialEditorStoreState: EditorStoreState = {
     shell: {
@@ -153,11 +132,6 @@ export const initialEditorStoreState: EditorStoreState = {
         warnings: [],
     },
     stale: CLEAN_STALE_STATE,
-    run: {
-        status: "idle",
-        activeRunId: null,
-        lastCompletedRunId: null,
-    },
 };
 
 export function createEditorStoreState(project: Project): EditorStoreState {
@@ -331,12 +305,6 @@ export function editorStoreReducer(
                 stale: markCompiled(state.stale),
             };
 
-        case "mark-run-results-fresh":
-            return {
-                ...state,
-                stale: markRunResultsFresh(state.stale),
-            };
-
         case "mark-scene-clean":
             return {
                 ...state,
@@ -348,9 +316,6 @@ export function editorStoreReducer(
                 ...state,
                 stale: markSceneDirty(state.stale, action.reason),
             };
-
-        case "set-run-status":
-            return applyRunStatus(state, action.status, action.runId);
 
         default:
             return assertNever(action);
@@ -418,33 +383,6 @@ function dirtyReasonForEntityKind(kind: EditorEntityKind): EditorDirtyReason {
         default:
             return "unknown";
     }
-}
-
-function applyRunStatus(
-    state: EditorStoreState,
-    status: EditorRunStatus,
-    runId?: string | null,
-): EditorStoreState {
-    const activeRunId =
-        status === "running" || status === "paused" || status === "validating" || status === "compiling"
-            ? runId ?? state.run.activeRunId
-            : status === "idle"
-                ? null
-                : state.run.activeRunId;
-
-    const lastCompletedRunId =
-        status === "completed"
-            ? runId ?? state.run.activeRunId
-            : state.run.lastCompletedRunId;
-
-    return {
-        ...state,
-        run: {
-            status,
-            activeRunId,
-            lastCompletedRunId,
-        },
-    };
 }
 
 function assertNever(value: never): never {

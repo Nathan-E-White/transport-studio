@@ -253,7 +253,7 @@ vi.mock("../panels/RunPanel", () => ({
         tracks: readonly unknown[];
         diagnostics: readonly { message: string }[];
         sceneStats: { geometry: number; materials: number; sources: number; tallies: number };
-        stale: {runResultsStale: boolean};
+        freshness: "empty" | "fresh" | "stale";
     }) => (
         <section aria-label="Run panel">
             <h2>Run panel</h2>
@@ -261,7 +261,7 @@ vi.mock("../panels/RunPanel", () => ({
             <p>run panel backend: {props.config.backend}</p>
             <p>run panel tracks: {props.tracks.length}</p>
             <p>run panel diagnostics: {props.diagnostics.length}</p>
-            <p>run results freshness: {props.stale.runResultsStale ? "stale" : "current"}</p>
+            <p>run results freshness: {props.freshness === "fresh" ? "current" : props.freshness}</p>
             {props.diagnostics.map((diagnostic) => <p key={diagnostic.message}>{diagnostic.message}</p>)}
             <p>run panel scene
                 stats: {props.sceneStats.geometry}/{props.sceneStats.materials}/{props.sceneStats.sources}/{props.sceneStats.tallies}</p>
@@ -369,7 +369,13 @@ describe("StudioApp spec", () => {
         fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
 
         expect(mocks.runToyPhotonTransport).toHaveBeenCalledTimes(1);
-        expect(mocks.runToyPhotonTransport).toHaveBeenCalledWith(mocks.project, mocks.project.runConfiguration);
+        expect(mocks.runToyPhotonTransport).toHaveBeenCalledWith({
+            id: "compiled-current-scene",
+            settings: {
+                histories: 4,
+                seed: 314159
+            }
+        }, {visibleHistoryBudget: 4});
         expect(screen.getByText("RUN MODE")).toBeTruthy();
         expect(screen.getByText("viewport mode: run")).toBeTruthy();
         expect(screen.getByText("active run tab: run")).toBeTruthy();
@@ -456,6 +462,19 @@ describe("StudioApp spec", () => {
                         message: "Native photon backend used simple coefficients because tabular cross-section data was not supplied."
                     }
                 ]
+            },
+            {
+                type: "runStarted",
+                runId: "native-314159",
+                problemId: "compiled-current-scene",
+                provenance: {
+                    backendId: "native-rust-photon-smoke",
+                    backendVersion: "test",
+                    problemId: "compiled-current-scene",
+                    seed: 314159,
+                    dataPolicy: "hybrid-warning-mode",
+                    warnings: []
+                }
             },
             {
                 type: "trackSamples",

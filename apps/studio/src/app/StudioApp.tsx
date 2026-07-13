@@ -1,9 +1,7 @@
-import {useMemo, useState} from "react";
+import {useEffect, useMemo, useReducer, useRef, useState} from "react";
 import type {
     Diagnostic,
-    Project,
     SceneEntity,
-    TrackSample,
 } from "@transport/domain";
 import {validateProject} from "@transport/validation";
 import {compileTransportProblem} from "@transport/domain/compile/CompileTransportProblem";
@@ -14,16 +12,23 @@ import {StyleSelectorBoundary} from "../components/style-selector/StyleSelectorB
 import {InspectorPanel} from "../panels/InspectorPanel";
 import {RunPanel} from "../panels/RunPanel";
 import {TransportViewport} from "../viewport/TransportViewport";
-import {EditorStateRoot, getPrimarySelection, useEditorStore} from "../state/editor";
 import {
-    clearRunSession,
-    runNativeSession,
-    runToySession,
-    type RunSessionOutcome,
+    EditorStateRoot,
+    getPrimarySelection,
+    useEditorStore,
+    type EditorBottomDockTab,
+    type EditorMode as StoreEditorMode,
+} from "../state/editor";
+import {
+    createNativeRunActions,
+    createRunSession,
+    createToyRunActions,
+    reduceRunSession,
+    type RunSessionAction,
 } from "./runSession";
 
-export type EditorMode = "design" | "probe" | "run" | "analyze" | "debug";
-export type BottomTab = "run" | "tallies" | "tracks" | "diagnostics" | "console";
+export type EditorMode = StoreEditorMode;
+export type BottomTab = EditorBottomDockTab;
 
 const modes: readonly EditorMode[] = ["design", "probe", "run", "analyze", "debug"];
 
@@ -36,48 +41,105 @@ function StudioWorkbench() {
     const {state, dispatch} = useEditorStore();
     const project = state.scene.project!;
     const selectedEntityId = getPrimarySelection(state.selection)?.id;
-    const [tracks, setTracks] = useState<readonly TrackSample[]>([]);
-    const [mode, setMode] = useState<EditorMode>("design");
-    const [bottomTab, setBottomTab] = useState<BottomTab>("run");
+    const [runSession, dispatchRunSession] = useReducer(
+        reduceRunSession,
+        project.runConfiguration.backend,
+        createRunSession,
+    );
+    const runAttemptSequence = useRef(0);
+    const runSessionRef = useRef(runSession);
     const [showTracks, setShowTracks] = useState(true);
     const [showTallies, setShowTallies] = useState(true);
     const [showDiagnostics, setShowDiagnostics] = useState(true);
-    const [activeBackend, setActiveBackend] = useState<Project["runConfiguration"]["backend"]>(project.runConfiguration.backend);
-    const [nativeDiagnostics, setNativeDiagnostics] = useState<readonly Diagnostic[]>([]);
+    const tracks = runSession.tracks;
+    const mode = state.shell.activeMode;
+    const bottomTab = state.shell.bottomDockTab;
 
     const diagnostics = useMemo<readonly Diagnostic[]>(() => [
         ...validateProject(project),
-        ...nativeDiagnostics,
-    ], [project, nativeDiagnostics]);
+        ...runSession.diagnostics,
+    ], [project, runSession.diagnostics]);
     const runConfiguration = useMemo(() => ({
         ...project.runConfiguration,
-        backend: activeBackend,
-    }), [activeBackend, project.runConfiguration]);
+        backend: runSession.backend,
+    }), [project.runConfiguration, runSession.backend]);
     const selectedEntity = project.scene.entities.find((entity) => entity.id === selectedEntityId);
     const sceneStats = useMemo(() => getSceneStats(project.scene.entities), [project]);
     const escapedCount = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
     const absorbedCount = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
 
+    useEffect(() => {
+        runSessionRef.current = runSession;
+    }, [runSession]);
+
+    useEffect(() => {
+        dispatchRunSession({type: "scene-changed"});
+    }, [project]);
+
     function runDemo() {
-        applyRunSessionOutcome(runToySession(project));
+        const attemptId = nextAttemptId(runSession.sceneRevision);
+        applyRunActions(createToyRunActions(
+            project,
+            compileTransportProblem(project),
+            runSession.sceneRevision,
+            attemptId,
+        ));
     }
 
     async function runNative() {
+        const sceneRevision = runSession.sceneRevision;
+        const attemptId = nextAttemptId(sceneRevision);
+        const starting: RunSessionAction = {
+            type: "compilation-started",
+            backend: "native",
+            sceneRevision,
+            attemptId,
+        };
+        applyRunActions([starting]);
         const compileResult = compileTransportProblem(project);
-        applyRunSessionOutcome(await runNativeSession(compileResult, createTauriNativePhotonSmokeBridge()));
+        const actions = await createNativeRunActions(
+            compileResult,
+            sceneRevision,
+            attemptId,
+            createTauriNativePhotonSmokeBridge(),
+        );
+        applyRunActions(actions);
     }
 
     function clearResults() {
-        applyRunSessionOutcome(clearRunSession({backend: activeBackend, mode}));
+        dispatchRunSession({type: "clear"});
+        dispatch({type: "set-bottom-dock-tab", tab: "run"});
     }
 
-    function applyRunSessionOutcome(outcome: RunSessionOutcome) {
-        setTracks(outcome.tracks);
-        setNativeDiagnostics(outcome.diagnostics);
-        setActiveBackend(outcome.backend);
-        setMode(outcome.mode);
-        setBottomTab(outcome.bottomTab);
-        dispatch({type: "mark-run-results-fresh"});
+    function nextAttemptId(sceneRevision: number): string {
+        runAttemptSequence.current += 1;
+        return `${sceneRevision}:${runAttemptSequence.current}`;
+    }
+
+    function applyRunActions(actions: readonly RunSessionAction[]) {
+        let activeRevision = runSessionRef.current.sceneRevision;
+        let activeAttempt = runSessionRef.current.attemptId;
+        for (const action of actions) {
+            if (action.type === "compilation-started") {
+                activeRevision = action.sceneRevision;
+                activeAttempt = action.attemptId;
+            } else if (
+                "attemptId" in action
+                && (action.sceneRevision !== activeRevision || action.attemptId !== activeAttempt)
+            ) {
+                continue;
+            }
+            dispatchRunSession(action);
+            if (action.type === "compilation-started") {
+                dispatch({type: "set-mode", mode: "run"});
+                dispatch({type: "set-bottom-dock-tab", tab: "run"});
+            } else if (
+                action.type === "compilation-failed"
+                || (action.type === "backend-event" && action.event.type === "runFailed")
+            ) {
+                dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
+            }
+        }
     }
 
     function selectEntity(entityId: string | undefined) {
@@ -102,7 +164,7 @@ function StudioWorkbench() {
                         <button
                             key={candidateMode}
                             className={candidateMode === mode ? "mode-button active" : "mode-button"}
-                            onClick={() => setMode(candidateMode)}
+                            onClick={() => dispatch({type: "set-mode", mode: candidateMode})}
                         >
                             {candidateMode}
                         </button>
@@ -159,9 +221,9 @@ function StudioWorkbench() {
                     diagnostics={diagnostics}
                     tracks={tracks}
                     activeTab={bottomTab}
-                    onTabChange={setBottomTab}
+                    onTabChange={(tab) => dispatch({type: "set-bottom-dock-tab", tab})}
                     sceneStats={sceneStats}
-                    stale={state.stale}
+                    freshness={runSession.freshness}
                 />
             </footer>
         </div>

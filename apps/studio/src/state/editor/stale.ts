@@ -15,7 +15,6 @@ export interface EditorStaleState {
     readonly sceneDirty: boolean;
     readonly validationStale: boolean;
     readonly compiledProblemStale: boolean;
-    readonly runResultsStale: boolean;
     readonly reasons: readonly EditorDirtyReason[];
 }
 
@@ -23,7 +22,6 @@ export const CLEAN_STALE_STATE: EditorStaleState = {
     sceneDirty: false,
     validationStale: false,
     compiledProblemStale: false,
-    runResultsStale: false,
     reasons: [],
 };
 
@@ -35,7 +33,6 @@ export function markSceneDirty(
         sceneDirty: true,
         validationStale: true,
         compiledProblemStale: true,
-        runResultsStale: true,
         reasons: appendReason(state.reasons, reason),
     };
 }
@@ -51,13 +48,6 @@ export function markCompiled(state: EditorStaleState): EditorStaleState {
     return {
         ...state,
         compiledProblemStale: false,
-    };
-}
-
-export function markRunResultsFresh(state: EditorStaleState): EditorStaleState {
-    return {
-        ...state,
-        runResultsStale: false,
     };
 }
 
