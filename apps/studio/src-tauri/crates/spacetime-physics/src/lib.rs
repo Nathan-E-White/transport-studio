@@ -1,4 +1,5 @@
 pub mod adm;
+pub mod amr;
 pub mod bssn;
 pub mod coupling;
 pub mod curvature;
