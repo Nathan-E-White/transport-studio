@@ -5,7 +5,7 @@ import {createEditorStoreState, editorStoreReducer, selectVisibility} from "./ed
 describe("Editable Scene authoritative store", () => {
     it("propagates authoring facts once while preserving independent visibility and compile inclusion", () => {
         const initial = editorStoreReducer(
-            editorStoreReducer(createEditorStoreState(createInitialProject()), {type: "mark-run-results-fresh"}),
+            createEditorStoreState(createInitialProject()),
             {type: "set-validation-result", errors: [], warnings: []},
         );
         const entity = initial.scene.project!.scene.entities[0];
@@ -23,25 +23,20 @@ describe("Editable Scene authoritative store", () => {
         expect(hidden.stale).toMatchObject({
             validationStale: true,
             compiledProblemStale: true,
-            runResultsStale: true,
         });
     });
 
-    it("keeps prior run identity when a later authoring change marks results stale", () => {
+    it("keeps editable-scene staleness separate from Run Session result state", () => {
         const initial = createEditorStoreState(createInitialProject());
-        const completed = editorStoreReducer(
-            editorStoreReducer(initial, {type: "set-run-status", status: "completed", runId: "run-32"}),
-            {type: "mark-run-results-fresh"},
-        );
-        const entity = completed.scene.project!.scene.entities[0];
-        const changed = editorStoreReducer(completed, {
+        const entity = initial.scene.project!.scene.entities[0];
+        const changed = editorStoreReducer(initial, {
             type: "set-included-in-compile",
             ref: {kind: entity.kind, id: entity.id},
             includedInCompile: false,
         });
 
-        expect(changed.run.lastCompletedRunId).toBe("run-32");
-        expect(changed.stale.runResultsStale).toBe(true);
+        expect(changed.stale.compiledProblemStale).toBe(true);
+        expect("run" in changed).toBe(false);
     });
 
     it("does not stale derived physics when selection changes and clears deleted selection", () => {

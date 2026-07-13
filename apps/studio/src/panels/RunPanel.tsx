@@ -1,6 +1,6 @@
 import type { Diagnostic, RunConfiguration, TrackSample } from "@transport/domain";
 import type { BottomTab } from "../app/StudioApp";
-import type {EditorStaleState} from "../state/editor";
+import type {RunSessionFreshness} from "../app/runSession";
 
 interface RunPanelProps {
   readonly config: RunConfiguration;
@@ -9,12 +9,12 @@ interface RunPanelProps {
   readonly activeTab: BottomTab;
   readonly onTabChange: (tab: BottomTab) => void;
   readonly sceneStats: { geometry: number; materials: number; sources: number; tallies: number };
-  readonly stale: EditorStaleState;
+  readonly freshness: RunSessionFreshness;
 }
 
 const tabs: readonly BottomTab[] = ["run", "tallies", "tracks", "diagnostics", "console"];
 
-export function RunPanel({ config, diagnostics, tracks, activeTab, onTabChange, sceneStats, stale }: RunPanelProps) {
+export function RunPanel({ config, diagnostics, tracks, activeTab, onTabChange, sceneStats, freshness }: RunPanelProps) {
   const escaped = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
   const absorbed = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
 
@@ -33,7 +33,7 @@ export function RunPanel({ config, diagnostics, tracks, activeTab, onTabChange, 
             <Metric label="escaped" value={escaped} />
             <Metric label="absorbed" value={absorbed} />
             <Metric label="diagnostics" value={diagnostics.length} />
-            <Metric label="results" value={stale.runResultsStale ? "stale" : "current"} />
+            <Metric label="results" value={freshness === "fresh" ? "current" : freshness} />
           </div>
         )}
         {activeTab === "tallies" && (
