@@ -22,6 +22,10 @@ pub enum SpacetimeAssumption {
 
 /// Local metric model queried by transport, geodesic, and field solvers.
 pub trait MetricField {
+    fn validate_query(&self, _x: SpacetimeCoordinate) -> Result<(), crate::PhysicsError> {
+        Ok(())
+    }
+
     fn covariant_metric_at(&self, x: SpacetimeCoordinate) -> CovariantTensor2;
 
     fn inverse_metric_at(&self, x: SpacetimeCoordinate) -> ContravariantTensor2;

@@ -19,6 +19,10 @@ pub enum PhysicsError {
     InvalidGrid,
     #[error("point or index is outside the grid")]
     PointOutsideGrid,
+    #[error("coordinate chart is unsupported by this metric field")]
+    UnsupportedCoordinateChart,
+    #[error("metric interpolation policy is unsupported")]
+    UnsupportedInterpolation,
 }
 
 use crate::vec3;
