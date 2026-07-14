@@ -1,6 +1,7 @@
 use spacetime_physics::kernel::EvidenceStatus;
 use spacetime_physics::verification::{
-    VerificationProblem, VerificationRequest, VerificationResidual, run_verification,
+    run_verification, ValenciaRecoveryEvidence, VerificationProblem, VerificationRequest,
+    VerificationResidual,
 };
 
 #[test]
@@ -19,12 +20,10 @@ fn flat_spacetime_invariant_is_observable_through_the_verification_api() {
     assert_eq!(report.evidence[1].code, "mathematical-crosscheck");
     assert_eq!(report.evidence[1].status, EvidenceStatus::NotEvaluated);
     assert_eq!(report.residuals.len(), 4);
-    assert!(
-        report
-            .residuals
-            .iter()
-            .all(|residual| residual.value == 0.0)
-    );
+    assert!(report
+        .residuals
+        .iter()
+        .all(|residual| residual.value == 0.0));
     assert!(report.residuals.iter().all(|residual| residual.passed()));
     assert!(report.mathematical_crosscheck.is_none());
 }
@@ -91,18 +90,14 @@ fn analytic_derivative_identity_crosschecks_three_independent_methods() {
     );
 
     assert_eq!(strict_report.status, EvidenceStatus::Failed);
-    assert!(
-        strict_report
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == "verification.math.crosscheck-disagreement")
-    );
-    assert!(
-        strict_report
-            .residuals
-            .iter()
-            .any(|residual| !residual.passed())
-    );
+    assert!(strict_report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "verification.math.crosscheck-disagreement"));
+    assert!(strict_report
+        .residuals
+        .iter()
+        .any(|residual| !residual.passed()));
 
     let thread_reports: Vec<_> = (0..2)
         .map(|_| {
@@ -118,11 +113,9 @@ fn analytic_derivative_identity_crosschecks_three_independent_methods() {
         })
         .map(|thread| thread.join().expect("verification thread should not abort"))
         .collect();
-    assert!(
-        thread_reports
-            .iter()
-            .all(|report| report.status == EvidenceStatus::Evaluated)
-    );
+    assert!(thread_reports
+        .iter()
+        .all(|report| report.status == EvidenceStatus::Evaluated));
 }
 
 #[test]
@@ -139,6 +132,142 @@ fn analytic_derivative_without_a_worker_is_explicitly_not_evaluated() {
         "verification.math.worker-unavailable"
     );
     assert!(report.mathematical_crosscheck.is_none());
+}
+
+#[test]
+fn valencia_jacobians_report_three_way_evidence_and_explicit_rejections() {
+    let report = run_verification(
+        VerificationRequest::new(VerificationProblem::ValenciaJacobians, 1.0e-6)
+            .with_math_worker(env!("CARGO_BIN_EXE_spacetime-math-worker")),
+    );
+
+    assert_eq!(
+        report.status,
+        EvidenceStatus::Evaluated,
+        "Valencia verification report: {report:#?}"
+    );
+    assert_eq!(report.provenance.problem_id, "valencia-jacobians");
+    assert_eq!(report.provenance.fact("equation-of-state.gamma"), Some("2"));
+    assert_eq!(report.provenance.fact("variables"), Some("rho,vx,epsilon"));
+    assert_eq!(report.valencia_jacobians.len(), 6);
+
+    for case_id in ["admissible", "slow-flow", "relativistic", "near-vacuum"] {
+        let case = report
+            .valencia_jacobians
+            .iter()
+            .find(|case| case.case_id == case_id)
+            .expect("required Valencia fixture");
+        assert_eq!(case.status, EvidenceStatus::Evaluated);
+        assert_eq!(case.recovery, ValenciaRecoveryEvidence::Recovered);
+        let primitive_to_conserved = case
+            .primitive_to_conserved
+            .expect("evaluated primitive-to-conserved map evidence");
+        let flux = case.flux.expect("evaluated flux map evidence");
+        assert!(primitive_to_conserved.maximum_disagreement > 0.0);
+        assert!(primitive_to_conserved.maximum_disagreement <= 1.0e-6);
+        let flux_disagreement = flux.maximum_disagreement;
+        assert!(flux_disagreement > 0.0);
+        assert!(flux_disagreement <= 1.0e-6);
+        let conserved_value_disagreement = primitive_to_conserved.value_disagreement;
+        let flux_value_disagreement = flux.value_disagreement;
+        assert!((0.0..=1.0e-6).contains(&conserved_value_disagreement));
+        assert!((0.0..=1.0e-6).contains(&flux_value_disagreement));
+        if case_id == "near-vacuum" {
+            assert!(conserved_value_disagreement > 0.0);
+            assert!(flux_value_disagreement > 0.0);
+        }
+        let conserved_condition = primitive_to_conserved.condition_number;
+        let flux_condition = flux.condition_number;
+        assert!(conserved_condition.is_finite() && conserved_condition > 1.0);
+        assert!(flux_condition.is_finite() && flux_condition > 1.0);
+    }
+
+    for (case_id, diagnostic_code) in [
+        ("singular", "verification.valencia.singular-state"),
+        (
+            "non-admissible",
+            "verification.valencia.non-admissible-state",
+        ),
+    ] {
+        let case = report
+            .valencia_jacobians
+            .iter()
+            .find(|case| case.case_id == case_id)
+            .expect("required rejected Valencia fixture");
+        assert_eq!(case.status, EvidenceStatus::NotEvaluated);
+        assert_eq!(case.recovery, ValenciaRecoveryEvidence::NotAttempted);
+        assert!(case.primitive_to_conserved.is_none());
+        assert!(case.flux.is_none());
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == diagnostic_code));
+    }
+
+    let diagnostic_codes = report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(diagnostic_codes.len(), report.diagnostics.len());
+    let required_license_codes: &[&str] = match report
+        .provenance
+        .fact("symbolica.license-state")
+        .expect("worker reports a license state")
+    {
+        "licensed" => &[],
+        "restricted-missing" => &[
+            "verification.math.symbolica.license-missing",
+            "verification.math.symbolica.license-restricted",
+        ],
+        "restricted-rejected" => &[
+            "verification.math.symbolica.license-rejected",
+            "verification.math.symbolica.license-restricted",
+        ],
+        state => panic!("unexpected Symbolica license state: {state}"),
+    };
+    assert!(required_license_codes
+        .iter()
+        .all(|code| diagnostic_codes.contains(code)));
+
+    let strict = run_verification(
+        VerificationRequest::new(VerificationProblem::ValenciaJacobians, 0.0)
+            .with_math_worker(env!("CARGO_BIN_EXE_spacetime-math-worker")),
+    );
+    assert_eq!(strict.status, EvidenceStatus::Failed);
+    assert!(strict.valencia_jacobians.iter().any(|case| {
+        case.status == EvidenceStatus::Failed
+            && case
+                .primitive_to_conserved
+                .is_some_and(|evidence| evidence.maximum_disagreement > 0.0)
+    }));
+    assert!(strict
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "verification.valencia.jacobian-disagreement"));
+}
+
+#[test]
+fn valencia_jacobians_without_a_worker_do_not_manufacture_derivatives() {
+    let report = run_verification(VerificationRequest::new(
+        VerificationProblem::ValenciaJacobians,
+        1.0e-6,
+    ));
+
+    assert_eq!(report.status, EvidenceStatus::NotEvaluated);
+    assert!(report.valencia_jacobians.is_empty());
+    assert!(report.residuals.is_empty());
+    assert!(report.evidence.iter().all(|evidence| {
+        evidence.status == EvidenceStatus::NotEvaluated
+            && matches!(
+                evidence.code,
+                "valencia.primitive-to-conserved-jacobian" | "valencia.flux-jacobian"
+            )
+    }));
+    assert_eq!(
+        report.diagnostics[0].code,
+        "verification.math.worker-unavailable"
+    );
 }
 
 #[test]

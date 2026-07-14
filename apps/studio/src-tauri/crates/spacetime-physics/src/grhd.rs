@@ -5,9 +5,9 @@
 //! cells. It is a trustworthy behavior path, not a production hydrodynamics solver.
 
 use crate::{
-    PhysicsError, PrimitiveRecoveryDiagnostic, PrimitiveRecoveryError, PrimitiveRecoveryPolicy,
-    TimeDuration, ValenciaConserved, ValenciaEquationOfState, ValenciaGeometry, ValenciaPrimitive,
-    Vec3, primitive_to_conserved, recover_primitives, vec3,
+    primitive_to_conserved, recover_primitives, vec3, PhysicsError, PrimitiveRecoveryDiagnostic,
+    PrimitiveRecoveryError, PrimitiveRecoveryPolicy, TimeDuration, ValenciaConserved,
+    ValenciaEquationOfState, ValenciaGeometry, ValenciaPrimitive, Vec3,
 };
 
 // Conservative bound that keeps sums and squares used by primitive recovery representable.
@@ -206,12 +206,26 @@ fn validate_config(
 }
 
 fn physical_flux(cell: &WorkingCell) -> Result<ValenciaFlux, ValenciaFiniteVolumeError> {
-    let velocity_x = cell.primitive.velocity.x;
+    valencia_physical_flux(cell.conserved, cell.primitive)
+}
+
+pub(crate) fn valencia_physical_flux_1d(
+    conserved: ValenciaConserved,
+    primitive: ValenciaPrimitive,
+) -> Result<[f64; 3], ValenciaFiniteVolumeError> {
+    let flux = valencia_physical_flux(conserved, primitive)?;
+    Ok([flux.rest_mass, flux.momentum.x, flux.energy])
+}
+
+fn valencia_physical_flux(
+    conserved: ValenciaConserved,
+    primitive: ValenciaPrimitive,
+) -> Result<ValenciaFlux, ValenciaFiniteVolumeError> {
+    let velocity_x = primitive.velocity.x;
     ensure_finite_flux(ValenciaFlux {
-        rest_mass: cell.conserved.densitized_rest_mass * velocity_x,
-        momentum: cell.conserved.momentum_density * velocity_x
-            + vec3::new(cell.primitive.pressure, 0.0, 0.0),
-        energy: (cell.conserved.energy_excluding_rest_mass + cell.primitive.pressure) * velocity_x,
+        rest_mass: conserved.densitized_rest_mass * velocity_x,
+        momentum: conserved.momentum_density * velocity_x + vec3::new(primitive.pressure, 0.0, 0.0),
+        energy: (conserved.energy_excluding_rest_mass + primitive.pressure) * velocity_x,
     })
 }
 
@@ -300,4 +314,32 @@ fn is_corrective_recovery(diagnostic: PrimitiveRecoveryDiagnostic) -> bool {
         PrimitiveRecoveryDiagnostic::NewtonConverged
             | PrimitiveRecoveryDiagnostic::BisectionFallback
     )
+}
+
+#[cfg(test)]
+mod flux_tests {
+    use super::valencia_physical_flux;
+    use crate::{vec3, ValenciaConserved, ValenciaPrimitive};
+
+    #[test]
+    fn production_flux_preserves_transverse_momentum_advection() {
+        let flux = valencia_physical_flux(
+            ValenciaConserved {
+                densitized_rest_mass: 2.0,
+                momentum_density: vec3::new(3.0, 5.0, 7.0),
+                energy_excluding_rest_mass: 11.0,
+            },
+            ValenciaPrimitive {
+                rest_mass_density: 1.0,
+                velocity: vec3::new(0.25, 0.1, -0.1),
+                specific_internal_energy: 1.0,
+                pressure: 13.0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(flux.rest_mass, 0.5);
+        assert_eq!(flux.momentum, vec3::new(13.75, 1.25, 1.75));
+        assert_eq!(flux.energy, 6.0);
+    }
 }

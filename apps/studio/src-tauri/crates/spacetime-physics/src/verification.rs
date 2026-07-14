@@ -5,13 +5,18 @@
 
 use crate::kernel::{DynamicalSpacetimeKernel, EvidenceStatus, KernelConfig, KernelState};
 use crate::math_gateway;
-use crate::{CoordinateTime, TimeDuration, UniformGrid3, vec3};
+use crate::{
+    primitive_to_conserved, recover_primitives, vec3, CoordinateTime, PrimitiveRecoveryDiagnostic,
+    PrimitiveRecoveryPolicy, TimeDuration, UniformGrid3, ValenciaGeometry, ValenciaIdealGas,
+    ValenciaPrimitive,
+};
 
 /// Verification scenarios that can be evaluated without promoting a product solver.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum VerificationProblem {
     FlatSpacetimeInvariant,
     AnalyticDerivativeIdentity,
+    ValenciaJacobians,
 }
 
 /// Caller-owned settings for one deterministic verification run.
@@ -99,6 +104,7 @@ pub struct VerificationReport {
     pub evidence: Vec<VerificationEvidence>,
     pub residuals: Vec<VerificationResidual>,
     pub mathematical_crosscheck: Option<MathematicalCrosscheck>,
+    pub valencia_jacobians: Vec<ValenciaJacobianEvidence>,
 }
 
 /// Three independent estimates of one derivative.
@@ -109,6 +115,33 @@ pub struct MathematicalCrosscheck {
     pub finite_difference_derivative: f64,
     pub maximum_disagreement: f64,
     pub maximum_expression_value_disagreement: f64,
+}
+
+/// Recovery outcome observed before evaluating one Valencia Jacobian fixture.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ValenciaRecoveryEvidence {
+    NotAttempted,
+    Recovered,
+    Corrected,
+    Failed,
+}
+
+/// Repository-owned three-way Jacobian evidence for one Valencia fixture.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValenciaJacobianEvidence {
+    pub case_id: &'static str,
+    pub status: EvidenceStatus,
+    pub recovery: ValenciaRecoveryEvidence,
+    pub primitive_to_conserved: Option<JacobianMapEvidence>,
+    pub flux: Option<JacobianMapEvidence>,
+}
+
+/// Three-way derivative and point-value evidence for one Valencia map.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct JacobianMapEvidence {
+    pub maximum_disagreement: f64,
+    pub value_disagreement: f64,
+    pub condition_number: f64,
 }
 
 type VerificationRunner = fn(&VerificationRequest, VerificationProvenance) -> VerificationReport;
@@ -132,6 +165,7 @@ pub fn run_verification(request: VerificationRequest) -> VerificationReport {
             evidence: vec![],
             residuals: vec![],
             mathematical_crosscheck: None,
+            valencia_jacobians: vec![],
         };
     }
 
@@ -155,6 +189,14 @@ fn definition(problem: VerificationProblem) -> VerificationDefinition {
                 facts: vec![],
             },
             run: run_analytic_derivative_identity,
+        },
+        VerificationProblem::ValenciaJacobians => VerificationDefinition {
+            provenance: VerificationProvenance {
+                problem_id: "valencia-jacobians",
+                model: "flat-1d-valencia-ideal-gas",
+                facts: vec![],
+            },
+            run: run_valencia_jacobians,
         },
     }
 }
@@ -231,6 +273,7 @@ fn run_flat_spacetime_invariant(
                 ],
                 residuals,
                 mathematical_crosscheck: None,
+                valencia_jacobians: vec![],
             }
         }
         Err(error) => VerificationReport {
@@ -246,6 +289,7 @@ fn run_flat_spacetime_invariant(
             }],
             residuals: vec![],
             mathematical_crosscheck: None,
+            valencia_jacobians: vec![],
         },
     }
 }
@@ -268,6 +312,7 @@ fn run_analytic_derivative_identity(
             }],
             residuals: vec![],
             mathematical_crosscheck: None,
+            valencia_jacobians: vec![],
         };
     };
     let tolerance = request.tolerance;
@@ -287,6 +332,7 @@ fn run_analytic_derivative_identity(
                 }],
                 residuals: vec![],
                 mathematical_crosscheck: None,
+                valencia_jacobians: vec![],
             };
         }
     };
@@ -385,5 +431,334 @@ fn run_analytic_derivative_identity(
             maximum_disagreement,
             maximum_expression_value_disagreement: result.maximum_value_disagreement,
         }),
+        valencia_jacobians: vec![],
     }
+}
+
+fn run_valencia_jacobians(
+    request: &VerificationRequest,
+    mut provenance: VerificationProvenance,
+) -> VerificationReport {
+    let Some(worker_path) = request.math_worker.as_deref() else {
+        return VerificationReport {
+            status: EvidenceStatus::NotEvaluated,
+            provenance,
+            diagnostics: vec![VerificationDiagnostic {
+                code: "verification.math.worker-unavailable",
+                message: "an isolated mathematical worker was not supplied".to_string(),
+            }],
+            evidence: vec![
+                VerificationEvidence {
+                    code: "valencia.primitive-to-conserved-jacobian",
+                    status: EvidenceStatus::NotEvaluated,
+                },
+                VerificationEvidence {
+                    code: "valencia.flux-jacobian",
+                    status: EvidenceStatus::NotEvaluated,
+                },
+            ],
+            residuals: vec![],
+            mathematical_crosscheck: None,
+            valencia_jacobians: vec![],
+        };
+    };
+
+    provenance.facts = vec![
+        VerificationProvenanceFact {
+            key: "symbolica.version",
+            value: "2.1.0".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "numerica.version",
+            value: "2.1.0".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "equation-of-state.gamma",
+            value: "2".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "variables",
+            value: "rho,vx,epsilon".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "jacobian.convention",
+            value: "rows=outputs;columns=inputs".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "finite-difference.convention",
+            value: "centered-relative-step-1e-6-floor-1e-8".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "tolerance",
+            value: format!("{:e}", request.tolerance)
+                .replace("e-0", "e-")
+                .replace("e+0", "e+"),
+        },
+    ];
+
+    let eos = ValenciaIdealGas { gamma: 2.0 };
+    let fixtures = [
+        ("admissible", [1.0, 0.2, 0.5], None),
+        ("slow-flow", [1.0, 1.0e-3, 0.5], None),
+        ("relativistic", [1.0, 0.9, 0.5], None),
+        ("near-vacuum", [1.0e-9, 0.1, 0.1], None),
+        (
+            "singular",
+            [1.0, 1.0, 0.5],
+            Some("verification.valencia.singular-state"),
+        ),
+        (
+            "non-admissible",
+            [-1.0, 0.2, 0.5],
+            Some("verification.valencia.non-admissible-state"),
+        ),
+    ];
+    let mut diagnostics = Vec::new();
+    let mut residuals = Vec::new();
+    let mut cases = Vec::new();
+    let mut evaluated_cases_passed = true;
+    let mut license_state = None;
+
+    for (case_id, [density, velocity, energy], rejection_code) in fixtures {
+        let primitive = ValenciaPrimitive {
+            rest_mass_density: density,
+            velocity: vec3::new(velocity, 0.0, 0.0),
+            specific_internal_energy: energy,
+            pressure: density * energy,
+        };
+        let conserved = match primitive_to_conserved(primitive, eos, ValenciaGeometry::FLAT) {
+            Ok(conserved) => conserved,
+            Err(error) => {
+                if let Some(code) = rejection_code {
+                    diagnostics.push(VerificationDiagnostic {
+                        code,
+                        message: format!(
+                            "Valencia fixture {case_id} was rejected before differentiation"
+                        ),
+                    });
+                    cases.push(empty_valencia_case(
+                        case_id,
+                        EvidenceStatus::NotEvaluated,
+                        ValenciaRecoveryEvidence::NotAttempted,
+                    ));
+                    continue;
+                }
+                diagnostics.push(VerificationDiagnostic {
+                    code: "verification.valencia.primitive-map-failed",
+                    message: format!("Valencia fixture {case_id} failed: {error}"),
+                });
+                cases.push(empty_valencia_case(
+                    case_id,
+                    EvidenceStatus::Failed,
+                    ValenciaRecoveryEvidence::NotAttempted,
+                ));
+                evaluated_cases_passed = false;
+                continue;
+            }
+        };
+
+        let recovery = match recover_primitives(
+            conserved,
+            eos,
+            ValenciaGeometry::FLAT,
+            PrimitiveRecoveryPolicy::DEFAULT,
+        ) {
+            Ok(outcome) => recovery_evidence(&outcome.diagnostics),
+            Err(_) => ValenciaRecoveryEvidence::Failed,
+        };
+        if recovery != ValenciaRecoveryEvidence::Recovered {
+            diagnostics.push(VerificationDiagnostic {
+                code: "verification.valencia.primitive-recovery-failed",
+                message: format!(
+                    "Valencia fixture {case_id} required correction or failed primitive recovery"
+                ),
+            });
+            cases.push(empty_valencia_case(
+                case_id,
+                EvidenceStatus::Failed,
+                recovery,
+            ));
+            evaluated_cases_passed = false;
+            continue;
+        }
+
+        let result = match math_gateway::crosscheck_valencia_jacobians(
+            worker_path,
+            [density, velocity, energy],
+            |state| production_valencia_maps(state, eos),
+        ) {
+            Ok(result) => result,
+            Err(error) => {
+                diagnostics.push(VerificationDiagnostic {
+                    code: "verification.valencia.symbolic-evaluation-failed",
+                    message: error,
+                });
+                cases.push(empty_valencia_case(
+                    case_id,
+                    EvidenceStatus::Failed,
+                    recovery,
+                ));
+                evaluated_cases_passed = false;
+                continue;
+            }
+        };
+        license_state = Some(result.symbolica_license);
+        for &code in result.symbolica_license.diagnostic_codes() {
+            if !diagnostics.iter().any(|diagnostic| diagnostic.code == code) {
+                diagnostics.push(VerificationDiagnostic {
+                    code,
+                    message:
+                        "Symbolica is operating without a confirmed license; upstream terms apply"
+                            .to_string(),
+                });
+            }
+        }
+        let passed = [
+            result.primitive_to_conserved.maximum_disagreement,
+            result.flux.maximum_disagreement,
+            result.primitive_to_conserved.value_disagreement,
+            result.flux.value_disagreement,
+        ]
+        .into_iter()
+        .all(|value| value.is_finite() && value <= request.tolerance)
+            && result.primitive_to_conserved.condition_number.is_some()
+            && result.flux.condition_number.is_some();
+        if !passed {
+            diagnostics.push(VerificationDiagnostic {
+                code: "verification.valencia.jacobian-disagreement",
+                message: format!("Valencia fixture {case_id} failed its Jacobian cross-check"),
+            });
+            evaluated_cases_passed = false;
+        }
+        residuals.extend([
+            VerificationResidual {
+                code: "valencia.primitive-to-conserved-jacobian-disagreement",
+                value: result.primitive_to_conserved.maximum_disagreement,
+                tolerance: request.tolerance,
+            },
+            VerificationResidual {
+                code: "valencia.flux-jacobian-disagreement",
+                value: result.flux.maximum_disagreement,
+                tolerance: request.tolerance,
+            },
+            VerificationResidual {
+                code: "valencia.primitive-to-conserved-value-disagreement",
+                value: result.primitive_to_conserved.value_disagreement,
+                tolerance: request.tolerance,
+            },
+            VerificationResidual {
+                code: "valencia.flux-value-disagreement",
+                value: result.flux.value_disagreement,
+                tolerance: request.tolerance,
+            },
+        ]);
+        cases.push(ValenciaJacobianEvidence {
+            case_id,
+            status: if passed {
+                EvidenceStatus::Evaluated
+            } else {
+                EvidenceStatus::Failed
+            },
+            recovery,
+            primitive_to_conserved: result.primitive_to_conserved.condition_number.map(
+                |condition_number| JacobianMapEvidence {
+                    maximum_disagreement: result.primitive_to_conserved.maximum_disagreement,
+                    value_disagreement: result.primitive_to_conserved.value_disagreement,
+                    condition_number,
+                },
+            ),
+            flux: result
+                .flux
+                .condition_number
+                .map(|condition_number| JacobianMapEvidence {
+                    maximum_disagreement: result.flux.maximum_disagreement,
+                    value_disagreement: result.flux.value_disagreement,
+                    condition_number,
+                }),
+        });
+    }
+
+    if let Some(license_state) = license_state {
+        provenance.facts.push(VerificationProvenanceFact {
+            key: "symbolica.license-state",
+            value: license_state.provenance_value().to_string(),
+        });
+    }
+    let status = if evaluated_cases_passed {
+        EvidenceStatus::Evaluated
+    } else {
+        EvidenceStatus::Failed
+    };
+    VerificationReport {
+        status,
+        provenance,
+        diagnostics,
+        evidence: vec![
+            VerificationEvidence {
+                code: "valencia.primitive-to-conserved-jacobian",
+                status,
+            },
+            VerificationEvidence {
+                code: "valencia.flux-jacobian",
+                status,
+            },
+        ],
+        residuals,
+        mathematical_crosscheck: None,
+        valencia_jacobians: cases,
+    }
+}
+
+fn recovery_evidence(diagnostics: &[PrimitiveRecoveryDiagnostic]) -> ValenciaRecoveryEvidence {
+    if diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic,
+            PrimitiveRecoveryDiagnostic::AtmosphereApplied
+                | PrimitiveRecoveryDiagnostic::DensityFloorApplied
+                | PrimitiveRecoveryDiagnostic::PressureFloorApplied
+                | PrimitiveRecoveryDiagnostic::LorentzFactorCapped
+                | PrimitiveRecoveryDiagnostic::InvalidConservedState
+                | PrimitiveRecoveryDiagnostic::EquationOfStateOutOfBounds
+        )
+    }) {
+        ValenciaRecoveryEvidence::Corrected
+    } else {
+        ValenciaRecoveryEvidence::Recovered
+    }
+}
+
+fn empty_valencia_case(
+    case_id: &'static str,
+    status: EvidenceStatus,
+    recovery: ValenciaRecoveryEvidence,
+) -> ValenciaJacobianEvidence {
+    ValenciaJacobianEvidence {
+        case_id,
+        status,
+        recovery,
+        primitive_to_conserved: None,
+        flux: None,
+    }
+}
+
+fn production_valencia_maps(state: [f64; 3], eos: ValenciaIdealGas) -> Result<[f64; 6], String> {
+    let [density, velocity, energy] = state;
+    let primitive = ValenciaPrimitive {
+        rest_mass_density: density,
+        velocity: vec3::new(velocity, 0.0, 0.0),
+        specific_internal_energy: energy,
+        pressure: density * energy,
+    };
+    let conserved = primitive_to_conserved(primitive, eos, ValenciaGeometry::FLAT)
+        .map_err(|error| format!("production primitive-to-conserved map failed: {error}"))?;
+    let flux = crate::grhd::valencia_physical_flux_1d(conserved, primitive)
+        .map_err(|error| format!("production Valencia flux map failed: {error}"))?;
+    Ok([
+        conserved.densitized_rest_mass,
+        conserved.momentum_density.x,
+        conserved.energy_excluding_rest_mass,
+        flux[0],
+        flux[1],
+        flux[2],
+    ])
 }
