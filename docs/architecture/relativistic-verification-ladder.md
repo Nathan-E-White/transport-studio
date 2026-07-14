@@ -13,12 +13,14 @@ Run that command from `apps/studio/src-tauri`. The versioned, machine-checked ti
 | Tier | Evidence |
 | --- | --- |
 | Crate seam tests | Canonical kernel interface and primitive recovery behavior, including recoverable failures. |
-| Fixed-background and component tests | Geodesic invariants, packet deposition, the Valencia GRHD toy step, gray-M1 radiation, and the AMR single-block adapter. |
+| Fixed-background and component tests | Geodesic invariants, packet deposition, the Valencia GRHD toy step, gray-M1 radiation, the four-regime relativistic radiative shock tube, and the AMR single-block adapter. |
 | Coupled toy tests | IMEX matter-radiation exchange, BSSN source projection, and the controlled coupled-kernel toy. |
 
-The integration test `verification_ladder.rs` checks that every named seam has a real test target, every required tier is present, and the product capability contract still marks `relativistic-multiphysics` as `gated` execution with a `substrate` claim.
+The integration test `verification_ladder.rs` checks that every named seam has a real test target, every required tier is present, and the product capability contract still marks `relativistic-multiphysics` as `gated` execution with a `substrate` claim. For the radiative shock tube it also executes the public Verification API and checks the problem ID, hydrodynamic/equilibrium/thin/thick fixture IDs, and the required recovery, realizability, conservation, convergence, bounded-IMEX, and mathematical evidence codes.
 
-Passing all required tiers is necessary but not sufficient for product promotion. Promotion also requires an explicit capability review that updates execution metadata, validation evidence, report language, and UI claims together. Until then, the product decision remains blocked and unsupported run attempts must continue to return diagnostics without partial physics output.
+Passing all required tiers is necessary but not sufficient for product promotion. Promotion requires a separate capability-review issue that updates execution metadata, validation evidence, report language, and UI claims together. Until then, the product decision remains blocked and unsupported run attempts must continue to return diagnostics without partial physics output.
+
+The Symbolica/Numerica gateway decision, licensing boundary, exclusions, and measured build impact are recorded in the [gateway research note](symbolica-numerica-integration-research.md). The radiative problem is verification evidence; it is not a runnable product capability.
 
 ## Deferred Full-NR Gates
 
