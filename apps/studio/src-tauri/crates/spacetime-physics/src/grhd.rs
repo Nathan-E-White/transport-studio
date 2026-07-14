@@ -5,9 +5,9 @@
 //! cells. It is a trustworthy behavior path, not a production hydrodynamics solver.
 
 use crate::{
-    primitive_to_conserved, recover_primitives, vec3, PhysicsError, PrimitiveRecoveryDiagnostic,
-    PrimitiveRecoveryError, PrimitiveRecoveryPolicy, TimeDuration, ValenciaConserved,
-    ValenciaEquationOfState, ValenciaGeometry, ValenciaPrimitive, Vec3,
+    PhysicsError, PrimitiveRecoveryDiagnostic, PrimitiveRecoveryError, PrimitiveRecoveryPolicy,
+    TimeDuration, ValenciaConserved, ValenciaEquationOfState, ValenciaGeometry, ValenciaPrimitive,
+    Vec3, primitive_to_conserved, recover_primitives, vec3,
 };
 
 // Conservative bound that keeps sums and squares used by primitive recovery representable.
@@ -39,6 +39,19 @@ pub struct ValenciaFiniteVolumeCell {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ValenciaFlatFiniteVolumeStep {
     pub cells: Vec<ValenciaFiniteVolumeCell>,
+    /// Numerical flux through the interface between the fixed left boundary cell and its
+    /// neighboring evolved cell.
+    pub left_boundary_flux: ValenciaFlatBoundaryFlux,
+    /// Numerical flux through the interface between the neighboring evolved cell and the fixed
+    /// right boundary cell.
+    pub right_boundary_flux: ValenciaFlatBoundaryFlux,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ValenciaFlatBoundaryFlux {
+    pub rest_mass: f64,
+    pub momentum_x: f64,
+    pub energy: f64,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, thiserror::Error)]
@@ -150,7 +163,11 @@ pub fn valencia_flat_finite_volume_step_1d<Eos: ValenciaEquationOfState>(
         });
     }
 
-    Ok(ValenciaFlatFiniteVolumeStep { cells: result })
+    Ok(ValenciaFlatFiniteVolumeStep {
+        cells: result,
+        left_boundary_flux: face_fluxes[1].into(),
+        right_boundary_flux: face_fluxes[cells.len() - 1].into(),
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -166,6 +183,16 @@ struct ValenciaFlux {
     rest_mass: f64,
     momentum: Vec3,
     energy: f64,
+}
+
+impl From<ValenciaFlux> for ValenciaFlatBoundaryFlux {
+    fn from(flux: ValenciaFlux) -> Self {
+        Self {
+            rest_mass: flux.rest_mass,
+            momentum_x: flux.momentum.x,
+            energy: flux.energy,
+        }
+    }
 }
 
 impl ValenciaFlux {
@@ -325,7 +352,7 @@ fn is_corrective_recovery(diagnostic: PrimitiveRecoveryDiagnostic) -> bool {
 #[cfg(test)]
 mod flux_tests {
     use super::valencia_physical_flux;
-    use crate::{vec3, ValenciaConserved, ValenciaPrimitive};
+    use crate::{ValenciaConserved, ValenciaPrimitive, vec3};
 
     #[test]
     fn production_flux_preserves_transverse_momentum_advection() {

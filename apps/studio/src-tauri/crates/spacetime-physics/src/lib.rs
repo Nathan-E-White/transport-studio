@@ -19,6 +19,7 @@ mod packet_deposition;
 mod physics_v1;
 mod radiation;
 mod radiation_matter;
+mod radiative_shock_tube;
 mod shock_tube;
 mod tensor;
 mod transport;
