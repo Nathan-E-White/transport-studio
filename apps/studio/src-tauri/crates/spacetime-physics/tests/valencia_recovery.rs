@@ -186,6 +186,7 @@ fn bounded_fallback_recovers_when_newton_budget_is_exhausted() {
         },
     )
     .unwrap();
+    assert_eq!(outcome.iterations, 44);
     assert!(
         outcome
             .diagnostics

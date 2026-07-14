@@ -24,7 +24,9 @@ pub struct ValenciaFlatFiniteVolumeConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValenciaCellRecoveryDiagnostics {
     pub before_flux: Vec<PrimitiveRecoveryDiagnostic>,
+    pub before_flux_iterations: usize,
     pub after_update: Vec<PrimitiveRecoveryDiagnostic>,
+    pub after_update_iterations: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +102,7 @@ pub fn valencia_flat_finite_volume_step_1d<Eos: ValenciaEquationOfState>(
             conserved: if corrected { canonical } else { conserved },
             primitive: recovered.primitive,
             before_flux: recovered.diagnostics,
+            before_flux_iterations: recovered.iterations,
         });
     }
 
@@ -140,7 +143,9 @@ pub fn valencia_flat_finite_volume_step_1d<Eos: ValenciaEquationOfState>(
             primitive: recovered.primitive,
             recovery_diagnostics: ValenciaCellRecoveryDiagnostics {
                 before_flux: working[index].before_flux.clone(),
+                before_flux_iterations: working[index].before_flux_iterations,
                 after_update: recovered.diagnostics,
+                after_update_iterations: recovered.iterations,
             },
         });
     }
@@ -153,6 +158,7 @@ struct WorkingCell {
     conserved: ValenciaConserved,
     primitive: ValenciaPrimitive,
     before_flux: Vec<PrimitiveRecoveryDiagnostic>,
+    before_flux_iterations: usize,
 }
 
 #[derive(Debug, Copy, Clone)]

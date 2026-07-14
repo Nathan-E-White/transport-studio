@@ -457,6 +457,206 @@ fn gray_m1_and_imex_without_a_worker_do_not_manufacture_jacobians() {
 }
 
 #[test]
+fn flat_relativistic_shock_tube_reports_profiles_conservation_and_convergence() {
+    let report = run_verification(VerificationRequest::new(
+        VerificationProblem::FlatRelativisticShockTube,
+        1.0e-10,
+    ));
+
+    assert_eq!(report.status, EvidenceStatus::Evaluated, "{report:#?}");
+    assert!(report.diagnostics.is_empty(), "{report:#?}");
+    assert_eq!(report.provenance.problem_id, "flat-relativistic-shock-tube");
+    assert_eq!(report.provenance.fact("units"), Some("normalized-c=1"));
+    assert_eq!(report.provenance.fact("domain"), Some("[-0.5,0.5]"));
+    assert_eq!(
+        report.provenance.fact("boundary-policy"),
+        Some("fixed-end-cells")
+    );
+    assert_eq!(report.provenance.fact("final-time"), Some("0.1"));
+    assert_eq!(
+        report.provenance.fact("resolution-series"),
+        Some("32,64,128")
+    );
+
+    let shock = report
+        .flat_shock_tube
+        .expect("shock-tube problem returns typed evidence");
+    assert_eq!(
+        shock
+            .resolutions
+            .iter()
+            .map(|resolution| resolution.cell_count)
+            .collect::<Vec<_>>(),
+        vec![32, 64, 128]
+    );
+    assert_eq!(shock.finest_profile.len(), 128);
+    assert_eq!(
+        shock
+            .resolutions
+            .iter()
+            .map(|resolution| (
+                resolution.cell_count,
+                resolution.steps,
+                resolution.recovery_attempts,
+                resolution.recovery_iterations
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (32, 8, 512, 1_194),
+            (64, 16, 2_048, 4_716),
+            (128, 32, 8_192, 18_617)
+        ]
+    );
+    assert_eq!(shock.fixture.left_density, 1.0);
+    assert_eq!(shock.fixture.left_pressure, 1.0);
+    assert_eq!(shock.fixture.right_density, 0.125);
+    assert_eq!(shock.fixture.right_pressure, 0.1);
+    assert_eq!(shock.fixture.left_velocity, 0.0);
+    assert_eq!(shock.fixture.right_velocity, 0.0);
+
+    for cell in &shock.finest_profile {
+        assert!(cell.position.is_finite());
+        assert!(cell.density.is_finite() && cell.density > 0.0);
+        assert!(cell.pressure.is_finite() && cell.pressure >= 0.0);
+        assert!(cell.velocity.is_finite() && cell.velocity.abs() < 1.0);
+        assert!(cell.lorentz_factor.is_finite() && cell.lorentz_factor >= 1.0);
+        assert!(
+            (cell.lorentz_factor * cell.lorentz_factor * (1.0 - cell.velocity * cell.velocity)
+                - 1.0)
+                .abs()
+                <= 1.0e-12
+        );
+        assert!(cell.conserved_rest_mass.is_finite());
+        assert!(cell.conserved_momentum.is_finite());
+        assert!(cell.conserved_energy.is_finite());
+    }
+    assert_eq!(shock.finest_profile.first().unwrap().density, 1.0);
+    assert_eq!(shock.finest_profile.last().unwrap().density, 0.125);
+    assert_eq!(
+        shock.finest_profile.first().unwrap().position,
+        -0.496_093_75
+    );
+    assert_eq!(shock.finest_profile.last().unwrap().position, 0.496_093_75);
+    assert!(shock
+        .finest_profile
+        .windows(2)
+        .all(|cells| (cells[1].position - cells[0].position - 1.0 / 128.0).abs() <= f64::EPSILON));
+    assert!(shock.finest_profile[63].velocity > 0.0);
+    assert!(shock.finest_profile[64].velocity > 0.0);
+
+    assert!(shock.resolutions.iter().all(|resolution| {
+        resolution.steps > 0
+            && resolution.recovery_attempts > 0
+            && resolution.recovery_iterations >= resolution.recovery_attempts
+            && resolution.corrected_recoveries == 0
+            && resolution.failed_recoveries == 0
+            && resolution.mass_conservation_residual.abs() <= 1.0e-10
+            && resolution.momentum_conservation_residual.abs() <= 1.0e-10
+            && resolution.energy_conservation_residual.abs() <= 1.0e-10
+    }));
+    let finest_cell_width = 1.0 / shock.finest_profile.len() as f64;
+    let final_mass = shock
+        .finest_profile
+        .iter()
+        .map(|cell| cell.conserved_rest_mass * finest_cell_width)
+        .sum::<f64>();
+    let final_momentum = shock
+        .finest_profile
+        .iter()
+        .map(|cell| cell.conserved_momentum * finest_cell_width)
+        .sum::<f64>();
+    let final_energy = shock
+        .finest_profile
+        .iter()
+        .map(|cell| cell.conserved_energy * finest_cell_width)
+        .sum::<f64>();
+    assert!((final_mass - 0.562_5).abs() <= 1.0e-10);
+    assert!((final_momentum - 0.09).abs() <= 1.0e-10);
+    assert!((final_energy - 1.375).abs() <= 1.0e-10);
+    assert!(shock.convergence.coarse_to_medium_l1 > 0.0);
+    assert!((shock.convergence.coarse_to_medium_l1 - 0.006_922_137_395_246_156).abs() <= 1.0e-12);
+    assert!((shock.convergence.medium_to_fine_l1 - 0.004_497_561_008_049_108).abs() <= 1.0e-12);
+    assert!((shock.convergence.observed_order - 0.622_074_726_041_052_2).abs() <= 1.0e-12);
+    assert!(shock.convergence.medium_to_fine_l1 > 0.0);
+    assert!(shock.convergence.medium_to_fine_l1 < shock.convergence.coarse_to_medium_l1);
+    assert!(shock.convergence.observed_order > 0.0);
+    assert_eq!(shock.limiting_cases.maximum_radiation_energy, 0.0);
+    assert_eq!(shock.limiting_cases.maximum_opacity, 0.0);
+
+    assert!(report.residuals.iter().all(|residual| residual.passed()));
+    for code in [
+        "shock-tube.profiles",
+        "shock-tube.primitive-recovery",
+        "shock-tube.self-convergence",
+        "shock-tube.zero-radiation-limit",
+        "shock-tube.zero-opacity-limit",
+    ] {
+        assert_eq!(
+            report
+                .evidence
+                .iter()
+                .find(|entry| entry.code == code)
+                .unwrap()
+                .status,
+            EvidenceStatus::Evaluated
+        );
+    }
+}
+
+#[test]
+fn flat_relativistic_shock_tube_is_deterministic_for_identical_requests() {
+    let request = VerificationRequest::new(VerificationProblem::FlatRelativisticShockTube, 1.0e-10);
+
+    assert_eq!(run_verification(request.clone()), run_verification(request));
+}
+
+#[test]
+fn flat_relativistic_shock_tube_retains_evidence_when_zero_tolerance_exposes_roundoff() {
+    let report = run_verification(VerificationRequest::new(
+        VerificationProblem::FlatRelativisticShockTube,
+        0.0,
+    ));
+
+    assert_eq!(report.status, EvidenceStatus::Failed, "{report:#?}");
+    assert!(report.flat_shock_tube.is_some());
+    assert!(report
+        .residuals
+        .iter()
+        .any(|residual| residual.value != 0.0));
+    assert!(report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "verification.shock-tube.conservation-failed"));
+    assert_eq!(
+        report
+            .evidence
+            .iter()
+            .find(|entry| entry.code == "shock-tube.profiles")
+            .unwrap()
+            .status,
+        EvidenceStatus::Failed
+    );
+    assert_eq!(
+        report
+            .evidence
+            .iter()
+            .find(|entry| entry.code == "shock-tube.primitive-recovery")
+            .unwrap()
+            .status,
+        EvidenceStatus::Evaluated
+    );
+    assert_eq!(
+        report
+            .evidence
+            .iter()
+            .find(|entry| entry.code == "shock-tube.self-convergence")
+            .unwrap()
+            .status,
+        EvidenceStatus::Evaluated
+    );
+}
+
+#[test]
 fn valencia_jacobians_without_a_worker_do_not_manufacture_derivatives() {
     let report = run_verification(VerificationRequest::new(
         VerificationProblem::ValenciaJacobians,
