@@ -12,11 +12,13 @@ const EVALUATION_POINT: f64 = 2.0;
 const FINITE_DIFFERENCE_STEP: f64 = 1.0e-5;
 const RESULT_MARKER: &str = "transport-studio-math-v1";
 const VALENCIA_RESULT_MARKER: &str = "transport-studio-valencia-v1";
+const RADIATION_RESULT_MARKER: &str = "transport-studio-radiation-v1";
 
 static SYMBOLICA_PROCESS_LOCK: Mutex<()> = Mutex::new(());
 
 create_hyperdual_single_derivative!(FirstDerivativeDual, 1);
 create_hyperdual_single_derivative!(ValenciaDual, 3);
+create_hyperdual_single_derivative!(RadiationDual, 2);
 
 pub(crate) struct DerivativeGatewayResult {
     pub symbolic_derivative: f64,
@@ -33,6 +35,12 @@ pub(crate) struct ValenciaGatewayResult {
     pub symbolica_license: SymbolicaLicenseState,
 }
 
+pub(crate) struct RadiationGatewayResult {
+    pub map: JacobianGatewayEvidence,
+    pub symbolica_license: SymbolicaLicenseState,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub(crate) struct JacobianGatewayEvidence {
     pub maximum_disagreement: f64,
     pub value_disagreement: f64,
@@ -139,6 +147,77 @@ where
     })
 }
 
+pub(crate) fn crosscheck_gray_m1_jacobian<F>(
+    worker_path: &Path,
+    state: [f64; 2],
+    production_map: F,
+) -> Result<RadiationGatewayResult, String>
+where
+    F: Fn([f64; 2]) -> Result<[f64; 2], String>,
+{
+    crosscheck_radiation_map(
+        evaluate_symbolic_radiation(worker_path, "gray-m1-jacobian", &state)?,
+        evaluate_gray_m1_hyperdual(state),
+        state,
+        production_map,
+    )
+}
+
+pub(crate) fn crosscheck_imex_source_jacobian<F>(
+    worker_path: &Path,
+    state: [f64; 2],
+    interaction_rate: f64,
+    timestep: f64,
+    equilibrium_energy: f64,
+    production_map: F,
+) -> Result<RadiationGatewayResult, String>
+where
+    F: Fn([f64; 2]) -> Result<[f64; 2], String>,
+{
+    let arguments = [
+        state[0],
+        state[1],
+        interaction_rate,
+        timestep,
+        equilibrium_energy,
+    ];
+    crosscheck_radiation_map(
+        evaluate_symbolic_radiation(worker_path, "imex-source-jacobian", &arguments)?,
+        evaluate_imex_hyperdual(state, interaction_rate, timestep, equilibrium_energy),
+        state,
+        production_map,
+    )
+}
+
+fn crosscheck_radiation_map<F>(
+    symbolic: SymbolicRadiation,
+    (hyperdual_values, hyperdual_jacobian): ([f64; 2], [[f64; 2]; 2]),
+    state: [f64; 2],
+    production_map: F,
+) -> Result<RadiationGatewayResult, String>
+where
+    F: Fn([f64; 2]) -> Result<[f64; 2], String>,
+{
+    let production_values = production_map(state)?;
+    let finite_difference_jacobian = evaluate_radiation_finite_difference(state, &production_map)?;
+    Ok(RadiationGatewayResult {
+        map: JacobianGatewayEvidence {
+            maximum_disagreement: maximum_jacobian_disagreement(
+                &symbolic.jacobian,
+                &hyperdual_jacobian,
+                &finite_difference_jacobian,
+            ),
+            value_disagreement: maximum_value_disagreement(
+                &symbolic.values,
+                &hyperdual_values,
+                &production_values,
+            ),
+            condition_number: condition_number_2(hyperdual_jacobian),
+        },
+        symbolica_license: symbolic.license_state,
+    })
+}
+
 struct SymbolicDerivative {
     derivative: f64,
     values: [f64; 3],
@@ -148,6 +227,12 @@ struct SymbolicDerivative {
 struct SymbolicValencia {
     values: [f64; 6],
     jacobian: [[f64; 3]; 6],
+    license_state: SymbolicaLicenseState,
+}
+
+struct SymbolicRadiation {
+    values: [f64; 2],
+    jacobian: [[f64; 2]; 2],
     license_state: SymbolicaLicenseState,
 }
 
@@ -195,6 +280,31 @@ fn evaluate_symbolic_valencia(
     let stdout = String::from_utf8(output.stdout)
         .map_err(|_| "Symbolica worker returned non-UTF-8 output".to_string())?;
     parse_valencia_worker_result(&stdout)
+}
+
+fn evaluate_symbolic_radiation(
+    worker_path: &Path,
+    command: &str,
+    arguments: &[f64],
+) -> Result<SymbolicRadiation, String> {
+    let _process_guard = SYMBOLICA_PROCESS_LOCK
+        .lock()
+        .map_err(|_| "Symbolica process lock is poisoned".to_string())?;
+    let output = Command::new(worker_path)
+        .arg(command)
+        .args(arguments.iter().map(f64::to_string))
+        .env("SYMBOLICA_HIDE_BANNER", "1")
+        .output()
+        .map_err(|error| format!("could not start Symbolica worker: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Symbolica worker exited unsuccessfully ({})",
+            output.status
+        ));
+    }
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|_| "Symbolica worker returned non-UTF-8 output".to_string())?;
+    parse_radiation_worker_result(&stdout)
 }
 
 fn parse_worker_result(stdout: &str) -> Result<SymbolicDerivative, String> {
@@ -282,6 +392,46 @@ fn parse_valencia_worker_result(stdout: &str) -> Result<SymbolicValencia, String
     })
 }
 
+fn parse_radiation_worker_result(stdout: &str) -> Result<SymbolicRadiation, String> {
+    let line = stdout
+        .lines()
+        .find(|line| line.starts_with(RADIATION_RESULT_MARKER))
+        .ok_or_else(|| "Symbolica worker returned no radiation result".to_string())?;
+    let mut fields = line.split('\t');
+    if fields.next() != Some(RADIATION_RESULT_MARKER) {
+        return Err("Symbolica worker returned an invalid radiation marker".to_string());
+    }
+    let mut next_value = || {
+        fields
+            .next()
+            .ok_or_else(|| "Symbolica worker omitted radiation evidence".to_string())?
+            .parse::<f64>()
+            .map_err(|_| "Symbolica worker returned invalid radiation evidence".to_string())
+    };
+    let values = [next_value()?, next_value()?];
+    let jacobian = [
+        [next_value()?, next_value()?],
+        [next_value()?, next_value()?],
+    ];
+    let license_state = match fields.next() {
+        Some("licensed") => SymbolicaLicenseState::Licensed,
+        Some("restricted-missing") => SymbolicaLicenseState::RestrictedMissing,
+        Some("restricted-rejected") => SymbolicaLicenseState::RestrictedRejected,
+        _ => return Err("Symbolica worker returned an invalid license state".to_string()),
+    };
+    if fields.next().is_some()
+        || values.iter().any(|value| !value.is_finite())
+        || jacobian.iter().flatten().any(|value| !value.is_finite())
+    {
+        return Err("Symbolica worker returned invalid radiation evidence".to_string());
+    }
+    Ok(SymbolicRadiation {
+        values,
+        jacobian,
+        license_state,
+    })
+}
+
 fn evaluate_hyperdual_derivative() -> f64 {
     let x = FirstDerivativeDual::<f64>::new_variable(0, EVALUATION_POINT);
     let value = evaluate_expression(x);
@@ -332,6 +482,50 @@ fn evaluate_valencia_hyperdual(state: [f64; 3]) -> ([f64; 6], [[f64; 3]; 6]) {
     (values, jacobian)
 }
 
+fn evaluate_gray_m1_hyperdual(state: [f64; 2]) -> ([f64; 2], [[f64; 2]; 2]) {
+    let energy = RadiationDual::<f64>::new_variable(0, state[0]);
+    let flux = RadiationDual::<f64>::new_variable(1, state[1]);
+    let reduced_flux = flux * energy.clone().inv();
+    let reduced_flux_squared = reduced_flux.clone() * reduced_flux;
+    let chi = (RadiationDual::constant(3.0) + reduced_flux_squared.clone() * &4.0)
+        * (RadiationDual::constant(5.0)
+            + (RadiationDual::constant(4.0) - reduced_flux_squared * &3.0).sqrt() * &2.0)
+            .inv();
+    radiation_dual_values([chi.clone(), energy * chi])
+}
+
+fn evaluate_imex_hyperdual(
+    state: [f64; 2],
+    interaction_rate: f64,
+    timestep: f64,
+    equilibrium_energy: f64,
+) -> ([f64; 2], [[f64; 2]; 2]) {
+    let matter_energy = RadiationDual::<f64>::new_variable(0, state[0]);
+    let radiation_energy = RadiationDual::<f64>::new_variable(1, state[1]);
+    let stiffness = interaction_rate * timestep;
+    let implicit_fraction = stiffness / (1.0 + stiffness);
+    let exchange = (RadiationDual::constant(equilibrium_energy) - radiation_energy.clone())
+        * &implicit_fraction;
+    radiation_dual_values([
+        matter_energy - exchange.clone(),
+        radiation_energy + exchange,
+    ])
+}
+
+impl RadiationDual<f64> {
+    fn constant(value: f64) -> Self {
+        Self {
+            values: [value, 0.0, 0.0],
+        }
+    }
+}
+
+fn radiation_dual_values(outputs: [RadiationDual<f64>; 2]) -> ([f64; 2], [[f64; 2]; 2]) {
+    let values = outputs.clone().map(|output| output.values[0]);
+    let jacobian = outputs.map(|output| [output.values[1], output.values[2]]);
+    (values, jacobian)
+}
+
 fn evaluate_valencia_finite_difference<F>(
     state: [f64; 3],
     production_maps: &F,
@@ -349,6 +543,29 @@ where
         let upper = production_maps(upper)?;
         let lower = production_maps(lower)?;
         for row in 0..6 {
+            jacobian[row][column] = (upper[row] - lower[row]) / (2.0 * step);
+        }
+    }
+    Ok(jacobian)
+}
+
+fn evaluate_radiation_finite_difference<F>(
+    state: [f64; 2],
+    production_map: &F,
+) -> Result<[[f64; 2]; 2], String>
+where
+    F: Fn([f64; 2]) -> Result<[f64; 2], String>,
+{
+    let mut jacobian = [[0.0; 2]; 2];
+    for column in 0..2 {
+        let step = 1.0e-6 * state[column].abs().max(1.0);
+        let mut upper = state;
+        let mut lower = state;
+        upper[column] += step;
+        lower[column] -= step;
+        let upper = production_map(upper)?;
+        let lower = production_map(lower)?;
+        for row in 0..2 {
             jacobian[row][column] = (upper[row] - lower[row]) / (2.0 * step);
         }
     }
@@ -379,10 +596,10 @@ where
     (conserved, flux)
 }
 
-fn maximum_jacobian_disagreement(
-    symbolic: &[[f64; 3]],
-    hyperdual: &[[f64; 3]],
-    finite_difference: &[[f64; 3]],
+fn maximum_jacobian_disagreement<const N: usize>(
+    symbolic: &[[f64; N]],
+    hyperdual: &[[f64; N]],
+    finite_difference: &[[f64; N]],
 ) -> f64 {
     symbolic
         .iter()
@@ -447,11 +664,31 @@ fn condition_number(rows: &[[f64; 3]]) -> Option<f64> {
     condition.is_finite().then_some(condition)
 }
 
+fn condition_number_2(matrix: [[f64; 2]; 2]) -> Option<f64> {
+    let determinant = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
+    if determinant == 0.0 {
+        return None;
+    }
+    let inverse_absolute = [
+        [matrix[1][1].abs(), matrix[0][1].abs()],
+        [matrix[1][0].abs(), matrix[0][0].abs()],
+    ];
+    let norm = |value: [[f64; 2]; 2]| {
+        value
+            .into_iter()
+            .map(|row| row.into_iter().map(f64::abs).sum::<f64>())
+            .fold(0.0, f64::max)
+    };
+    let condition = norm(matrix) * norm(inverse_absolute) / determinant.abs();
+    condition.is_finite().then_some(condition)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        condition_number, evaluate_valencia_finite_difference, parse_valencia_worker_result,
-        parse_worker_result, SymbolicaLicenseState,
+        condition_number, condition_number_2, evaluate_radiation_finite_difference,
+        evaluate_valencia_finite_difference, parse_radiation_worker_result,
+        parse_valencia_worker_result, parse_worker_result, SymbolicaLicenseState,
     };
 
     #[test]
@@ -549,6 +786,39 @@ mod tests {
     }
 
     #[test]
+    fn radiation_worker_protocol_requires_complete_finite_repository_owned_evidence() {
+        let valid = "transport-studio-radiation-v1\t1\t2\t3\t4\t5\t6\trestricted-missing";
+        let evidence = parse_radiation_worker_result(valid).unwrap();
+        assert_eq!(evidence.values, [1.0, 2.0]);
+        assert_eq!(evidence.jacobian, [[3.0, 4.0], [5.0, 6.0]]);
+        assert_eq!(
+            evidence.license_state,
+            SymbolicaLicenseState::RestrictedMissing
+        );
+        for (wire_value, expected) in [
+            ("licensed", SymbolicaLicenseState::Licensed),
+            (
+                "restricted-rejected",
+                SymbolicaLicenseState::RestrictedRejected,
+            ),
+        ] {
+            assert_eq!(
+                parse_radiation_worker_result(&valid.replace("restricted-missing", wire_value))
+                    .unwrap()
+                    .license_state,
+                expected
+            );
+        }
+        assert!(parse_radiation_worker_result("not-a-result").is_err());
+        assert!(parse_radiation_worker_result(&valid.replace("\t1", "\tNaN")).is_err());
+        assert!(parse_radiation_worker_result(&format!("{valid}\textra")).is_err());
+        assert!(parse_radiation_worker_result(&valid.replace("\t6", "")).is_err());
+        assert!(
+            parse_radiation_worker_result(&valid.replace("restricted-missing", "unknown")).is_err()
+        );
+    }
+
+    #[test]
     fn condition_estimator_matches_standard_three_by_three_invariants() {
         assert_eq!(
             condition_number(&[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
@@ -587,6 +857,14 @@ mod tests {
     }
 
     #[test]
+    fn two_by_two_condition_estimator_handles_identity_dense_and_singular_maps() {
+        assert_eq!(condition_number_2([[1.0, 0.0], [0.0, 1.0]]), Some(1.0));
+        assert_eq!(condition_number_2([[2.0, 1.0], [1.0, 3.0]]), Some(3.2));
+        assert_eq!(condition_number_2([[1.0, 2.0], [2.0, 4.0]]), None);
+        assert_eq!(condition_number_2([[f64::NAN, 0.0], [0.0, 1.0]]), None);
+    }
+
+    #[test]
     fn finite_difference_calls_the_supplied_production_maps() {
         let jacobian = evaluate_valencia_finite_difference([2.0, 3.0, 4.0], &|state| {
             let [x, y, z] = state;
@@ -601,6 +879,29 @@ mod tests {
             [0.0, 4.0, 3.0],
             [4.0, 0.0, 2.0],
         ];
+        for (actual, expected) in jacobian.iter().flatten().zip(expected.iter().flatten()) {
+            assert!((actual - expected).abs() < 1.0e-8);
+        }
+    }
+
+    #[test]
+    fn radiation_finite_difference_calls_the_supplied_production_map() {
+        let calls = std::cell::RefCell::new(Vec::new());
+        let jacobian = evaluate_radiation_finite_difference([2.0, 3.0], &|state @ [x, y]| {
+            calls.borrow_mut().push(state);
+            Ok([x * x + y, x * y])
+        })
+        .unwrap();
+        assert_eq!(
+            calls.into_inner(),
+            vec![
+                [2.0 + 2.0e-6, 3.0],
+                [2.0 - 2.0e-6, 3.0],
+                [2.0, 3.0 + 3.0e-6],
+                [2.0, 3.0 - 3.0e-6],
+            ]
+        );
+        let expected = [[4.0, 1.0], [3.0, 2.0]];
         for (actual, expected) in jacobian.iter().flatten().zip(expected.iter().flatten()) {
             assert!((actual - expected).abs() < 1.0e-8);
         }

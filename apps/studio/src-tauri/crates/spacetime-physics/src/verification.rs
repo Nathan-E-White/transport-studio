@@ -5,10 +5,12 @@
 
 use crate::kernel::{DynamicalSpacetimeKernel, EvidenceStatus, KernelConfig, KernelState};
 use crate::math_gateway;
+use crate::radiation::{close_gray_m1_moments, OrthonormalGrayRadiationMoments};
 use crate::{
-    primitive_to_conserved, recover_primitives, vec3, CoordinateTime, PrimitiveRecoveryDiagnostic,
-    PrimitiveRecoveryPolicy, TimeDuration, UniformGrid3, ValenciaGeometry, ValenciaIdealGas,
-    ValenciaPrimitive,
+    primitive_to_conserved, radiation_matter_exchange_semi_implicit, recover_primitives, vec3,
+    CoordinateTime, LocalRadiationMatterExchangeState, PrimitiveRecoveryDiagnostic,
+    PrimitiveRecoveryPolicy, RadiationMatterExchangeConfig, RadiationTransportMode, TimeDuration,
+    UniformGrid3, ValenciaGeometry, ValenciaIdealGas, ValenciaPrimitive,
 };
 
 /// Verification scenarios that can be evaluated without promoting a product solver.
@@ -17,6 +19,7 @@ pub enum VerificationProblem {
     FlatSpacetimeInvariant,
     AnalyticDerivativeIdentity,
     ValenciaJacobians,
+    GrayM1AndImexJacobians,
 }
 
 /// Caller-owned settings for one deterministic verification run.
@@ -105,6 +108,7 @@ pub struct VerificationReport {
     pub residuals: Vec<VerificationResidual>,
     pub mathematical_crosscheck: Option<MathematicalCrosscheck>,
     pub valencia_jacobians: Vec<ValenciaJacobianEvidence>,
+    pub gray_m1_imex: Vec<GrayM1ImexEvidence>,
 }
 
 /// Three independent estimates of one derivative.
@@ -144,6 +148,51 @@ pub struct JacobianMapEvidence {
     pub condition_number: f64,
 }
 
+impl JacobianMapEvidence {
+    fn passed(self, tolerance: f64) -> bool {
+        self.maximum_disagreement.is_finite()
+            && self.maximum_disagreement <= tolerance
+            && self.value_disagreement.is_finite()
+            && self.value_disagreement <= tolerance
+            && self.condition_number.is_finite()
+    }
+}
+
+/// Closure or local source evidence for one deterministic gray-M1 fixture.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct GrayM1ImexEvidence {
+    pub case_id: &'static str,
+    pub status: EvidenceStatus,
+    pub payload: GrayM1ImexPayload,
+}
+
+/// Evidence payloads keep closure, source, and rejected states unambiguous.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum GrayM1ImexPayload {
+    Closure {
+        jacobian: Option<JacobianMapEvidence>,
+        reduced_flux: f64,
+        eddington_factor: f64,
+    },
+    ImexSource {
+        jacobian: JacobianMapEvidence,
+        reduced_flux: f64,
+        eddington_factor: f64,
+        /// Positive values transfer local thermal matter energy into radiation.
+        exchanged_energy_density: f64,
+        conservation_residual: f64,
+    },
+    Rejected {
+        diagnostic_code: &'static str,
+    },
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum RadiationJacobianKind {
+    Closure,
+    ImexSource,
+}
+
 type VerificationRunner = fn(&VerificationRequest, VerificationProvenance) -> VerificationReport;
 
 struct VerificationDefinition {
@@ -166,6 +215,7 @@ pub fn run_verification(request: VerificationRequest) -> VerificationReport {
             residuals: vec![],
             mathematical_crosscheck: None,
             valencia_jacobians: vec![],
+            gray_m1_imex: vec![],
         };
     }
 
@@ -197,6 +247,14 @@ fn definition(problem: VerificationProblem) -> VerificationDefinition {
                 facts: vec![],
             },
             run: run_valencia_jacobians,
+        },
+        VerificationProblem::GrayM1AndImexJacobians => VerificationDefinition {
+            provenance: VerificationProvenance {
+                problem_id: "gray-m1-imex-jacobians",
+                model: "gray-m1-closure-local-backward-euler-exchange",
+                facts: vec![],
+            },
+            run: run_gray_m1_imex_jacobians,
         },
     }
 }
@@ -274,6 +332,7 @@ fn run_flat_spacetime_invariant(
                 residuals,
                 mathematical_crosscheck: None,
                 valencia_jacobians: vec![],
+                gray_m1_imex: vec![],
             }
         }
         Err(error) => VerificationReport {
@@ -290,6 +349,7 @@ fn run_flat_spacetime_invariant(
             residuals: vec![],
             mathematical_crosscheck: None,
             valencia_jacobians: vec![],
+            gray_m1_imex: vec![],
         },
     }
 }
@@ -313,6 +373,7 @@ fn run_analytic_derivative_identity(
             residuals: vec![],
             mathematical_crosscheck: None,
             valencia_jacobians: vec![],
+            gray_m1_imex: vec![],
         };
     };
     let tolerance = request.tolerance;
@@ -333,6 +394,7 @@ fn run_analytic_derivative_identity(
                 residuals: vec![],
                 mathematical_crosscheck: None,
                 valencia_jacobians: vec![],
+                gray_m1_imex: vec![],
             };
         }
     };
@@ -432,6 +494,7 @@ fn run_analytic_derivative_identity(
             maximum_expression_value_disagreement: result.maximum_value_disagreement,
         }),
         valencia_jacobians: vec![],
+        gray_m1_imex: vec![],
     }
 }
 
@@ -460,6 +523,7 @@ fn run_valencia_jacobians(
             residuals: vec![],
             mathematical_crosscheck: None,
             valencia_jacobians: vec![],
+            gray_m1_imex: vec![],
         };
     };
 
@@ -706,7 +770,444 @@ fn run_valencia_jacobians(
         residuals,
         mathematical_crosscheck: None,
         valencia_jacobians: cases,
+        gray_m1_imex: vec![],
     }
+}
+
+fn run_gray_m1_imex_jacobians(
+    request: &VerificationRequest,
+    mut provenance: VerificationProvenance,
+) -> VerificationReport {
+    let Some(worker_path) = request.math_worker.as_deref() else {
+        return VerificationReport {
+            status: EvidenceStatus::NotEvaluated,
+            provenance,
+            diagnostics: vec![VerificationDiagnostic {
+                code: "verification.math.worker-unavailable",
+                message: "an isolated mathematical worker was not supplied".to_string(),
+            }],
+            evidence: vec![
+                VerificationEvidence {
+                    code: "gray-m1.closure-jacobian",
+                    status: EvidenceStatus::NotEvaluated,
+                },
+                VerificationEvidence {
+                    code: "gray-m1.imex-source-jacobian",
+                    status: EvidenceStatus::NotEvaluated,
+                },
+            ],
+            residuals: vec![],
+            mathematical_crosscheck: None,
+            valencia_jacobians: vec![],
+            gray_m1_imex: vec![],
+        };
+    };
+
+    provenance.facts = vec![
+        VerificationProvenanceFact {
+            key: "symbolica.version",
+            value: "2.1.0".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "numerica.version",
+            value: "2.1.0".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "radiation.representation",
+            value: "deterministic gray-M1 moment fields".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "closure.variables",
+            value: "energy-density,orthonormal-x-flux".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "source.variables",
+            value: "matter-internal-energy-density,radiation-energy-density".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "jacobian.convention",
+            value: "rows=outputs;columns=inputs".to_string(),
+        },
+        VerificationProvenanceFact {
+            key: "finite-difference.convention",
+            value: "centered-relative-step-1e-6-floor-1".to_string(),
+        },
+    ];
+
+    let mut diagnostics = Vec::new();
+    let mut residuals = Vec::new();
+    let mut cases = Vec::new();
+    let mut license_state = None;
+
+    let intermediate_state = [2.0, 1.0];
+    match math_gateway::crosscheck_gray_m1_jacobian(
+        worker_path,
+        intermediate_state,
+        production_gray_m1_map,
+    ) {
+        Ok(result) => {
+            license_state = Some(result.symbolica_license);
+            let evidence = gateway_map_evidence(result.map);
+            let case_passed = evidence.is_some_and(|map| map.passed(request.tolerance));
+            residuals.extend(gateway_residuals(
+                RadiationJacobianKind::Closure,
+                result.map,
+                request.tolerance,
+            ));
+            match production_gray_m1(intermediate_state) {
+                Ok((reduced_flux, eddington_factor)) => cases.push(GrayM1ImexEvidence {
+                    case_id: "closure-intermediate",
+                    status: evidence_status(case_passed),
+                    payload: GrayM1ImexPayload::Closure {
+                        jacobian: evidence,
+                        reduced_flux,
+                        eddington_factor,
+                    },
+                }),
+                Err(error) => {
+                    diagnostics.push(VerificationDiagnostic {
+                        code: "verification.gray-m1.closure-failed",
+                        message: error,
+                    });
+                    cases.push(rejected_gray_m1_case(
+                        "closure-intermediate",
+                        EvidenceStatus::Failed,
+                        "verification.gray-m1.closure-failed",
+                    ));
+                }
+            }
+        }
+        Err(error) => {
+            diagnostics.push(VerificationDiagnostic {
+                code: "verification.gray-m1.symbolic-evaluation-failed",
+                message: error,
+            });
+            cases.push(rejected_gray_m1_case(
+                "closure-intermediate",
+                EvidenceStatus::Failed,
+                "verification.gray-m1.symbolic-evaluation-failed",
+            ));
+        }
+    }
+
+    for (case_id, state) in [
+        ("closure-isotropic-limit", [2.0, 0.0]),
+        ("closure-free-streaming-limit", [2.0, 2.0]),
+    ] {
+        match production_gray_m1(state) {
+            Ok((reduced_flux, eddington_factor)) => cases.push(GrayM1ImexEvidence {
+                case_id,
+                status: EvidenceStatus::Evaluated,
+                payload: GrayM1ImexPayload::Closure {
+                    jacobian: None,
+                    reduced_flux,
+                    eddington_factor,
+                },
+            }),
+            Err(error) => {
+                diagnostics.push(VerificationDiagnostic {
+                    code: "verification.gray-m1.closure-limit-failed",
+                    message: error,
+                });
+                cases.push(rejected_gray_m1_case(
+                    case_id,
+                    EvidenceStatus::Failed,
+                    "verification.gray-m1.closure-limit-failed",
+                ));
+            }
+        }
+    }
+
+    let nonphysical = [1.0, 1.1];
+    let nonphysical_rejected = production_gray_m1_map(nonphysical).is_err();
+    let (nonphysical_code, nonphysical_message) = if nonphysical_rejected {
+        (
+            "verification.gray-m1.nonphysical-state",
+            "superluminal gray-M1 flux was rejected before differentiation",
+        )
+    } else {
+        (
+            "verification.gray-m1.nonphysical-state-accepted",
+            "superluminal gray-M1 flux was incorrectly accepted",
+        )
+    };
+    diagnostics.push(VerificationDiagnostic {
+        code: nonphysical_code,
+        message: nonphysical_message.to_string(),
+    });
+    cases.push(rejected_gray_m1_case(
+        "closure-nonphysical",
+        if nonphysical_rejected {
+            EvidenceStatus::NotEvaluated
+        } else {
+            EvidenceStatus::Failed
+        },
+        nonphysical_code,
+    ));
+
+    let eos = ValenciaIdealGas { gamma: 2.0 };
+    for (case_id, state, equilibrium_energy) in [
+        ("exchange-equilibrium", [2.0, 2.0], 2.0),
+        ("exchange-stiff-emission", [5.0, 1.0], 3.0),
+        ("exchange-stiff-absorption", [2.0, 3.0], 1.0),
+    ] {
+        let interaction_rate = 100.0;
+        let timestep = 0.5;
+        let production =
+            |state| production_imex_map(state, eos, interaction_rate, timestep, equilibrium_energy);
+        match math_gateway::crosscheck_imex_source_jacobian(
+            worker_path,
+            state,
+            interaction_rate,
+            timestep,
+            equilibrium_energy,
+            production,
+        ) {
+            Ok(result) => {
+                license_state = Some(result.symbolica_license);
+                let outcome = production_imex_outcome(
+                    state,
+                    eos,
+                    interaction_rate,
+                    timestep,
+                    equilibrium_energy,
+                );
+                let evidence = gateway_map_evidence(result.map);
+                let case_passed = evidence.is_some_and(|map| map.passed(request.tolerance));
+                residuals.extend(gateway_residuals(
+                    RadiationJacobianKind::ImexSource,
+                    result.map,
+                    request.tolerance,
+                ));
+                match (outcome, evidence) {
+                    (Ok(outcome), Some(jacobian)) => cases.push(GrayM1ImexEvidence {
+                        case_id,
+                        status: evidence_status(case_passed),
+                        payload: GrayM1ImexPayload::ImexSource {
+                            jacobian,
+                            reduced_flux: 0.0,
+                            eddington_factor: isotropic_eddington_factor(),
+                            exchanged_energy_density: outcome.diagnostics.exchanged_energy_density,
+                            conservation_residual: outcome.diagnostics.conservation_residual,
+                        },
+                    }),
+                    (Err(error), _) => {
+                        diagnostics.push(VerificationDiagnostic {
+                            code: "verification.gray-m1.imex-source-failed",
+                            message: error,
+                        });
+                        cases.push(rejected_gray_m1_case(
+                            case_id,
+                            EvidenceStatus::Failed,
+                            "verification.gray-m1.imex-source-failed",
+                        ));
+                    }
+                    (Ok(_), None) => cases.push(rejected_gray_m1_case(
+                        case_id,
+                        EvidenceStatus::Failed,
+                        "verification.gray-m1.jacobian-unavailable",
+                    )),
+                }
+            }
+            Err(error) => {
+                diagnostics.push(VerificationDiagnostic {
+                    code: "verification.gray-m1.symbolic-evaluation-failed",
+                    message: error,
+                });
+                cases.push(rejected_gray_m1_case(
+                    case_id,
+                    EvidenceStatus::Failed,
+                    "verification.gray-m1.symbolic-evaluation-failed",
+                ));
+            }
+        }
+    }
+
+    let passed = gray_m1_report_passed(&cases, &residuals);
+    if let Some(license_state) = license_state {
+        provenance.facts.push(VerificationProvenanceFact {
+            key: "symbolica.license-state",
+            value: license_state.provenance_value().to_string(),
+        });
+        for &code in license_state.diagnostic_codes() {
+            diagnostics.push(VerificationDiagnostic {
+                code,
+                message: "Symbolica is operating without a confirmed license; upstream terms apply"
+                    .to_string(),
+            });
+        }
+    }
+    append_gray_m1_disagreement_diagnostic(passed, &mut diagnostics);
+    let status = evidence_status(passed);
+    VerificationReport {
+        status,
+        provenance,
+        diagnostics,
+        evidence: vec![
+            VerificationEvidence {
+                code: "gray-m1.closure-jacobian",
+                status,
+            },
+            VerificationEvidence {
+                code: "gray-m1.imex-source-jacobian",
+                status,
+            },
+        ],
+        residuals,
+        mathematical_crosscheck: None,
+        valencia_jacobians: vec![],
+        gray_m1_imex: cases,
+    }
+}
+
+fn evidence_status(passed: bool) -> EvidenceStatus {
+    if passed {
+        EvidenceStatus::Evaluated
+    } else {
+        EvidenceStatus::Failed
+    }
+}
+
+fn isotropic_eddington_factor() -> f64 {
+    1.0 / 3.0
+}
+
+fn append_gray_m1_disagreement_diagnostic(
+    passed: bool,
+    diagnostics: &mut Vec<VerificationDiagnostic>,
+) {
+    if !passed {
+        diagnostics.push(VerificationDiagnostic {
+            code: "verification.gray-m1.jacobian-disagreement",
+            message: "gray-M1 or IMEX source evidence exceeded its tolerance".to_string(),
+        });
+    }
+}
+
+fn gray_m1_report_passed(cases: &[GrayM1ImexEvidence], residuals: &[VerificationResidual]) -> bool {
+    cases
+        .iter()
+        .all(|case| case.status != EvidenceStatus::Failed)
+        && residuals.iter().all(|residual| residual.passed())
+}
+
+fn gateway_map_evidence(map: math_gateway::JacobianGatewayEvidence) -> Option<JacobianMapEvidence> {
+    map.condition_number
+        .map(|condition_number| JacobianMapEvidence {
+            maximum_disagreement: map.maximum_disagreement,
+            value_disagreement: map.value_disagreement,
+            condition_number,
+        })
+}
+
+fn gateway_residuals(
+    kind: RadiationJacobianKind,
+    map: math_gateway::JacobianGatewayEvidence,
+    tolerance: f64,
+) -> [VerificationResidual; 2] {
+    let (jacobian_code, value_code) = match kind {
+        RadiationJacobianKind::Closure => (
+            "gray-m1.closure-jacobian-disagreement",
+            "gray-m1.closure-value-disagreement",
+        ),
+        RadiationJacobianKind::ImexSource => (
+            "gray-m1.imex-source-jacobian-disagreement",
+            "gray-m1.imex-source-value-disagreement",
+        ),
+    };
+    [
+        VerificationResidual {
+            code: jacobian_code,
+            value: map.maximum_disagreement,
+            tolerance,
+        },
+        VerificationResidual {
+            code: value_code,
+            value: map.value_disagreement,
+            tolerance,
+        },
+    ]
+}
+
+fn rejected_gray_m1_case(
+    case_id: &'static str,
+    status: EvidenceStatus,
+    diagnostic_code: &'static str,
+) -> GrayM1ImexEvidence {
+    GrayM1ImexEvidence {
+        case_id,
+        status,
+        payload: GrayM1ImexPayload::Rejected { diagnostic_code },
+    }
+}
+
+fn production_gray_m1([energy, flux]: [f64; 2]) -> Result<(f64, f64), String> {
+    let closed = close_production_gray_m1([energy, flux])?;
+    Ok((
+        closed.diagnostics.reduced_flux,
+        closed.diagnostics.eddington_factor,
+    ))
+}
+
+fn close_production_gray_m1(
+    [energy, flux]: [f64; 2],
+) -> Result<crate::radiation::ClosedOrthonormalRadiationMoments, String> {
+    close_gray_m1_moments(
+        RadiationTransportMode::GrayM1,
+        OrthonormalGrayRadiationMoments::new(energy, vec3::new(flux, 0.0, 0.0)),
+    )
+    .map_err(|error| format!("production gray-M1 closure failed: {error}"))
+}
+
+fn production_gray_m1_map(state: [f64; 2]) -> Result<[f64; 2], String> {
+    let closed = close_production_gray_m1(state)?;
+    Ok([
+        closed.diagnostics.eddington_factor,
+        closed.pressure.component(0, 0),
+    ])
+}
+
+fn production_imex_map(
+    state: [f64; 2],
+    eos: ValenciaIdealGas,
+    interaction_rate: f64,
+    timestep: f64,
+    equilibrium_energy: f64,
+) -> Result<[f64; 2], String> {
+    let outcome =
+        production_imex_outcome(state, eos, interaction_rate, timestep, equilibrium_energy)?;
+    Ok([
+        outcome.state.matter.rest_mass_density * outcome.state.matter.specific_internal_energy,
+        outcome.state.radiation.energy_density,
+    ])
+}
+
+fn production_imex_outcome(
+    [matter_energy, radiation_energy]: [f64; 2],
+    eos: ValenciaIdealGas,
+    interaction_rate: f64,
+    timestep: f64,
+    equilibrium_energy: f64,
+) -> Result<crate::RadiationMatterExchangeOutcome, String> {
+    let matter = ValenciaPrimitive {
+        rest_mass_density: 1.0,
+        velocity: vec3::ZERO,
+        specific_internal_energy: matter_energy,
+        pressure: matter_energy,
+    };
+    radiation_matter_exchange_semi_implicit(
+        LocalRadiationMatterExchangeState {
+            matter,
+            radiation: OrthonormalGrayRadiationMoments::new(radiation_energy, vec3::ZERO),
+        },
+        eos,
+        RadiationMatterExchangeConfig {
+            timestep: TimeDuration::from_seconds(timestep),
+            interaction_rate,
+            equilibrium_radiation_energy_density: equilibrium_energy,
+        },
+    )
+    .map_err(|failure| format!("production IMEX source failed: {:?}", failure.diagnostics))
 }
 
 fn recovery_evidence(diagnostics: &[PrimitiveRecoveryDiagnostic]) -> ValenciaRecoveryEvidence {
@@ -761,4 +1262,91 @@ fn production_valencia_maps(state: [f64; 3], eos: ValenciaIdealGas) -> Result<[f
         flux[1],
         flux[2],
     ])
+}
+
+#[cfg(test)]
+mod gray_m1_verification_tests {
+    use super::{
+        append_gray_m1_disagreement_diagnostic, gateway_residuals, gray_m1_report_passed,
+        isotropic_eddington_factor, production_gray_m1_map, rejected_gray_m1_case,
+        JacobianMapEvidence, RadiationJacobianKind, VerificationResidual,
+    };
+    use crate::kernel::EvidenceStatus;
+    use crate::math_gateway::JacobianGatewayEvidence;
+
+    #[test]
+    fn map_and_report_acceptance_require_every_invariant() {
+        let passing = JacobianMapEvidence {
+            maximum_disagreement: 1.0e-8,
+            value_disagreement: 2.0e-8,
+            condition_number: 3.0,
+        };
+        assert!(passing.passed(1.0e-6));
+        assert!(!JacobianMapEvidence {
+            maximum_disagreement: 2.0e-6,
+            ..passing
+        }
+        .passed(1.0e-6));
+        assert!(!JacobianMapEvidence {
+            value_disagreement: 2.0e-6,
+            ..passing
+        }
+        .passed(1.0e-6));
+        assert!(!JacobianMapEvidence {
+            condition_number: f64::NAN,
+            ..passing
+        }
+        .passed(1.0e-6));
+
+        let evaluated =
+            rejected_gray_m1_case("evaluated", EvidenceStatus::Evaluated, "expected-rejection");
+        let failed = rejected_gray_m1_case("failed", EvidenceStatus::Failed, "failure");
+        let good_residual = VerificationResidual {
+            code: "good",
+            value: 0.0,
+            tolerance: 0.0,
+        };
+        let bad_residual = VerificationResidual {
+            code: "bad",
+            value: 1.0,
+            tolerance: 0.0,
+        };
+        assert!(gray_m1_report_passed(
+            std::slice::from_ref(&evaluated),
+            &[good_residual]
+        ));
+        assert!(!gray_m1_report_passed(&[failed], &[good_residual]));
+        assert!(!gray_m1_report_passed(&[evaluated], &[bad_residual]));
+    }
+
+    #[test]
+    fn closure_and_source_residuals_keep_distinct_stable_codes() {
+        let map = JacobianGatewayEvidence {
+            maximum_disagreement: 1.0,
+            value_disagreement: 2.0,
+            condition_number: Some(3.0),
+        };
+        let closure = gateway_residuals(RadiationJacobianKind::Closure, map, 4.0);
+        assert_eq!(closure[0].code, "gray-m1.closure-jacobian-disagreement");
+        assert_eq!(closure[1].code, "gray-m1.closure-value-disagreement");
+        let source = gateway_residuals(RadiationJacobianKind::ImexSource, map, 4.0);
+        assert_eq!(source[0].code, "gray-m1.imex-source-jacobian-disagreement");
+        assert_eq!(source[1].code, "gray-m1.imex-source-value-disagreement");
+
+        assert_eq!(isotropic_eddington_factor(), 1.0 / 3.0);
+        let mut diagnostics = Vec::new();
+        append_gray_m1_disagreement_diagnostic(true, &mut diagnostics);
+        assert!(diagnostics.is_empty());
+        append_gray_m1_disagreement_diagnostic(false, &mut diagnostics);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].code,
+            "verification.gray-m1.jacobian-disagreement"
+        );
+
+        let production = production_gray_m1_map([2.0, 1.0]).unwrap();
+        assert!(production[0] > 1.0 / 3.0 && production[0] < 1.0);
+        assert!((production[1] - 2.0 * production[0]).abs() < 1.0e-14);
+        assert!(production_gray_m1_map([1.0, 1.1]).is_err());
+    }
 }
