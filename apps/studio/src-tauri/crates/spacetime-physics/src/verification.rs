@@ -6,6 +6,7 @@
 use crate::kernel::{DynamicalSpacetimeKernel, EvidenceStatus, KernelConfig, KernelState};
 use crate::math_gateway;
 use crate::radiation::{close_gray_m1_moments, OrthonormalGrayRadiationMoments};
+use crate::shock_tube;
 use crate::{
     primitive_to_conserved, radiation_matter_exchange_semi_implicit, recover_primitives, vec3,
     CoordinateTime, LocalRadiationMatterExchangeState, PrimitiveRecoveryDiagnostic,
@@ -20,6 +21,7 @@ pub enum VerificationProblem {
     AnalyticDerivativeIdentity,
     ValenciaJacobians,
     GrayM1AndImexJacobians,
+    FlatRelativisticShockTube,
 }
 
 /// Caller-owned settings for one deterministic verification run.
@@ -109,6 +111,70 @@ pub struct VerificationReport {
     pub mathematical_crosscheck: Option<MathematicalCrosscheck>,
     pub valencia_jacobians: Vec<ValenciaJacobianEvidence>,
     pub gray_m1_imex: Vec<GrayM1ImexEvidence>,
+    pub flat_shock_tube: Option<FlatShockTubeEvidence>,
+}
+
+/// Typed evidence for the deterministic flat-spacetime shock-tube ladder.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlatShockTubeEvidence {
+    pub fixture: FlatShockTubeFixture,
+    pub resolutions: Vec<FlatShockTubeResolutionEvidence>,
+    pub finest_profile: Vec<FlatShockTubeCellEvidence>,
+    pub convergence: FlatShockTubeConvergenceEvidence,
+    pub limiting_cases: FlatShockTubeLimitingCases,
+}
+
+/// Repository-owned definition of the left and right shock-tube states.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct FlatShockTubeFixture {
+    pub left_density: f64,
+    pub left_pressure: f64,
+    pub left_velocity: f64,
+    pub right_density: f64,
+    pub right_pressure: f64,
+    pub right_velocity: f64,
+}
+
+/// Aggregate numerical evidence for one member of the resolution series.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct FlatShockTubeResolutionEvidence {
+    pub cell_count: usize,
+    pub steps: usize,
+    pub recovery_attempts: usize,
+    pub recovery_iterations: usize,
+    pub corrected_recoveries: usize,
+    pub failed_recoveries: usize,
+    pub mass_conservation_residual: f64,
+    pub momentum_conservation_residual: f64,
+    pub energy_conservation_residual: f64,
+}
+
+/// Primitive and conservative state at one cell center on the finest grid.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct FlatShockTubeCellEvidence {
+    pub position: f64,
+    pub density: f64,
+    pub pressure: f64,
+    pub velocity: f64,
+    pub lorentz_factor: f64,
+    pub conserved_rest_mass: f64,
+    pub conserved_momentum: f64,
+    pub conserved_energy: f64,
+}
+
+/// Restriction-based density self-convergence evidence.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct FlatShockTubeConvergenceEvidence {
+    pub coarse_to_medium_l1: f64,
+    pub medium_to_fine_l1: f64,
+    pub observed_order: f64,
+}
+
+/// Explicit limiting-case evidence for this hydrodynamics-only problem.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct FlatShockTubeLimitingCases {
+    pub maximum_radiation_energy: f64,
+    pub maximum_opacity: f64,
 }
 
 /// Three independent estimates of one derivative.
@@ -216,6 +282,7 @@ pub fn run_verification(request: VerificationRequest) -> VerificationReport {
             mathematical_crosscheck: None,
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
+            flat_shock_tube: None,
         };
     }
 
@@ -255,6 +322,152 @@ fn definition(problem: VerificationProblem) -> VerificationDefinition {
                 facts: vec![],
             },
             run: run_gray_m1_imex_jacobians,
+        },
+        VerificationProblem::FlatRelativisticShockTube => VerificationDefinition {
+            provenance: VerificationProvenance {
+                problem_id: "flat-relativistic-shock-tube",
+                model: "minkowski-valencia-rusanov-shock-tube",
+                facts: vec![
+                    VerificationProvenanceFact {
+                        key: "units",
+                        value: "normalized-c=1".to_string(),
+                    },
+                    VerificationProvenanceFact {
+                        key: "domain",
+                        value: "[-0.5,0.5]".to_string(),
+                    },
+                    VerificationProvenanceFact {
+                        key: "boundary-policy",
+                        value: "fixed-end-cells".to_string(),
+                    },
+                    VerificationProvenanceFact {
+                        key: "final-time",
+                        value: "0.1".to_string(),
+                    },
+                    VerificationProvenanceFact {
+                        key: "resolution-series",
+                        value: "32,64,128".to_string(),
+                    },
+                ],
+            },
+            run: run_flat_relativistic_shock_tube,
+        },
+    }
+}
+
+fn run_flat_relativistic_shock_tube(
+    request: &VerificationRequest,
+    provenance: VerificationProvenance,
+) -> VerificationReport {
+    match shock_tube::run_flat_relativistic_shock_tube() {
+        Ok(evidence) => {
+            let residuals = evidence
+                .resolutions
+                .iter()
+                .flat_map(|resolution| {
+                    [
+                        VerificationResidual {
+                            code: "shock-tube.mass-conservation",
+                            value: resolution.mass_conservation_residual,
+                            tolerance: request.tolerance,
+                        },
+                        VerificationResidual {
+                            code: "shock-tube.momentum-conservation",
+                            value: resolution.momentum_conservation_residual,
+                            tolerance: request.tolerance,
+                        },
+                        VerificationResidual {
+                            code: "shock-tube.energy-conservation",
+                            value: resolution.energy_conservation_residual,
+                            tolerance: request.tolerance,
+                        },
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let recovery_passed = evidence.resolutions.iter().all(|resolution| {
+                resolution.corrected_recoveries == 0 && resolution.failed_recoveries == 0
+            });
+            let convergence_passed = evidence.convergence.coarse_to_medium_l1.is_finite()
+                && evidence.convergence.medium_to_fine_l1.is_finite()
+                && evidence.convergence.observed_order.is_finite()
+                && evidence.convergence.coarse_to_medium_l1 > 0.0
+                && evidence.convergence.medium_to_fine_l1 > 0.0
+                && evidence.convergence.medium_to_fine_l1
+                    < evidence.convergence.coarse_to_medium_l1
+                && evidence.convergence.observed_order > 0.0;
+            let residuals_passed = residuals.iter().all(|residual| residual.passed());
+            let passed = recovery_passed && convergence_passed && residuals_passed;
+            let status = evidence_status(passed);
+            let mut diagnostics = Vec::new();
+            if !recovery_passed {
+                diagnostics.push(VerificationDiagnostic {
+                    code: "verification.shock-tube.primitive-recovery-failed",
+                    message:
+                        "shock-tube evolution required a corrective or failed primitive recovery"
+                            .to_string(),
+                });
+            }
+            if !convergence_passed {
+                diagnostics.push(VerificationDiagnostic {
+                    code: "verification.shock-tube.self-convergence-failed",
+                    message: "shock-tube density profile did not self-converge".to_string(),
+                });
+            }
+            if !residuals_passed {
+                diagnostics.push(VerificationDiagnostic {
+                    code: "verification.shock-tube.conservation-failed",
+                    message: "shock-tube conservation residual exceeded tolerance".to_string(),
+                });
+            }
+            VerificationReport {
+                status,
+                provenance,
+                diagnostics,
+                evidence: vec![
+                    VerificationEvidence {
+                        code: "shock-tube.profiles",
+                        status,
+                    },
+                    VerificationEvidence {
+                        code: "shock-tube.primitive-recovery",
+                        status: evidence_status(recovery_passed),
+                    },
+                    VerificationEvidence {
+                        code: "shock-tube.self-convergence",
+                        status: evidence_status(convergence_passed),
+                    },
+                    VerificationEvidence {
+                        code: "shock-tube.zero-radiation-limit",
+                        status: EvidenceStatus::Evaluated,
+                    },
+                    VerificationEvidence {
+                        code: "shock-tube.zero-opacity-limit",
+                        status: EvidenceStatus::Evaluated,
+                    },
+                ],
+                residuals,
+                mathematical_crosscheck: None,
+                valencia_jacobians: vec![],
+                gray_m1_imex: vec![],
+                flat_shock_tube: Some(evidence),
+            }
+        }
+        Err(error) => VerificationReport {
+            status: EvidenceStatus::Failed,
+            provenance,
+            diagnostics: vec![VerificationDiagnostic {
+                code: "verification.shock-tube.execution-failed",
+                message: error,
+            }],
+            evidence: vec![VerificationEvidence {
+                code: "shock-tube.profiles",
+                status: EvidenceStatus::Failed,
+            }],
+            residuals: vec![],
+            mathematical_crosscheck: None,
+            valencia_jacobians: vec![],
+            gray_m1_imex: vec![],
+            flat_shock_tube: None,
         },
     }
 }
@@ -333,6 +546,7 @@ fn run_flat_spacetime_invariant(
                 mathematical_crosscheck: None,
                 valencia_jacobians: vec![],
                 gray_m1_imex: vec![],
+                flat_shock_tube: None,
             }
         }
         Err(error) => VerificationReport {
@@ -350,6 +564,7 @@ fn run_flat_spacetime_invariant(
             mathematical_crosscheck: None,
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
+            flat_shock_tube: None,
         },
     }
 }
@@ -374,6 +589,7 @@ fn run_analytic_derivative_identity(
             mathematical_crosscheck: None,
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
+            flat_shock_tube: None,
         };
     };
     let tolerance = request.tolerance;
@@ -395,6 +611,7 @@ fn run_analytic_derivative_identity(
                 mathematical_crosscheck: None,
                 valencia_jacobians: vec![],
                 gray_m1_imex: vec![],
+                flat_shock_tube: None,
             };
         }
     };
@@ -495,6 +712,7 @@ fn run_analytic_derivative_identity(
         }),
         valencia_jacobians: vec![],
         gray_m1_imex: vec![],
+        flat_shock_tube: None,
     }
 }
 
@@ -524,6 +742,7 @@ fn run_valencia_jacobians(
             mathematical_crosscheck: None,
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
+            flat_shock_tube: None,
         };
     };
 
@@ -771,6 +990,7 @@ fn run_valencia_jacobians(
         mathematical_crosscheck: None,
         valencia_jacobians: cases,
         gray_m1_imex: vec![],
+        flat_shock_tube: None,
     }
 }
 
@@ -800,6 +1020,7 @@ fn run_gray_m1_imex_jacobians(
             mathematical_crosscheck: None,
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
+            flat_shock_tube: None,
         };
     };
 
@@ -1057,6 +1278,7 @@ fn run_gray_m1_imex_jacobians(
         mathematical_crosscheck: None,
         valencia_jacobians: vec![],
         gray_m1_imex: cases,
+        flat_shock_tube: None,
     }
 }
 

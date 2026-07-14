@@ -148,6 +148,8 @@ pub enum PrimitiveRecoveryDiagnostic {
 pub struct PrimitiveRecoveryOutcome {
     pub primitive: ValenciaPrimitive,
     pub diagnostics: Vec<PrimitiveRecoveryDiagnostic>,
+    /// Total Newton and fallback iterations used by this recovery attempt.
+    pub iterations: usize,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, thiserror::Error)]
@@ -239,7 +241,9 @@ pub fn recover_primitives<E: ValenciaEquationOfState>(
         .pressure_floor
         .max(0.1 * conserved.energy_excluding_rest_mass.max(0.0));
     let mut converged = false;
+    let mut iterations = 0;
     for _ in 0..policy.max_iterations {
+        iterations += 1;
         let residual = match recovery_residual(conserved, d, pressure, eos, geometry, policy) {
             Ok(value) => value,
             Err(RecoveryResidualFailure::EquationOfState) => {
@@ -279,16 +283,19 @@ pub fn recover_primitives<E: ValenciaEquationOfState>(
     } else {
         diagnostics.push(PrimitiveRecoveryDiagnostic::BisectionFallback);
         let recovered = match bisection_pressure(conserved, d, eos, geometry, policy) {
-            Ok(Some(value)) => value,
+            Ok(Some((value, fallback_iterations))) => {
+                iterations += fallback_iterations;
+                value
+            }
             Ok(None) | Err(RecoveryResidualFailure::UnphysicalState) => {
-                return Ok(atmosphere_with(policy, eos, diagnostics));
+                return Ok(atmosphere_with(policy, eos, diagnostics, iterations));
             }
             Err(RecoveryResidualFailure::EquationOfState) => {
                 push_once(
                     &mut diagnostics,
                     PrimitiveRecoveryDiagnostic::EquationOfStateOutOfBounds,
                 );
-                return Ok(atmosphere_with(policy, eos, diagnostics));
+                return Ok(atmosphere_with(policy, eos, diagnostics, iterations));
             }
         };
         pressure = recovered;
@@ -301,6 +308,7 @@ pub fn recover_primitives<E: ValenciaEquationOfState>(
         geometry,
         policy,
         diagnostics.clone(),
+        iterations,
     )
     .unwrap_or_else(|| {
         push_once(
@@ -308,7 +316,7 @@ pub fn recover_primitives<E: ValenciaEquationOfState>(
             PrimitiveRecoveryDiagnostic::EquationOfStateOutOfBounds,
         );
         diagnostics.push(PrimitiveRecoveryDiagnostic::AtmosphereApplied);
-        atmosphere_with(policy, eos, diagnostics)
+        atmosphere_with(policy, eos, diagnostics, iterations)
     }))
 }
 
@@ -353,7 +361,7 @@ fn bisection_pressure<E: ValenciaEquationOfState>(
     eos: E,
     geometry: ValenciaGeometry,
     policy: PrimitiveRecoveryPolicy,
-) -> Result<Option<f64>, RecoveryResidualFailure> {
+) -> Result<Option<(f64, usize)>, RecoveryResidualFailure> {
     let mut lower_pressure = policy.pressure_floor;
     let momentum_norm = conserved
         .momentum_density
@@ -372,12 +380,12 @@ fn bisection_pressure<E: ValenciaEquationOfState>(
     if lower_residual.signum() == upper_residual.signum() {
         return Ok(None);
     }
-    for _ in 0..64 {
+    for iteration in 1..=64 {
         let midpoint = 0.5 * (lower_pressure + upper_pressure);
         let midpoint_residual =
             recovery_residual(conserved, rest_mass, midpoint, eos, geometry, policy)?;
         if midpoint_residual.abs() <= policy.tolerance {
-            return Ok(Some(midpoint));
+            return Ok(Some((midpoint, iteration)));
         }
         if lower_residual.signum() == midpoint_residual.signum() {
             lower_pressure = midpoint;
@@ -386,7 +394,7 @@ fn bisection_pressure<E: ValenciaEquationOfState>(
             upper_pressure = midpoint;
         }
     }
-    Ok(Some(0.5 * (lower_pressure + upper_pressure)))
+    Ok(Some((0.5 * (lower_pressure + upper_pressure), 64)))
 }
 
 fn finish_recovery<E: ValenciaEquationOfState>(
@@ -397,6 +405,7 @@ fn finish_recovery<E: ValenciaEquationOfState>(
     geometry: ValenciaGeometry,
     policy: PrimitiveRecoveryPolicy,
     mut diagnostics: Vec<PrimitiveRecoveryDiagnostic>,
+    iterations: usize,
 ) -> Option<PrimitiveRecoveryOutcome> {
     if pressure < policy.pressure_floor {
         pressure = policy.pressure_floor;
@@ -433,6 +442,7 @@ fn finish_recovery<E: ValenciaEquationOfState>(
             pressure: recovered_pressure,
         },
         diagnostics,
+        iterations,
     })
 }
 
@@ -490,12 +500,14 @@ fn atmosphere<E: ValenciaEquationOfState>(
         policy,
         eos,
         vec![diagnostic, PrimitiveRecoveryDiagnostic::AtmosphereApplied],
+        0,
     )
 }
 fn atmosphere_with<E: ValenciaEquationOfState>(
     policy: PrimitiveRecoveryPolicy,
     eos: E,
     mut diagnostics: Vec<PrimitiveRecoveryDiagnostic>,
+    iterations: usize,
 ) -> PrimitiveRecoveryOutcome {
     if !diagnostics.contains(&PrimitiveRecoveryDiagnostic::AtmosphereApplied) {
         diagnostics.push(PrimitiveRecoveryDiagnostic::AtmosphereApplied);
@@ -522,5 +534,6 @@ fn atmosphere_with<E: ValenciaEquationOfState>(
             pressure,
         },
         diagnostics,
+        iterations,
     }
 }
