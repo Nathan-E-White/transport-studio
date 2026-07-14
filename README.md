@@ -16,6 +16,13 @@ The goal is to provide game-engine-like authoring and visualization for transpor
 
 Editor scene, render scene, compiled simulation problem, and result stream are separate concepts.
 
+## Third-party software
+
+Transport Studio currently links mathematical verification components in normal
+builds and acts as their integration gateway; use of the verification problems
+is optional. Review the
+[third-party notices](THIRD_PARTY_NOTICES.md) before using those integrations.
+
 
 ## Frontend beef-up pass
 

@@ -11,6 +11,7 @@ mod grid;
 mod grid_metric_adapter;
 mod io;
 pub mod kernel;
+mod math_gateway;
 mod matter;
 mod metric;
 mod numerics;

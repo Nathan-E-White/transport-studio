@@ -6,10 +6,18 @@ edition = "2024"
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "spacetime-math-worker"
+path = "src/bin/spacetime_math_worker.rs"
+
 [dependencies]
 ndarray = { version = "0.16", features = ["serde", "rayon"] }
+numerica = { version = "=2.1.0", default-features = false, features = ["no_gmp"] }
+rand = "0.9"
 rayon = "1.10"
 serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
+symbolica = { version = "=2.1.0", default-features = false, features = ["no_gmp"] }
 thiserror = "2.0"
 
 [dev-dependencies]
