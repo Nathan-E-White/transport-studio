@@ -1,6 +1,6 @@
 use approx::assert_abs_diff_eq;
-use spacetime_physics::radiation::OrthonormalGrayRadiationMoments;
-use spacetime_physics::{
+use spacetime_physics::expert::radiation::OrthonormalGrayRadiationMoments;
+use spacetime_physics::expert::{
     AlgebraicBssnGaugeEnforcer, BoundaryConditions3, BssnGeometryStepper, BssnGridFields,
     BssnSourcePath, ConservativeMatterCell, ConservativeMatterGrid, ConstraintDiagnosticsOperator,
     ControlledToyBssnSourceStepper, CoordinateChartKind, CoordinateTime, CoupledBssnMatterState,

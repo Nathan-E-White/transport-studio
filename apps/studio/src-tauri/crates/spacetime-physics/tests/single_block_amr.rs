@@ -1,8 +1,8 @@
-use spacetime_physics::PhysicsError;
-use spacetime_physics::amr::{
+use spacetime_physics::expert::PhysicsError;
+use spacetime_physics::expert::amr::{
     AmrAdapterError, AmrBlockId, BlockCellIndex, RefinementLevel, SingleBlockAmrAdapter,
 };
-use spacetime_physics::{GridField3, UniformGrid3, vec3};
+use spacetime_physics::expert::{GridField3, UniformGrid3, vec3};
 
 #[test]
 fn root_block_matches_uniform_grid_indexing_and_field_access() {

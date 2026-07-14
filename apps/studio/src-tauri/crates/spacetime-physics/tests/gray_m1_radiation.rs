@@ -1,10 +1,10 @@
 use approx::assert_abs_diff_eq;
-use spacetime_physics::radiation::{
+use spacetime_physics::expert::radiation::{
     InvalidRadiationStateReason, OrthonormalGrayRadiationMoments, RadiationAngularRegime,
     RadiationClosureDiagnostic, RadiationClosurePolicy, RadiationTransportMode,
     close_gray_m1_moments,
 };
-use spacetime_physics::vec3;
+use spacetime_physics::expert::vec3;
 
 #[test]
 fn optically_thick_m1_limit_is_isotropic() {
