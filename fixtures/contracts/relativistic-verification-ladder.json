@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.0.0",
+  "contractVersion": "1.1.0",
   "requiredCommand": "cargo test -p spacetime-physics",
   "tiers": [
     {
@@ -45,6 +45,26 @@
           "evidenceTest": "intermediate_m1_closure_preserves_energy_as_the_pressure_trace"
         },
         {
+          "seam": "relativistic-radiative-shock-tube",
+          "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/verification_problem.rs",
+          "evidenceTest": "radiative_shock_tube_reports_four_coupled_limits_and_mathematical_evidence",
+          "verificationProblemId": "relativistic-radiative-shock-tube",
+          "fixtureIds": [
+            "hydrodynamic-limit",
+            "equilibrium",
+            "optically-thin",
+            "optically-thick"
+          ],
+          "evidenceCodes": [
+            "radiative-shock.primitive-recovery",
+            "radiative-shock.realizability",
+            "radiative-shock.total-conservation",
+            "radiative-shock.self-convergence",
+            "radiative-shock.bounded-imex",
+            "radiative-shock.mathematical-crosscheck"
+          ]
+        },
+        {
           "seam": "amr-single-block-adapter",
           "path": "apps/studio/src-tauri/crates/spacetime-physics/tests/single_block_amr.rs",
           "evidenceTest": "root_block_matches_uniform_grid_indexing_and_field_access"
@@ -87,6 +107,7 @@
     "solverId": "relativistic-multiphysics",
     "currentStatus": "blocked",
     "requiredTierIds": ["crate-tests", "fixed-background", "coupled-toy"],
-    "unlockCondition": "all-required-tiers-pass-and-explicit-capability-review"
+    "unlockCondition": "all-required-tiers-pass-and-explicit-capability-review",
+    "capabilityReviewIssuePolicy": "separate-issue-required-before-product-promotion"
   }
 }
