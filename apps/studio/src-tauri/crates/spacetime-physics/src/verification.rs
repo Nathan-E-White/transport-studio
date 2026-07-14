@@ -5,13 +5,14 @@
 
 use crate::kernel::{DynamicalSpacetimeKernel, EvidenceStatus, KernelConfig, KernelState};
 use crate::math_gateway;
-use crate::radiation::{close_gray_m1_moments, OrthonormalGrayRadiationMoments};
+use crate::radiation::{OrthonormalGrayRadiationMoments, close_gray_m1_moments};
+use crate::radiative_shock_tube;
 use crate::shock_tube;
 use crate::{
-    primitive_to_conserved, radiation_matter_exchange_semi_implicit, recover_primitives, vec3,
     CoordinateTime, LocalRadiationMatterExchangeState, PrimitiveRecoveryDiagnostic,
     PrimitiveRecoveryPolicy, RadiationMatterExchangeConfig, RadiationTransportMode, TimeDuration,
-    UniformGrid3, ValenciaGeometry, ValenciaIdealGas, ValenciaPrimitive,
+    UniformGrid3, ValenciaGeometry, ValenciaIdealGas, ValenciaPrimitive, primitive_to_conserved,
+    radiation_matter_exchange_semi_implicit, recover_primitives, vec3,
 };
 
 /// Verification scenarios that can be evaluated without promoting a product solver.
@@ -22,6 +23,7 @@ pub enum VerificationProblem {
     ValenciaJacobians,
     GrayM1AndImexJacobians,
     FlatRelativisticShockTube,
+    RelativisticRadiativeShockTube,
 }
 
 /// Caller-owned settings for one deterministic verification run.
@@ -112,6 +114,7 @@ pub struct VerificationReport {
     pub valencia_jacobians: Vec<ValenciaJacobianEvidence>,
     pub gray_m1_imex: Vec<GrayM1ImexEvidence>,
     pub flat_shock_tube: Option<FlatShockTubeEvidence>,
+    pub radiative_shock_tube: Option<RadiativeShockTubeEvidence>,
 }
 
 /// Typed evidence for the deterministic flat-spacetime shock-tube ladder.
@@ -175,6 +178,51 @@ pub struct FlatShockTubeConvergenceEvidence {
 pub struct FlatShockTubeLimitingCases {
     pub maximum_radiation_energy: f64,
     pub maximum_opacity: f64,
+}
+
+/// Four limiting-regime reports for the coupled radiative shock tube.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RadiativeShockTubeEvidence {
+    pub fixtures: Vec<RadiativeShockTubeFixtureEvidence>,
+}
+
+/// One deterministic opacity/exchange regime of the coupled problem.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RadiativeShockTubeFixtureEvidence {
+    pub case_id: &'static str,
+    pub status: EvidenceStatus,
+    pub interaction_rate: f64,
+    pub equilibrium_radiation_energy: f64,
+    pub maximum_exchange: f64,
+    pub resolutions: Vec<RadiativeShockTubeResolutionEvidence>,
+    pub finest_profile: Vec<RadiativeShockTubeCellEvidence>,
+    pub density_convergence: FlatShockTubeConvergenceEvidence,
+}
+
+/// Aggregate recovery, realizability, and conservation evidence at one resolution.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct RadiativeShockTubeResolutionEvidence {
+    pub cell_count: usize,
+    pub steps: usize,
+    pub recovery_attempts: usize,
+    pub recovery_iterations: usize,
+    pub failed_recoveries: usize,
+    pub bounded_exchange_backoffs: usize,
+    pub maximum_backoff_exponent: usize,
+    pub maximum_reduced_flux: f64,
+    pub rest_mass_conservation_residual: f64,
+    pub total_energy_conservation_residual: f64,
+    pub total_momentum_conservation_residual: f64,
+}
+
+/// Matter and gray-M1 state at one finest-grid cell center.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct RadiativeShockTubeCellEvidence {
+    pub matter: FlatShockTubeCellEvidence,
+    pub radiation_energy: f64,
+    pub radiation_flux: f64,
+    pub radiation_pressure: f64,
+    pub reduced_flux: f64,
 }
 
 /// Three independent estimates of one derivative.
@@ -283,6 +331,7 @@ pub fn run_verification(request: VerificationRequest) -> VerificationReport {
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
             flat_shock_tube: None,
+            radiative_shock_tube: None,
         };
     }
 
@@ -352,7 +401,246 @@ fn definition(problem: VerificationProblem) -> VerificationDefinition {
             },
             run: run_flat_relativistic_shock_tube,
         },
+        VerificationProblem::RelativisticRadiativeShockTube => VerificationDefinition {
+            provenance: VerificationProvenance {
+                problem_id: "relativistic-radiative-shock-tube",
+                model: "minkowski-valencia-gray-m1-bounded-imex-shock-tube",
+                facts: vec![
+                    VerificationProvenanceFact {
+                        key: "units",
+                        value: "normalized-c=1".to_string(),
+                    },
+                    VerificationProvenanceFact {
+                        key: "domain",
+                        value: "[-0.5,0.5]".to_string(),
+                    },
+                    VerificationProvenanceFact {
+                        key: "boundary-policy",
+                        value: "fixed-end-cells".to_string(),
+                    },
+                    VerificationProvenanceFact {
+                        key: "final-time",
+                        value: "0.1".to_string(),
+                    },
+                    VerificationProvenanceFact {
+                        key: "resolution-series",
+                        value: "32,64,128".to_string(),
+                    },
+                    VerificationProvenanceFact {
+                        key: "coupling-policy",
+                        value: "stationary-imex-request-conservative-moving-state-projection"
+                            .to_string(),
+                    },
+                ],
+            },
+            run: run_relativistic_radiative_shock_tube,
+        },
     }
+}
+
+fn run_relativistic_radiative_shock_tube(
+    request: &VerificationRequest,
+    mut provenance: VerificationProvenance,
+) -> VerificationReport {
+    let mut physics = match radiative_shock_tube::run_relativistic_radiative_shock_tube() {
+        Ok(physics) => physics,
+        Err(error) => {
+            return VerificationReport {
+                status: EvidenceStatus::Failed,
+                provenance,
+                diagnostics: vec![VerificationDiagnostic {
+                    code: "verification.radiative-shock.execution-failed",
+                    message: error,
+                }],
+                evidence: vec![],
+                residuals: vec![],
+                mathematical_crosscheck: None,
+                valencia_jacobians: vec![],
+                gray_m1_imex: vec![],
+                flat_shock_tube: None,
+                radiative_shock_tube: None,
+            };
+        }
+    };
+    let math_provenance = definition(VerificationProblem::GrayM1AndImexJacobians).provenance;
+    let math_report = run_gray_m1_imex_jacobians(request, math_provenance);
+    provenance
+        .facts
+        .extend(math_report.provenance.facts.clone());
+
+    let mut residuals = math_report.residuals.clone();
+    for fixture in &physics.fixtures {
+        for resolution in &fixture.resolutions {
+            residuals.extend([
+                VerificationResidual {
+                    code: "radiative-shock.rest-mass-conservation",
+                    value: resolution.rest_mass_conservation_residual,
+                    tolerance: request.tolerance,
+                },
+                VerificationResidual {
+                    code: "radiative-shock.total-energy-conservation",
+                    value: resolution.total_energy_conservation_residual,
+                    tolerance: request.tolerance,
+                },
+                VerificationResidual {
+                    code: "radiative-shock.total-momentum-conservation",
+                    value: resolution.total_momentum_conservation_residual,
+                    tolerance: request.tolerance,
+                },
+            ]);
+        }
+    }
+    let recovery_passed = physics.fixtures.iter().all(radiative_recovery_passed);
+    let realizability_passed = physics.fixtures.iter().all(radiative_realizability_passed);
+    let conservation_passed = physics
+        .fixtures
+        .iter()
+        .all(|fixture| radiative_conservation_passed(fixture, request.tolerance));
+    let convergence_passed = physics.fixtures.iter().all(radiative_convergence_passed);
+    let bounded_imex_passed = radiative_bounded_imex_passed(&physics);
+    let fixture_acceptance = physics
+        .fixtures
+        .iter()
+        .map(|fixture| radiative_fixture_passed(fixture, request.tolerance))
+        .collect::<Vec<_>>();
+    let physics_passed = fixture_acceptance.iter().all(|&passed| passed) && bounded_imex_passed;
+    for (fixture, passed) in physics.fixtures.iter_mut().zip(fixture_acceptance) {
+        fixture.status = evidence_status(passed);
+    }
+    let status = if physics_passed && math_report.status == EvidenceStatus::Evaluated {
+        EvidenceStatus::Evaluated
+    } else if physics_passed && math_report.status == EvidenceStatus::NotEvaluated {
+        EvidenceStatus::NotEvaluated
+    } else {
+        EvidenceStatus::Failed
+    };
+    let mut diagnostics = math_report.diagnostics;
+    if !physics_passed {
+        diagnostics.push(VerificationDiagnostic {
+            code: "verification.radiative-shock.evidence-failed",
+            message: "radiative shock-tube evidence failed realizability, conservation, recovery, convergence, or bounded IMEX behavior"
+                .to_string(),
+        });
+    }
+    let mut evidence = physics
+        .fixtures
+        .iter()
+        .map(|fixture| VerificationEvidence {
+            code: match fixture.case_id {
+                "hydrodynamic-limit" => "radiative-shock.hydrodynamic-limit",
+                "equilibrium" => "radiative-shock.equilibrium",
+                "optically-thin" => "radiative-shock.optically-thin",
+                "optically-thick" => "radiative-shock.optically-thick",
+                _ => "radiative-shock.unknown-fixture",
+            },
+            status: fixture.status,
+        })
+        .collect::<Vec<_>>();
+    evidence.extend([
+        VerificationEvidence {
+            code: "radiative-shock.primitive-recovery",
+            status: evidence_status(recovery_passed),
+        },
+        VerificationEvidence {
+            code: "radiative-shock.realizability",
+            status: evidence_status(realizability_passed),
+        },
+        VerificationEvidence {
+            code: "radiative-shock.total-conservation",
+            status: evidence_status(conservation_passed),
+        },
+        VerificationEvidence {
+            code: "radiative-shock.self-convergence",
+            status: evidence_status(convergence_passed),
+        },
+        VerificationEvidence {
+            code: "radiative-shock.bounded-imex",
+            status: evidence_status(bounded_imex_passed),
+        },
+        VerificationEvidence {
+            code: "radiative-shock.mathematical-crosscheck",
+            status: math_report.status,
+        },
+    ]);
+    VerificationReport {
+        status,
+        provenance,
+        diagnostics,
+        evidence,
+        residuals,
+        mathematical_crosscheck: None,
+        valencia_jacobians: vec![],
+        gray_m1_imex: math_report.gray_m1_imex,
+        flat_shock_tube: None,
+        radiative_shock_tube: Some(physics),
+    }
+}
+
+fn radiative_fixture_passed(fixture: &RadiativeShockTubeFixtureEvidence, tolerance: f64) -> bool {
+    fixture.status == EvidenceStatus::Evaluated
+        && radiative_recovery_passed(fixture)
+        && radiative_realizability_passed(fixture)
+        && radiative_conservation_passed(fixture, tolerance)
+        && radiative_convergence_passed(fixture)
+}
+
+#[cfg(test)]
+fn radiative_resolution_passed(
+    resolution: &RadiativeShockTubeResolutionEvidence,
+    tolerance: f64,
+) -> bool {
+    resolution.failed_recoveries == 0
+        && resolution.maximum_reduced_flux.is_finite()
+        && resolution.maximum_reduced_flux <= 1.0
+        && resolution.rest_mass_conservation_residual.abs() <= tolerance
+        && resolution.total_energy_conservation_residual.abs() <= tolerance
+        && resolution.total_momentum_conservation_residual.abs() <= tolerance
+}
+
+fn radiative_recovery_passed(fixture: &RadiativeShockTubeFixtureEvidence) -> bool {
+    fixture
+        .resolutions
+        .iter()
+        .all(|resolution| resolution.failed_recoveries == 0)
+}
+
+fn radiative_realizability_passed(fixture: &RadiativeShockTubeFixtureEvidence) -> bool {
+    fixture.resolutions.iter().all(|resolution| {
+        resolution.maximum_reduced_flux.is_finite() && resolution.maximum_reduced_flux <= 1.0
+    })
+}
+
+fn radiative_conservation_passed(
+    fixture: &RadiativeShockTubeFixtureEvidence,
+    tolerance: f64,
+) -> bool {
+    fixture.resolutions.iter().all(|resolution| {
+        resolution.rest_mass_conservation_residual.abs() <= tolerance
+            && resolution.total_energy_conservation_residual.abs() <= tolerance
+            && resolution.total_momentum_conservation_residual.abs() <= tolerance
+    })
+}
+
+fn radiative_convergence_passed(fixture: &RadiativeShockTubeFixtureEvidence) -> bool {
+    fixture.density_convergence.coarse_to_medium_l1.is_finite()
+        && fixture.density_convergence.medium_to_fine_l1.is_finite()
+        && fixture.density_convergence.observed_order.is_finite()
+        && fixture.density_convergence.medium_to_fine_l1
+            < fixture.density_convergence.coarse_to_medium_l1
+        && fixture.density_convergence.observed_order > 0.0
+}
+
+fn radiative_bounded_imex_passed(physics: &RadiativeShockTubeEvidence) -> bool {
+    physics
+        .fixtures
+        .iter()
+        .find(|fixture| fixture.case_id == "optically-thick")
+        .is_some_and(|fixture| {
+            fixture
+                .resolutions
+                .iter()
+                .all(|resolution| resolution.bounded_exchange_backoffs > 0)
+        })
 }
 
 fn run_flat_relativistic_shock_tube(
@@ -450,6 +738,7 @@ fn run_flat_relativistic_shock_tube(
                 valencia_jacobians: vec![],
                 gray_m1_imex: vec![],
                 flat_shock_tube: Some(evidence),
+                radiative_shock_tube: None,
             }
         }
         Err(error) => VerificationReport {
@@ -468,6 +757,7 @@ fn run_flat_relativistic_shock_tube(
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
             flat_shock_tube: None,
+            radiative_shock_tube: None,
         },
     }
 }
@@ -547,6 +837,7 @@ fn run_flat_spacetime_invariant(
                 valencia_jacobians: vec![],
                 gray_m1_imex: vec![],
                 flat_shock_tube: None,
+                radiative_shock_tube: None,
             }
         }
         Err(error) => VerificationReport {
@@ -565,6 +856,7 @@ fn run_flat_spacetime_invariant(
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
             flat_shock_tube: None,
+            radiative_shock_tube: None,
         },
     }
 }
@@ -590,6 +882,7 @@ fn run_analytic_derivative_identity(
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
             flat_shock_tube: None,
+            radiative_shock_tube: None,
         };
     };
     let tolerance = request.tolerance;
@@ -612,6 +905,7 @@ fn run_analytic_derivative_identity(
                 valencia_jacobians: vec![],
                 gray_m1_imex: vec![],
                 flat_shock_tube: None,
+                radiative_shock_tube: None,
             };
         }
     };
@@ -713,6 +1007,7 @@ fn run_analytic_derivative_identity(
         valencia_jacobians: vec![],
         gray_m1_imex: vec![],
         flat_shock_tube: None,
+        radiative_shock_tube: None,
     }
 }
 
@@ -743,6 +1038,7 @@ fn run_valencia_jacobians(
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
             flat_shock_tube: None,
+            radiative_shock_tube: None,
         };
     };
 
@@ -991,6 +1287,7 @@ fn run_valencia_jacobians(
         valencia_jacobians: cases,
         gray_m1_imex: vec![],
         flat_shock_tube: None,
+        radiative_shock_tube: None,
     }
 }
 
@@ -1021,6 +1318,7 @@ fn run_gray_m1_imex_jacobians(
             valencia_jacobians: vec![],
             gray_m1_imex: vec![],
             flat_shock_tube: None,
+            radiative_shock_tube: None,
         };
     };
 
@@ -1279,6 +1577,7 @@ fn run_gray_m1_imex_jacobians(
         valencia_jacobians: vec![],
         gray_m1_imex: cases,
         flat_shock_tube: None,
+        radiative_shock_tube: None,
     }
 }
 
@@ -1489,9 +1788,9 @@ fn production_valencia_maps(state: [f64; 3], eos: ValenciaIdealGas) -> Result<[f
 #[cfg(test)]
 mod gray_m1_verification_tests {
     use super::{
+        JacobianMapEvidence, RadiationJacobianKind, VerificationResidual,
         append_gray_m1_disagreement_diagnostic, gateway_residuals, gray_m1_report_passed,
         isotropic_eddington_factor, production_gray_m1_map, rejected_gray_m1_case,
-        JacobianMapEvidence, RadiationJacobianKind, VerificationResidual,
     };
     use crate::kernel::EvidenceStatus;
     use crate::math_gateway::JacobianGatewayEvidence;
@@ -1504,21 +1803,27 @@ mod gray_m1_verification_tests {
             condition_number: 3.0,
         };
         assert!(passing.passed(1.0e-6));
-        assert!(!JacobianMapEvidence {
-            maximum_disagreement: 2.0e-6,
-            ..passing
-        }
-        .passed(1.0e-6));
-        assert!(!JacobianMapEvidence {
-            value_disagreement: 2.0e-6,
-            ..passing
-        }
-        .passed(1.0e-6));
-        assert!(!JacobianMapEvidence {
-            condition_number: f64::NAN,
-            ..passing
-        }
-        .passed(1.0e-6));
+        assert!(
+            !JacobianMapEvidence {
+                maximum_disagreement: 2.0e-6,
+                ..passing
+            }
+            .passed(1.0e-6)
+        );
+        assert!(
+            !JacobianMapEvidence {
+                value_disagreement: 2.0e-6,
+                ..passing
+            }
+            .passed(1.0e-6)
+        );
+        assert!(
+            !JacobianMapEvidence {
+                condition_number: f64::NAN,
+                ..passing
+            }
+            .passed(1.0e-6)
+        );
 
         let evaluated =
             rejected_gray_m1_case("evaluated", EvidenceStatus::Evaluated, "expected-rejection");
@@ -1570,5 +1875,114 @@ mod gray_m1_verification_tests {
         assert!(production[0] > 1.0 / 3.0 && production[0] < 1.0);
         assert!((production[1] - 2.0 * production[0]).abs() < 1.0e-14);
         assert!(production_gray_m1_map([1.0, 1.1]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod radiative_shock_acceptance_tests {
+    use super::{
+        radiative_bounded_imex_passed, radiative_fixture_passed, radiative_resolution_passed,
+    };
+    use crate::{kernel::EvidenceStatus, radiative_shock_tube};
+
+    const TOLERANCE: f64 = 1.0e-8;
+
+    #[test]
+    fn resolution_acceptance_requires_every_recovery_realizability_and_conservation_invariant() {
+        let physics = radiative_shock_tube::run_relativistic_radiative_shock_tube().unwrap();
+        let passing = physics.fixtures[0].resolutions[0];
+        assert!(radiative_resolution_passed(&passing, TOLERANCE));
+
+        let mut candidate = passing;
+        candidate.failed_recoveries = 1;
+        assert!(!radiative_resolution_passed(&candidate, TOLERANCE));
+
+        let mut candidate = passing;
+        candidate.maximum_reduced_flux = f64::NAN;
+        assert!(!radiative_resolution_passed(&candidate, TOLERANCE));
+
+        let mut candidate = passing;
+        candidate.maximum_reduced_flux = 1.0;
+        assert!(radiative_resolution_passed(&candidate, TOLERANCE));
+        candidate.maximum_reduced_flux = 1.0 + f64::EPSILON;
+        assert!(!radiative_resolution_passed(&candidate, TOLERANCE));
+
+        let mut candidate = passing;
+        candidate.rest_mass_conservation_residual = TOLERANCE;
+        assert!(radiative_resolution_passed(&candidate, TOLERANCE));
+        candidate.rest_mass_conservation_residual = TOLERANCE * 2.0;
+        assert!(!radiative_resolution_passed(&candidate, TOLERANCE));
+
+        let mut candidate = passing;
+        candidate.total_energy_conservation_residual = TOLERANCE;
+        assert!(radiative_resolution_passed(&candidate, TOLERANCE));
+        candidate.total_energy_conservation_residual = TOLERANCE * 2.0;
+        assert!(!radiative_resolution_passed(&candidate, TOLERANCE));
+
+        let mut candidate = passing;
+        candidate.total_momentum_conservation_residual = TOLERANCE;
+        assert!(radiative_resolution_passed(&candidate, TOLERANCE));
+        candidate.total_momentum_conservation_residual = TOLERANCE * 2.0;
+        assert!(!radiative_resolution_passed(&candidate, TOLERANCE));
+    }
+
+    #[test]
+    fn fixture_acceptance_requires_status_finite_strictly_improving_convergence() {
+        let physics = radiative_shock_tube::run_relativistic_radiative_shock_tube().unwrap();
+        let passing = physics.fixtures[0].clone();
+        assert!(radiative_fixture_passed(&passing, TOLERANCE));
+
+        let mut candidate = passing.clone();
+        candidate.status = EvidenceStatus::Failed;
+        assert!(!radiative_fixture_passed(&candidate, TOLERANCE));
+
+        let mut candidate = passing.clone();
+        candidate.resolutions[0].failed_recoveries = 1;
+        assert!(!radiative_fixture_passed(&candidate, TOLERANCE));
+
+        let mut candidate = passing.clone();
+        candidate.resolutions[0].maximum_reduced_flux = 1.0 + f64::EPSILON;
+        assert!(!radiative_fixture_passed(&candidate, TOLERANCE));
+
+        for residual in 0..3 {
+            let mut candidate = passing.clone();
+            match residual {
+                0 => candidate.resolutions[0].rest_mass_conservation_residual = TOLERANCE * 2.0,
+                1 => candidate.resolutions[0].total_energy_conservation_residual = TOLERANCE * 2.0,
+                _ => {
+                    candidate.resolutions[0].total_momentum_conservation_residual = TOLERANCE * 2.0
+                }
+            }
+            assert!(!radiative_fixture_passed(&candidate, TOLERANCE));
+        }
+
+        for field in 0..3 {
+            let mut candidate = passing.clone();
+            match field {
+                0 => candidate.density_convergence.coarse_to_medium_l1 = f64::NAN,
+                1 => candidate.density_convergence.medium_to_fine_l1 = f64::NAN,
+                _ => candidate.density_convergence.observed_order = f64::NAN,
+            }
+            assert!(!radiative_fixture_passed(&candidate, TOLERANCE));
+        }
+
+        let mut candidate = passing.clone();
+        candidate.density_convergence.medium_to_fine_l1 =
+            candidate.density_convergence.coarse_to_medium_l1;
+        assert!(!radiative_fixture_passed(&candidate, TOLERANCE));
+
+        let mut candidate = passing;
+        candidate.density_convergence.observed_order = 0.0;
+        assert!(!radiative_fixture_passed(&candidate, TOLERANCE));
+    }
+
+    #[test]
+    fn bounded_imex_acceptance_requires_backoff_in_every_thick_resolution() {
+        let passing = radiative_shock_tube::run_relativistic_radiative_shock_tube().unwrap();
+        assert!(radiative_bounded_imex_passed(&passing));
+
+        let mut candidate = passing;
+        candidate.fixtures[3].resolutions[0].bounded_exchange_backoffs = 0;
+        assert!(!radiative_bounded_imex_passed(&candidate));
     }
 }

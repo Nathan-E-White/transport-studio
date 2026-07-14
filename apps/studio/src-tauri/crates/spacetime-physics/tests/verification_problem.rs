@@ -1,7 +1,7 @@
 use spacetime_physics::kernel::EvidenceStatus;
 use spacetime_physics::verification::{
-    run_verification, GrayM1ImexPayload, ValenciaRecoveryEvidence, VerificationProblem,
-    VerificationRequest, VerificationResidual,
+    GrayM1ImexPayload, ValenciaRecoveryEvidence, VerificationProblem, VerificationRequest,
+    VerificationResidual, run_verification,
 };
 
 #[test]
@@ -20,10 +20,12 @@ fn flat_spacetime_invariant_is_observable_through_the_verification_api() {
     assert_eq!(report.evidence[1].code, "mathematical-crosscheck");
     assert_eq!(report.evidence[1].status, EvidenceStatus::NotEvaluated);
     assert_eq!(report.residuals.len(), 4);
-    assert!(report
-        .residuals
-        .iter()
-        .all(|residual| residual.value == 0.0));
+    assert!(
+        report
+            .residuals
+            .iter()
+            .all(|residual| residual.value == 0.0)
+    );
     assert!(report.residuals.iter().all(|residual| residual.passed()));
     assert!(report.mathematical_crosscheck.is_none());
 }
@@ -90,14 +92,18 @@ fn analytic_derivative_identity_crosschecks_three_independent_methods() {
     );
 
     assert_eq!(strict_report.status, EvidenceStatus::Failed);
-    assert!(strict_report
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "verification.math.crosscheck-disagreement"));
-    assert!(strict_report
-        .residuals
-        .iter()
-        .any(|residual| !residual.passed()));
+    assert!(
+        strict_report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "verification.math.crosscheck-disagreement")
+    );
+    assert!(
+        strict_report
+            .residuals
+            .iter()
+            .any(|residual| !residual.passed())
+    );
 
     let thread_reports: Vec<_> = (0..2)
         .map(|_| {
@@ -113,9 +119,11 @@ fn analytic_derivative_identity_crosschecks_three_independent_methods() {
         })
         .map(|thread| thread.join().expect("verification thread should not abort"))
         .collect();
-    assert!(thread_reports
-        .iter()
-        .all(|report| report.status == EvidenceStatus::Evaluated));
+    assert!(
+        thread_reports
+            .iter()
+            .all(|report| report.status == EvidenceStatus::Evaluated)
+    );
 }
 
 #[test]
@@ -198,10 +206,12 @@ fn valencia_jacobians_report_three_way_evidence_and_explicit_rejections() {
         assert_eq!(case.recovery, ValenciaRecoveryEvidence::NotAttempted);
         assert!(case.primitive_to_conserved.is_none());
         assert!(case.flux.is_none());
-        assert!(report
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == diagnostic_code));
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == diagnostic_code)
+        );
     }
 
     let diagnostic_codes = report
@@ -226,9 +236,11 @@ fn valencia_jacobians_report_three_way_evidence_and_explicit_rejections() {
         ],
         state => panic!("unexpected Symbolica license state: {state}"),
     };
-    assert!(required_license_codes
-        .iter()
-        .all(|code| diagnostic_codes.contains(code)));
+    assert!(
+        required_license_codes
+            .iter()
+            .all(|code| diagnostic_codes.contains(code))
+    );
 
     let strict = run_verification(
         VerificationRequest::new(VerificationProblem::ValenciaJacobians, 0.0)
@@ -241,10 +253,12 @@ fn valencia_jacobians_report_three_way_evidence_and_explicit_rejections() {
                 .primitive_to_conserved
                 .is_some_and(|evidence| evidence.maximum_disagreement > 0.0)
     }));
-    assert!(strict
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "verification.valencia.jacobian-disagreement"));
+    assert!(
+        strict
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "verification.valencia.jacobian-disagreement")
+    );
 }
 
 #[test]
@@ -275,10 +289,12 @@ fn gray_m1_and_imex_jacobians_report_limits_exchange_and_rejections() {
         "exchange-stiff-absorption",
         "closure-nonphysical",
     ] {
-        assert!(report
-            .gray_m1_imex
-            .iter()
-            .any(|case| case.case_id == case_id));
+        assert!(
+            report
+                .gray_m1_imex
+                .iter()
+                .any(|case| case.case_id == case_id)
+        );
     }
 
     let intermediate = report
@@ -409,30 +425,38 @@ fn gray_m1_and_imex_jacobians_report_limits_exchange_and_rejections() {
             diagnostic_code: "verification.gray-m1.nonphysical-state"
         }
     ));
-    assert!(report
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "verification.gray-m1.nonphysical-state"));
-    assert!(report
-        .provenance
-        .fact("radiation.representation")
-        .unwrap()
-        .contains("moment fields"));
-    assert!(!report
-        .provenance
-        .fact("radiation.representation")
-        .unwrap()
-        .contains("packet histories"));
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "verification.gray-m1.nonphysical-state")
+    );
+    assert!(
+        report
+            .provenance
+            .fact("radiation.representation")
+            .unwrap()
+            .contains("moment fields")
+    );
+    assert!(
+        !report
+            .provenance
+            .fact("radiation.representation")
+            .unwrap()
+            .contains("packet histories")
+    );
 
     let strict = run_verification(
         VerificationRequest::new(VerificationProblem::GrayM1AndImexJacobians, 0.0)
             .with_math_worker(env!("CARGO_BIN_EXE_spacetime-math-worker")),
     );
     assert_eq!(strict.status, EvidenceStatus::Failed);
-    assert!(strict
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "verification.gray-m1.jacobian-disagreement"));
+    assert!(
+        strict
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "verification.gray-m1.jacobian-disagreement")
+    );
     assert!(strict.residuals.iter().any(|residual| !residual.passed()));
 }
 
@@ -450,10 +474,12 @@ fn gray_m1_and_imex_without_a_worker_do_not_manufacture_jacobians() {
         report.diagnostics[0].code,
         "verification.math.worker-unavailable"
     );
-    assert!(report
-        .evidence
-        .iter()
-        .all(|evidence| evidence.status == EvidenceStatus::NotEvaluated));
+    assert!(
+        report
+            .evidence
+            .iter()
+            .all(|evidence| evidence.status == EvidenceStatus::NotEvaluated)
+    );
 }
 
 #[test]
@@ -537,10 +563,14 @@ fn flat_relativistic_shock_tube_reports_profiles_conservation_and_convergence() 
         -0.496_093_75
     );
     assert_eq!(shock.finest_profile.last().unwrap().position, 0.496_093_75);
-    assert!(shock
-        .finest_profile
-        .windows(2)
-        .all(|cells| (cells[1].position - cells[0].position - 1.0 / 128.0).abs() <= f64::EPSILON));
+    assert!(
+        shock
+            .finest_profile
+            .windows(2)
+            .all(
+                |cells| (cells[1].position - cells[0].position - 1.0 / 128.0).abs() <= f64::EPSILON
+            )
+    );
     assert!(shock.finest_profile[63].velocity > 0.0);
     assert!(shock.finest_profile[64].velocity > 0.0);
 
@@ -619,14 +649,18 @@ fn flat_relativistic_shock_tube_retains_evidence_when_zero_tolerance_exposes_rou
 
     assert_eq!(report.status, EvidenceStatus::Failed, "{report:#?}");
     assert!(report.flat_shock_tube.is_some());
-    assert!(report
-        .residuals
-        .iter()
-        .any(|residual| residual.value != 0.0));
-    assert!(report
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "verification.shock-tube.conservation-failed"));
+    assert!(
+        report
+            .residuals
+            .iter()
+            .any(|residual| residual.value != 0.0)
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "verification.shock-tube.conservation-failed")
+    );
     assert_eq!(
         report
             .evidence
@@ -654,6 +688,322 @@ fn flat_relativistic_shock_tube_retains_evidence_when_zero_tolerance_exposes_rou
             .status,
         EvidenceStatus::Evaluated
     );
+}
+
+#[test]
+fn radiative_shock_tube_reports_four_coupled_limits_and_mathematical_evidence() {
+    let report = run_verification(
+        VerificationRequest::new(VerificationProblem::RelativisticRadiativeShockTube, 1.0e-8)
+            .with_math_worker(env!("CARGO_BIN_EXE_spacetime-math-worker")),
+    );
+
+    assert_eq!(report.status, EvidenceStatus::Evaluated, "{report:#?}");
+    assert_eq!(
+        report.provenance.problem_id,
+        "relativistic-radiative-shock-tube"
+    );
+    assert_eq!(report.provenance.fact("units"), Some("normalized-c=1"));
+    assert_eq!(
+        report.provenance.fact("resolution-series"),
+        Some("32,64,128")
+    );
+    assert_eq!(report.provenance.fact("symbolica.version"), Some("2.1.0"));
+    assert_eq!(report.provenance.fact("numerica.version"), Some("2.1.0"));
+    assert!(!report.gray_m1_imex.is_empty());
+
+    let coupled = report
+        .radiative_shock_tube
+        .expect("coupled problem returns typed radiative shock evidence");
+    let assert_close = |actual: f64, expected: f64, tolerance: f64| {
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "expected {expected:.17e}, got {actual:.17e}"
+        );
+    };
+    assert_eq!(
+        coupled
+            .fixtures
+            .iter()
+            .map(|fixture| fixture.case_id)
+            .collect::<Vec<_>>(),
+        vec![
+            "hydrodynamic-limit",
+            "equilibrium",
+            "optically-thin",
+            "optically-thick"
+        ]
+    );
+
+    let expected_iterations = [
+        [1_194, 4_716, 18_617],
+        [1_194, 4_716, 18_617],
+        [1_290, 5_127, 20_096],
+        [1_330, 5_289, 20_648],
+    ];
+    let expected_radiation_boundaries = [(0.0, 0.0), (0.1, 0.1), (0.12, 0.04), (0.04, 0.04)];
+    let expected_convergence = [
+        (0.006_922_137_395_246_156, 0.004_497_561_008_049_108),
+        (0.006_922_137_395_246_156, 0.004_497_561_008_049_108),
+        (0.006_923_220_377_128_035, 0.004_498_934_767_490_298),
+        (0.007_039_298_834_027_547, 0.004_594_068_046_523_831),
+    ];
+    for (fixture_index, fixture) in coupled.fixtures.iter().enumerate() {
+        assert_eq!(fixture.status, EvidenceStatus::Evaluated, "{fixture:#?}");
+        assert_eq!(fixture.resolutions.len(), 3);
+        assert_eq!(fixture.finest_profile.len(), 128);
+        assert!(fixture.density_convergence.coarse_to_medium_l1 > 0.0);
+        assert!(
+            fixture.density_convergence.medium_to_fine_l1
+                < fixture.density_convergence.coarse_to_medium_l1
+        );
+        assert!(fixture.density_convergence.observed_order > 0.0);
+        assert!(fixture.resolutions.iter().all(|resolution| {
+            resolution.maximum_reduced_flux.is_finite()
+                && resolution.maximum_reduced_flux <= 1.0
+                && resolution.recovery_iterations >= resolution.recovery_attempts
+                && resolution.failed_recoveries == 0
+                && resolution.rest_mass_conservation_residual.abs() <= 1.0e-8
+                && resolution.total_energy_conservation_residual.abs() <= 1.0e-8
+                && resolution.total_momentum_conservation_residual.abs() <= 1.0e-8
+        }));
+        for (resolution_index, resolution) in fixture.resolutions.iter().enumerate() {
+            let expected_cell_count = 32 << resolution_index;
+            let expected_steps = 8 << resolution_index;
+            assert_eq!(resolution.cell_count, expected_cell_count);
+            assert_eq!(resolution.steps, expected_steps);
+            assert_eq!(
+                resolution.recovery_attempts,
+                expected_cell_count * expected_steps * 2
+            );
+            assert_eq!(
+                resolution.recovery_iterations,
+                expected_iterations[fixture_index][resolution_index]
+            );
+        }
+        let (expected_coarse, expected_fine) = expected_convergence[fixture_index];
+        assert_close(
+            fixture.density_convergence.coarse_to_medium_l1,
+            expected_coarse,
+            1.0e-14,
+        );
+        assert_close(
+            fixture.density_convergence.medium_to_fine_l1,
+            expected_fine,
+            1.0e-14,
+        );
+        let left = &fixture.finest_profile[0];
+        let right = &fixture.finest_profile[127];
+        assert_eq!(left.matter.position, -0.496_093_75);
+        assert_eq!(right.matter.position, 0.496_093_75);
+        assert_eq!(left.matter.density, 1.0);
+        assert_eq!(right.matter.density, 0.125);
+        assert_eq!(
+            (left.radiation_energy, right.radiation_energy),
+            expected_radiation_boundaries[fixture_index]
+        );
+        assert!(fixture.finest_profile.iter().all(|cell| {
+            cell.matter.density > 0.0
+                && cell.radiation_energy >= 0.0
+                && cell.radiation_flux.abs() <= cell.radiation_energy + 1.0e-12
+                && cell.reduced_flux >= 0.0
+                && cell.reduced_flux <= 1.0
+        }));
+    }
+
+    let hydrodynamic = &coupled.fixtures[0];
+    assert_eq!(hydrodynamic.interaction_rate, 0.0);
+    assert!(
+        hydrodynamic
+            .finest_profile
+            .iter()
+            .all(|cell| cell.radiation_energy == 0.0 && cell.radiation_flux == 0.0)
+    );
+    let equilibrium = &coupled.fixtures[1];
+    assert!(
+        equilibrium.maximum_exchange.abs() <= 1.0e-12,
+        "equilibrium exchange was {:.17e}",
+        equilibrium.maximum_exchange
+    );
+    let thin = &coupled.fixtures[2];
+    assert!(thin.interaction_rate > 0.0 && thin.interaction_rate < 1.0);
+    assert!(
+        thin.finest_profile
+            .iter()
+            .any(|cell| cell.radiation_flux.abs() > 0.0)
+    );
+    let thick = &coupled.fixtures[3];
+    assert!(thick.interaction_rate >= 100.0);
+    assert!(thick.maximum_exchange > 0.0);
+
+    assert_close(thin.maximum_exchange, 4.993_757_802_746_568e-5, 1.0e-14);
+    assert_close(thick.maximum_exchange, 2.222_222_222_222_222_3e-2, 1.0e-14);
+    assert!(
+        thick
+            .resolutions
+            .iter()
+            .all(|resolution| resolution.bounded_exchange_backoffs > 0
+                && resolution.maximum_backoff_exponent > 0)
+    );
+    assert_eq!(
+        thick
+            .resolutions
+            .iter()
+            .map(|resolution| resolution.bounded_exchange_backoffs)
+            .collect::<Vec<_>>(),
+        vec![66, 219, 803]
+    );
+    assert_eq!(
+        thick
+            .resolutions
+            .iter()
+            .map(|resolution| resolution.maximum_backoff_exponent)
+            .collect::<Vec<_>>(),
+        vec![9, 21, 37]
+    );
+    for (cell, expected) in [
+        (
+            &thin.finest_profile[63],
+            (
+                0.520_384_537_377_602_5,
+                0.434_357_137_834_177_2,
+                0.311_791_932_867_520_77,
+                1.052_464_952_476_087_8,
+                0.077_005_296_856_430_32,
+                0.021_376_297_611_088_894,
+            ),
+        ),
+        (
+            &thin.finest_profile[64],
+            (
+                0.480_145_673_163_201_56,
+                0.397_159_549_268_693_23,
+                0.341_621_322_850_652_2,
+                1.064_013_517_762_825_2,
+                0.075_659_191_789_802_46,
+                0.021_814_996_068_204_07,
+            ),
+        ),
+        (
+            &thick.finest_profile[63],
+            (
+                0.525_203_843_332_011_3,
+                0.448_369_669_245_006_8,
+                0.306_951_965_877_818_7,
+                1.050_723_677_227_667_8,
+                0.000_443_861_894_616_960_5,
+                -0.000_443_861_894_421_500_77,
+            ),
+        ),
+        (
+            &thick.finest_profile[64],
+            (
+                0.485_853_211_543_684_66,
+                0.412_420_022_841_005_93,
+                0.334_985_438_492_375_9,
+                1.061_319_535_366_733,
+                0.000_320_348_558_351_219_4,
+                -0.000_320_348_558_049_413_46,
+            ),
+        ),
+    ] {
+        assert_close(cell.matter.density, expected.0, 1.0e-13);
+        assert_close(cell.matter.pressure, expected.1, 1.0e-13);
+        assert_close(cell.matter.velocity, expected.2, 1.0e-13);
+        assert_close(cell.matter.lorentz_factor, expected.3, 1.0e-13);
+        assert_close(cell.radiation_energy, expected.4, 1.0e-13);
+        assert_close(cell.radiation_flux, expected.5, 1.0e-13);
+        assert_close(
+            cell.reduced_flux,
+            cell.radiation_flux.abs() / cell.radiation_energy,
+            1.0e-14,
+        );
+    }
+
+    for code in [
+        "radiative-shock.hydrodynamic-limit",
+        "radiative-shock.equilibrium",
+        "radiative-shock.optically-thin",
+        "radiative-shock.optically-thick",
+        "radiative-shock.primitive-recovery",
+        "radiative-shock.realizability",
+        "radiative-shock.total-conservation",
+        "radiative-shock.self-convergence",
+        "radiative-shock.bounded-imex",
+        "radiative-shock.mathematical-crosscheck",
+    ] {
+        assert_eq!(
+            report
+                .evidence
+                .iter()
+                .find(|entry| entry.code == code)
+                .unwrap()
+                .status,
+            EvidenceStatus::Evaluated
+        );
+    }
+
+    let without_worker = run_verification(VerificationRequest::new(
+        VerificationProblem::RelativisticRadiativeShockTube,
+        1.0e-8,
+    ));
+    assert_eq!(without_worker.status, EvidenceStatus::NotEvaluated);
+    assert!(without_worker.radiative_shock_tube.is_some());
+    assert!(
+        !without_worker
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "verification.radiative-shock.evidence-failed")
+    );
+
+    let strict_without_worker = run_verification(VerificationRequest::new(
+        VerificationProblem::RelativisticRadiativeShockTube,
+        0.0,
+    ));
+    assert_eq!(strict_without_worker.status, EvidenceStatus::Failed);
+    assert!(
+        strict_without_worker
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "verification.radiative-shock.evidence-failed")
+    );
+
+    let strict = run_verification(
+        VerificationRequest::new(VerificationProblem::RelativisticRadiativeShockTube, 0.0)
+            .with_math_worker(env!("CARGO_BIN_EXE_spacetime-math-worker")),
+    );
+    assert_eq!(strict.status, EvidenceStatus::Failed);
+    assert!(
+        strict
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "verification.radiative-shock.evidence-failed")
+    );
+    assert_eq!(
+        strict
+            .evidence
+            .iter()
+            .find(|entry| entry.code == "radiative-shock.total-conservation")
+            .unwrap()
+            .status,
+        EvidenceStatus::Failed
+    );
+    for code in [
+        "radiative-shock.primitive-recovery",
+        "radiative-shock.realizability",
+        "radiative-shock.self-convergence",
+        "radiative-shock.bounded-imex",
+    ] {
+        assert_eq!(
+            strict
+                .evidence
+                .iter()
+                .find(|entry| entry.code == code)
+                .unwrap()
+                .status,
+            EvidenceStatus::Evaluated,
+            "{code} should not inherit a conservation-only failure"
+        );
+    }
 }
 
 #[test]
