@@ -1,7 +1,7 @@
 use spacetime_physics::kernel::EvidenceStatus;
 use spacetime_physics::verification::{
-    run_verification, ValenciaRecoveryEvidence, VerificationProblem, VerificationRequest,
-    VerificationResidual,
+    run_verification, GrayM1ImexPayload, ValenciaRecoveryEvidence, VerificationProblem,
+    VerificationRequest, VerificationResidual,
 };
 
 #[test]
@@ -245,6 +245,215 @@ fn valencia_jacobians_report_three_way_evidence_and_explicit_rejections() {
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "verification.valencia.jacobian-disagreement"));
+}
+
+#[test]
+fn gray_m1_and_imex_jacobians_report_limits_exchange_and_rejections() {
+    let report = run_verification(
+        VerificationRequest::new(VerificationProblem::GrayM1AndImexJacobians, 1.0e-6)
+            .with_math_worker(env!("CARGO_BIN_EXE_spacetime-math-worker")),
+    );
+
+    assert_eq!(report.status, EvidenceStatus::Evaluated);
+    for code in ["gray-m1.closure-jacobian", "gray-m1.imex-source-jacobian"] {
+        assert_eq!(
+            report
+                .evidence
+                .iter()
+                .find(|entry| entry.code == code)
+                .unwrap()
+                .status,
+            EvidenceStatus::Evaluated
+        );
+    }
+    for case_id in [
+        "closure-intermediate",
+        "closure-isotropic-limit",
+        "closure-free-streaming-limit",
+        "exchange-equilibrium",
+        "exchange-stiff-emission",
+        "exchange-stiff-absorption",
+        "closure-nonphysical",
+    ] {
+        assert!(report
+            .gray_m1_imex
+            .iter()
+            .any(|case| case.case_id == case_id));
+    }
+
+    let intermediate = report
+        .gray_m1_imex
+        .iter()
+        .find(|case| case.case_id == "closure-intermediate")
+        .unwrap();
+    let GrayM1ImexPayload::Closure {
+        jacobian: Some(closure),
+        ..
+    } = intermediate.payload
+    else {
+        panic!("intermediate closure must carry Jacobian evidence");
+    };
+    assert!(closure.maximum_disagreement.is_finite());
+    assert!(closure.maximum_disagreement <= 1.0e-6);
+    assert!(closure.value_disagreement <= 1.0e-6);
+    assert!(closure.condition_number.is_finite());
+
+    let isotropic = report
+        .gray_m1_imex
+        .iter()
+        .find(|case| case.case_id == "closure-isotropic-limit")
+        .unwrap();
+    let GrayM1ImexPayload::Closure {
+        reduced_flux,
+        eddington_factor,
+        ..
+    } = isotropic.payload
+    else {
+        panic!("isotropic limit must remain closure evidence");
+    };
+    assert_eq!(reduced_flux, 0.0);
+    assert_eq!(eddington_factor, 1.0 / 3.0);
+    let streaming = report
+        .gray_m1_imex
+        .iter()
+        .find(|case| case.case_id == "closure-free-streaming-limit")
+        .unwrap();
+    let GrayM1ImexPayload::Closure {
+        reduced_flux,
+        eddington_factor,
+        ..
+    } = streaming.payload
+    else {
+        panic!("streaming limit must remain closure evidence");
+    };
+    assert_eq!(reduced_flux, 1.0);
+    assert_eq!(eddington_factor, 1.0);
+
+    let emission = report
+        .gray_m1_imex
+        .iter()
+        .find(|case| case.case_id == "exchange-stiff-emission")
+        .unwrap();
+    let GrayM1ImexPayload::ImexSource {
+        jacobian,
+        eddington_factor,
+        exchanged_energy_density,
+        conservation_residual,
+        ..
+    } = emission.payload
+    else {
+        panic!("emission must carry IMEX source evidence");
+    };
+    assert!((exchanged_energy_density - 100.0 / 51.0).abs() < 1.0e-14);
+    assert_eq!(conservation_residual, 0.0);
+    assert_eq!(eddington_factor, 1.0 / 3.0);
+    assert!(jacobian.maximum_disagreement <= 1.0e-6);
+    let absorption = report
+        .gray_m1_imex
+        .iter()
+        .find(|case| case.case_id == "exchange-stiff-absorption")
+        .unwrap();
+    let GrayM1ImexPayload::ImexSource {
+        eddington_factor,
+        exchanged_energy_density,
+        conservation_residual,
+        ..
+    } = absorption.payload
+    else {
+        panic!("absorption must carry IMEX source evidence");
+    };
+    assert!((exchanged_energy_density + 100.0 / 51.0).abs() < 1.0e-14);
+    assert_eq!(conservation_residual, 0.0);
+    assert_eq!(eddington_factor, 1.0 / 3.0);
+    let equilibrium = report
+        .gray_m1_imex
+        .iter()
+        .find(|case| case.case_id == "exchange-equilibrium")
+        .unwrap();
+    let GrayM1ImexPayload::ImexSource {
+        eddington_factor,
+        exchanged_energy_density,
+        conservation_residual,
+        ..
+    } = equilibrium.payload
+    else {
+        panic!("equilibrium must carry IMEX source evidence");
+    };
+    assert_eq!(exchanged_energy_density, 0.0);
+    assert_eq!(conservation_residual, 0.0);
+    assert_eq!(eddington_factor, 1.0 / 3.0);
+
+    let residual_codes = report
+        .residuals
+        .iter()
+        .map(|residual| residual.code)
+        .collect::<std::collections::HashSet<_>>();
+    for code in [
+        "gray-m1.closure-jacobian-disagreement",
+        "gray-m1.closure-value-disagreement",
+        "gray-m1.imex-source-jacobian-disagreement",
+        "gray-m1.imex-source-value-disagreement",
+    ] {
+        assert!(residual_codes.contains(code));
+    }
+
+    let rejected = report
+        .gray_m1_imex
+        .iter()
+        .find(|case| case.case_id == "closure-nonphysical")
+        .unwrap();
+    assert_eq!(rejected.status, EvidenceStatus::NotEvaluated);
+    assert!(matches!(
+        rejected.payload,
+        GrayM1ImexPayload::Rejected {
+            diagnostic_code: "verification.gray-m1.nonphysical-state"
+        }
+    ));
+    assert!(report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "verification.gray-m1.nonphysical-state"));
+    assert!(report
+        .provenance
+        .fact("radiation.representation")
+        .unwrap()
+        .contains("moment fields"));
+    assert!(!report
+        .provenance
+        .fact("radiation.representation")
+        .unwrap()
+        .contains("packet histories"));
+
+    let strict = run_verification(
+        VerificationRequest::new(VerificationProblem::GrayM1AndImexJacobians, 0.0)
+            .with_math_worker(env!("CARGO_BIN_EXE_spacetime-math-worker")),
+    );
+    assert_eq!(strict.status, EvidenceStatus::Failed);
+    assert!(strict
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "verification.gray-m1.jacobian-disagreement"));
+    assert!(strict.residuals.iter().any(|residual| !residual.passed()));
+}
+
+#[test]
+fn gray_m1_and_imex_without_a_worker_do_not_manufacture_jacobians() {
+    let report = run_verification(VerificationRequest::new(
+        VerificationProblem::GrayM1AndImexJacobians,
+        1.0e-6,
+    ));
+
+    assert_eq!(report.status, EvidenceStatus::NotEvaluated);
+    assert!(report.gray_m1_imex.is_empty());
+    assert!(report.residuals.is_empty());
+    assert_eq!(
+        report.diagnostics[0].code,
+        "verification.math.worker-unavailable"
+    );
+    assert!(report
+        .evidence
+        .iter()
+        .all(|evidence| evidence.status == EvidenceStatus::NotEvaluated));
 }
 
 #[test]

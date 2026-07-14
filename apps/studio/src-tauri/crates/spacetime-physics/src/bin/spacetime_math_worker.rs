@@ -29,6 +29,30 @@ fn main() -> ExitCode {
         };
     }
 
+    if command == "gray-m1-jacobian" {
+        return match parse_finite_arguments(arguments, 2)
+            .and_then(|arguments| gray_m1_evidence([arguments[0], arguments[1]]))
+        {
+            Ok(evidence) => print_radiation_evidence(evidence),
+            Err(_) => ExitCode::from(1),
+        };
+    }
+
+    if command == "imex-source-jacobian" {
+        return match parse_finite_arguments(arguments, 5).and_then(|arguments| {
+            imex_source_evidence([
+                arguments[0],
+                arguments[1],
+                arguments[2],
+                arguments[3],
+                arguments[4],
+            ])
+        }) {
+            Ok(evidence) => print_radiation_evidence(evidence),
+            Err(_) => ExitCode::from(1),
+        };
+    }
+
     match symbolic_evidence(&command) {
         Ok(evidence) => {
             println!(
@@ -49,6 +73,43 @@ struct ValenciaEvidence {
     values: [f64; 6],
     jacobian: [[f64; 3]; 6],
     license_state: &'static str,
+}
+
+struct RadiationEvidence {
+    values: [f64; 2],
+    jacobian: [[f64; 2]; 2],
+    license_state: &'static str,
+}
+
+fn print_radiation_evidence(evidence: RadiationEvidence) -> ExitCode {
+    print!("transport-studio-radiation-v1");
+    for value in evidence.values {
+        print!("\t{value}");
+    }
+    for row in evidence.jacobian {
+        for value in row {
+            print!("\t{value}");
+        }
+    }
+    println!("\t{}", evidence.license_state);
+    ExitCode::SUCCESS
+}
+
+fn parse_finite_arguments(
+    arguments: impl Iterator<Item = String>,
+    expected: usize,
+) -> Result<Vec<f64>, String> {
+    let values = arguments
+        .map(|argument| {
+            argument
+                .parse::<f64>()
+                .map_err(|_| "invalid numerical argument".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if values.len() != expected || values.iter().any(|value| !value.is_finite()) {
+        return Err("invalid numerical arguments".to_string());
+    }
+    Ok(values)
 }
 
 fn parse_valencia_arguments(
@@ -115,6 +176,58 @@ fn valencia_evidence(state: [f64; 3]) -> Result<ValenciaEvidence, String> {
     })
 }
 
+fn gray_m1_evidence([energy, flux]: [f64; 2]) -> Result<RadiationEvidence, String> {
+    let expressions = [
+        try_parse!("(3+4*(F/E)^2)/(5+2*(4-3*(F/E)^2)^(1/2))")?,
+        try_parse!("E*(3+4*(F/E)^2)/(5+2*(4-3*(F/E)^2)^(1/2))")?,
+    ];
+    let variables = [symbol!("E"), symbol!("F")];
+    evaluate_radiation_expressions(expressions, variables, [energy, flux])
+}
+
+fn imex_source_evidence(
+    [matter, radiation, interaction_rate, timestep, equilibrium]: [f64; 5],
+) -> Result<RadiationEvidence, String> {
+    let fraction = interaction_rate * timestep / (1.0 + interaction_rate * timestep);
+    let exchange = format!("{fraction}*({equilibrium}-R)");
+    let expressions = [
+        try_parse!(&format!("U-({exchange})"))?,
+        try_parse!(&format!("R+({exchange})"))?,
+    ];
+    let variables = [symbol!("U"), symbol!("R")];
+    evaluate_radiation_expressions(expressions, variables, [matter, radiation])
+}
+
+fn evaluate_radiation_expressions(
+    expressions: [Atom; 2],
+    variables: [Symbol; 2],
+    state: [f64; 2],
+) -> Result<RadiationEvidence, String> {
+    let mut outputs = expressions.to_vec();
+    for expression in &expressions {
+        for variable in variables {
+            outputs.push(expression.derivative(variable));
+        }
+    }
+    let parameters = variables.map(Atom::var);
+    let evaluator = Atom::evaluator_multiple(&outputs, &parameters)
+        .build()
+        .map_err(|error| format!("could not build radiation evaluator: {error}"))?;
+    let mut evaluator = evaluator.map_coeff(&|coefficient| coefficient.re.to_f64());
+    let mut evaluated = [0.0; 6];
+    evaluator
+        .try_evaluate(&state, &mut evaluated)
+        .map_err(|error| format!("could not evaluate radiation expressions: {error}"))?;
+    if evaluated.iter().any(|value| !value.is_finite()) {
+        return Err("radiation expressions produced non-finite evidence".to_string());
+    }
+    Ok(RadiationEvidence {
+        values: [evaluated[0], evaluated[1]],
+        jacobian: [[evaluated[2], evaluated[3]], [evaluated[4], evaluated[5]]],
+        license_state: license_state(),
+    })
+}
+
 struct SymbolicEvidence {
     derivative: f64,
     values: [f64; 3],
@@ -160,7 +273,10 @@ fn scalar_value(expression: &Atom, x: i64) -> Result<f64, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_valencia_arguments, valencia_evidence};
+    use super::{
+        gray_m1_evidence, imex_source_evidence, parse_finite_arguments, parse_valencia_arguments,
+        valencia_evidence,
+    };
 
     #[test]
     fn valencia_arguments_require_exactly_three_finite_values() {
@@ -196,5 +312,40 @@ mod tests {
             .all(|value| value.is_finite()));
         assert!(near_vacuum.values[0] > 1.0e-9);
         assert!(near_vacuum.values[0] < 1.1e-9);
+
+        let closure = gray_m1_evidence([2.0, 1.0]).unwrap();
+        assert!(closure.values.iter().all(|value| value.is_finite()));
+        assert!(closure
+            .jacobian
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite()));
+        assert!(closure.values[0] > 1.0 / 3.0 && closure.values[0] < 1.0);
+        assert!((closure.values[1] - 2.0 * closure.values[0]).abs() < 1.0e-14);
+
+        let source = imex_source_evidence([5.0, 1.0, 100.0, 0.5, 3.0]).unwrap();
+        let fraction = 50.0 / 51.0;
+        assert!((source.values[0] - (5.0 - 2.0 * fraction)).abs() < 1.0e-14);
+        assert!((source.values[1] - (1.0 + 2.0 * fraction)).abs() < 1.0e-14);
+        assert_eq!(source.jacobian[0][0], 1.0);
+        assert!((source.jacobian[0][1] - fraction).abs() < 1.0e-14);
+        assert_eq!(source.jacobian[1][0], 0.0);
+        assert!((source.jacobian[1][1] - (1.0 - fraction)).abs() < 1.0e-14);
+    }
+
+    #[test]
+    fn radiation_arguments_require_exactly_the_requested_finite_values() {
+        assert_eq!(
+            parse_finite_arguments(["1", "0.5"].into_iter().map(str::to_string), 2),
+            Ok(vec![1.0, 0.5])
+        );
+        for arguments in [
+            vec!["1"],
+            vec!["1", "0.5", "2"],
+            vec!["1", "NaN"],
+            vec!["1", "invalid"],
+        ] {
+            assert!(parse_finite_arguments(arguments.into_iter().map(str::to_string), 2).is_err());
+        }
     }
 }
