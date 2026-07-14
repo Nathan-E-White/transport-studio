@@ -1,16 +1,16 @@
 use approx::assert_abs_diff_eq;
+use spacetime_physics::expert::packet_deposition::{
+    GeodesicPacketHistory, GeodesicPacketSample, LocalFutureNullMomentum,
+    PacketStressEnergyEstimator,
+};
+use spacetime_physics::expert::{
+    BssnSourcePath, CoordinateChartKind, CoordinateTime, FourVec, SpacetimeCoordinate,
+    TimeDuration, TransportGeodesicState, UniformGrid3, vec3,
+};
 use spacetime_physics::kernel::{
     AlgebraicConstraintStatus, DynamicalSpacetimeKernel, EvidenceStatus, GrhdEvidence,
     KernelConfig, KernelState, KernelStateKind, KernelStepError, RadiationKernelEvidence,
     StressEnergyAccountingEvidence,
-};
-use spacetime_physics::packet_deposition::{
-    GeodesicPacketHistory, GeodesicPacketSample, LocalFutureNullMomentum,
-    PacketStressEnergyEstimator,
-};
-use spacetime_physics::{
-    BssnSourcePath, CoordinateChartKind, CoordinateTime, FourVec, SpacetimeCoordinate,
-    TimeDuration, TransportGeodesicState, UniformGrid3, vec3,
 };
 
 #[test]

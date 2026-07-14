@@ -1,4 +1,4 @@
-use spacetime_physics::{
+use spacetime_physics::expert::{
     PrimitiveRecoveryDiagnostic, PrimitiveRecoveryError, PrimitiveRecoveryPolicy,
     SymmetricSpatialTensor2, ValenciaConserved, ValenciaEquationOfState, ValenciaGeometry,
     ValenciaIdealGas, ValenciaPolytrope, ValenciaPrimitive, primitive_to_conserved,
@@ -320,8 +320,8 @@ impl ValenciaEquationOfState for RejectingEquationOfState {
         &self,
         _density: f64,
         _specific_internal_energy: f64,
-    ) -> Result<f64, spacetime_physics::PhysicsError> {
-        Err(spacetime_physics::PhysicsError::InvalidStep)
+    ) -> Result<f64, spacetime_physics::expert::PhysicsError> {
+        Err(spacetime_physics::expert::PhysicsError::InvalidStep)
     }
 }
 

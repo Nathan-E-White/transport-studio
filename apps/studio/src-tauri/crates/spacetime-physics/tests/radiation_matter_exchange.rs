@@ -1,6 +1,6 @@
 use approx::assert_abs_diff_eq;
-use spacetime_physics::radiation::OrthonormalGrayRadiationMoments;
-use spacetime_physics::{
+use spacetime_physics::expert::radiation::OrthonormalGrayRadiationMoments;
+use spacetime_physics::expert::{
     ExchangeFailureReason, ExchangeFailureStage, ExchangeFallback, ExchangeStiffnessHandling,
     LocalRadiationMatterExchangeState, PhysicsError, RadiationMatterExchangeConfig, TimeDuration,
     ValenciaEquationOfState, ValenciaIdealGas, ValenciaPolytrope, ValenciaPrimitive,

@@ -4,7 +4,7 @@ use spacetime_physics::kernel::{
     KernelState, KernelStateKind, KernelStepError, RadiationKernelEvidence,
     StressEnergyAccountingEvidence,
 };
-use spacetime_physics::{CoordinateTime, TimeDuration, UniformGrid3, vec3};
+use spacetime_physics::kernel::{CoordinateTime, TimeDuration, UniformGrid3, vec3};
 
 #[test]
 fn flat_empty_dynamical_spacetime_state_advances_through_the_canonical_kernel_seam() {

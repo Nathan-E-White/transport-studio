@@ -1,4 +1,4 @@
-use spacetime_physics::{
+use spacetime_physics::expert::{
     AdmGridFields, AffineStep, BssnGridFields, CoordinateChartKind, CoordinateTime, FourVec,
     FourVelocity, GridMetricAdapterError, GridMetricFieldAdapter, GridMetricInterpolation,
     Rk4GeodesicStepper, SpacetimeCoordinate, SymmetricSpatialTensor2, TransportGeodesicState,
@@ -91,7 +91,7 @@ fn adapter_rejects_non_finite_components_and_adapts_non_flat_data() {
         assert_eq!(
             query_mutated(|fields| fields.shift.set_interior(4, 4, 4, shift).unwrap()),
             GridMetricAdapterError::NumericalFailure(
-                spacetime_physics::PhysicsError::NonFiniteValue
+                spacetime_physics::expert::PhysicsError::NonFiniteValue
             ),
         );
     }
@@ -131,7 +131,7 @@ fn adm_fields_use_the_same_point_query_seam() {
         .unwrap();
     assert_eq!(
         sample.covariant,
-        spacetime_physics::CovariantTensor2::minkowski_plus_minus_minus_minus()
+        spacetime_physics::expert::CovariantTensor2::minkowski_plus_minus_minus_minus()
     );
 }
 
@@ -151,7 +151,7 @@ fn rk4_returns_out_of_domain_instead_of_panicking() {
         Rk4GeodesicStepper
             .step_transport_geodesic(&metric, state, AffineStep::new(2.0))
             .unwrap_err(),
-        spacetime_physics::PhysicsError::PointOutsideGrid,
+        spacetime_physics::expert::PhysicsError::PointOutsideGrid,
     );
 }
 
@@ -223,7 +223,7 @@ fn adapter_rejects_nonpositive_lapse_and_singular_spatial_metrics() {
                     .unwrap();
             }),
             GridMetricAdapterError::NumericalFailure(
-                spacetime_physics::PhysicsError::SingularMetric
+                spacetime_physics::expert::PhysicsError::SingularMetric
             ),
         );
     }

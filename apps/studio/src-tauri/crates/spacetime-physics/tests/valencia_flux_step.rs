@@ -1,5 +1,5 @@
 use approx::assert_abs_diff_eq;
-use spacetime_physics::{
+use spacetime_physics::expert::{
     PrimitiveRecoveryDiagnostic, PrimitiveRecoveryPolicy, TimeDuration, ValenciaConserved,
     ValenciaFiniteVolumeError, ValenciaFlatFiniteVolumeConfig, ValenciaGeometry, ValenciaIdealGas,
     ValenciaPrimitive, primitive_to_conserved, valencia_flat_finite_volume_step_1d, vec3,
@@ -300,7 +300,7 @@ fn conserved(
     rest_mass_density: f64,
     velocity_x: f64,
     pressure: f64,
-) -> spacetime_physics::ValenciaConserved {
+) -> spacetime_physics::expert::ValenciaConserved {
     let specific_internal_energy = pressure / ((eos.gamma - 1.0) * rest_mass_density);
     primitive_to_conserved(
         ValenciaPrimitive {

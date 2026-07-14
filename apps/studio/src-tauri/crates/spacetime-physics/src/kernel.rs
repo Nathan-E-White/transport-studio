@@ -15,17 +15,23 @@ use crate::{
     AlgebraicBssnGaugeEnforcer, BackreactionPolicy, BoundaryConditions3, BssnCellState,
     BssnGeometryStepper, BssnGridFields, BssnSourcePath, ConservativeMatterCell,
     ConservativeMatterGrid, ConstraintDiagnosticsOperator, ControlledToyBssnSourceStepper,
-    CoordinateTime, CoupledBssnMatterState, CoupledBssnMatterStepper, EvolutionGridField3,
-    GaugeConditionEnforcer, IdealGasEquationOfState, LocalRadiationMatterExchangeState,
-    NoopMatterRadiationStepper, PhysicsError, PrimitiveRecoveryPolicy,
-    RadiationMatterExchangeConfig, RadiationMatterExchangeDiagnostics, RadiationTransportMode,
-    StressEnergyTensor, SymmetricSpatialTensor2, TimeDuration, UniformGrid3,
-    ValenciaCellRecoveryDiagnostics, ValenciaEquationOfState, ValenciaFlatFiniteVolumeConfig,
-    ValenciaIdealGas, ValenciaPrimitive, gray_m1_stress_energy_in_eulerian_orthonormal_frame,
-    primitive_to_conserved, project_bssn_sources, radiation_matter_exchange_semi_implicit,
+    CoupledBssnMatterState, CoupledBssnMatterStepper, EvolutionGridField3, GaugeConditionEnforcer,
+    IdealGasEquationOfState, LocalRadiationMatterExchangeState, NoopMatterRadiationStepper,
+    PhysicsError, PrimitiveRecoveryPolicy, RadiationMatterExchangeConfig,
+    RadiationMatterExchangeDiagnostics, RadiationTransportMode, StressEnergyTensor,
+    SymmetricSpatialTensor2, ValenciaCellRecoveryDiagnostics, ValenciaEquationOfState,
+    ValenciaFlatFiniteVolumeConfig, ValenciaIdealGas, ValenciaPrimitive,
+    gray_m1_stress_energy_in_eulerian_orthonormal_frame, primitive_to_conserved,
+    project_bssn_sources, radiation_matter_exchange_semi_implicit,
     valencia_flat_finite_volume_step_1d, valencia_stress_energy_in_eulerian_orthonormal_frame,
-    vec3,
 };
+
+pub use crate::grid::UniformGrid3;
+pub use crate::units::{CoordinateTime, TimeDuration};
+
+pub mod vec3 {
+    pub use crate::vec3::*;
+}
 
 const INTERNAL_GHOST_WIDTH: usize = 2;
 const VACUUM_IDEAL_GAS_GAMMA: f64 = 5.0 / 3.0;
