@@ -151,6 +151,8 @@ Curvilinear chart support means the solver can express fields, derivatives, flux
 
 The first slice can evolve metric and matter state without committing to a general chart abstraction. Curvilinear support changes derivative operators, volume/area factors, flux balances, regularity near coordinate singularities, and validation cases.
 
+The proposed geometric-field substrate does not graduate this track by itself. Cartesian/spherical transformations, section-aware cell-center samples, and analytic covariant derivatives establish representation correctness. They do not provide spherical storage, discrete chart-aware operators, conservative fluxes, boundary exchange, or evolution near coordinate singularities.
+
 #### Graduation Criteria
 
 - define the chart abstraction and basis-conversion rules;
@@ -158,6 +160,13 @@ The first slice can evolve metric and matter state without committing to a gener
 - include coordinate-singularity or regularity checks where relevant;
 - prove conservation diagnostics remain meaningful under chart transforms;
 - document which charts are supported and which remain unsupported.
+- migrate appropriate fields from the validated legacy chart bridge to intrinsic section/chart identity;
+- implement multiple spatial patches or another documented coverage policy where one spherical chart degenerates;
+- demonstrate convergence for at least one evolved curvilinear Verification Problem before changing Capability Status.
+
+#### Staged Geometry Dependency
+
+The geometric-field program is the prerequisite representation layer for this Future Track. Its accepted scope is recorded in [PRD 0002](PRD-0002-geometric-field-sections.md) and [ADR 0009](ADR-0009-geometric-field-facade.md). Full Curvilinear Chart Support remains a separately gated implementation issue.
 
 ### GRMHD
 

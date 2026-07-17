@@ -106,6 +106,34 @@ The act of accumulating packet-carried energy, momentum, or source information i
 
 A constrained scenario with an expected invariant, convergence behavior, or benchmark result. Verification problems test whether the numerical method was implemented as intended; they do not by themselves validate predictive use.
 
+### Geometric Field
+
+A field whose local components carry an explicit geometric representation, such as a coordinate chart, orthonormal frame, or gauge. A Geometric Field owns the rules required to compare or transform those components; it is not merely a grid of numbers with a descriptive label.
+
+### Section
+
+A Geometric Field viewed as assigning one fiber value to every point in its base domain. A local Section sample binds its components to the chart, frame, patch, or gauge in which those numbers are meaningful.
+
+### Chart
+
+A coordinate map valid on a declared part of a base domain. Chart support includes point maps, Jacobians, inverse maps where defined, basis-conversion rules, and an explicit singularity policy. A chart name alone is not support.
+
+### Frame
+
+A basis for field components at a point. A coordinate frame follows a Chart; an orthonormal frame is normalized against the local metric. Transforming frames changes components while preserving geometric invariants.
+
+### Connection
+
+The rule used to compare fiber values at neighboring base points and define a covariant derivative. Christoffel symbols describe the Levi-Civita connection in a coordinate basis; a gauge connection acts through its gauge representation.
+
+### Gauge Transformation
+
+A change of local representation in a gauge fiber that leaves gauge-invariant observables unchanged. The geometric-field substrate may represent gauge transformations and connections without implementing electromagnetic field dynamics.
+
+### Bundle Transition
+
+The representation change relating local trivializations on an overlap. Bundle Transitions must satisfy their declared compatibility rules; they are not ordinary data conversions that may discard chart, frame, patch, or gauge identity.
+
 ### Future Track
 
 A named research or implementation direction that is intentionally outside the current slice. A Future Track is not missing work, implicit product scope, or evidence for a solver claim until it graduates through source-backed issue scope, tests, validation evidence, and capability-status updates.
