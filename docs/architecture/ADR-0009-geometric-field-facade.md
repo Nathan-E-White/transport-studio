@@ -10,7 +10,7 @@ Transport Studio's vectors, tensors, metric queries, local-frame helper, and Car
 
 A generic fiber-bundle API could centralize that mathematics, but exposing its construction directly would make every caller learn base spaces, trivializations, overlaps, representations, and connections. That would be a wide interface with little protection for ordinary solver work.
 
-The project now has enough concrete adapters to justify one internal engine: Cartesian and spherical charts, orthonormal frames, and U(1) gauge geometry, each with a named Verification Problem.
+The project has now selected enough concrete adapter targets to justify one internal engine: Cartesian and spherical charts, orthonormal frames, and U(1) gauge geometry, each with a named Verification Problem. These adapters remain planned until their sequential implementation slices land.
 
 ## Decision
 

@@ -24,7 +24,7 @@ The geometric-field facade should follow the crate's existing deep-module patter
 
 ## Generic Framework
 
-The private `FiberBundle<T>` engine represents:
+The private conceptual `FiberBundle<T>` engine represents:
 
 - a bundle-defined base-point type;
 - local trivializations over declared domains;
@@ -33,7 +33,7 @@ The private `FiberBundle<T>` engine represents:
 - compatibility and cocycle checks; and
 - optional connection behavior.
 
-`T` alone is insufficient. Scalars, vectors, covectors, rank-two tensors, and complex gauge sections transform differently. The engine therefore associates every supported value with a representation rather than assuming that generic storage implies generic geometry.
+`T` alone is insufficient. The bundle owns an associated base-point type and a representation strategy for `T`; the eventual private Rust name or signature must make those inputs apparent. Scalars, vectors, covectors, rank-two tensors, and complex gauge sections transform differently. The engine therefore associates every supported value with a representation rather than assuming that generic storage implies generic geometry.
 
 A `Section<T>` assigns a fiber value to each base point. A local sample binds its components to the chart, frame, patch, or gauge in which those numbers are meaningful. Transformations produce another local sample or a typed error; they do not discard representation identity.
 

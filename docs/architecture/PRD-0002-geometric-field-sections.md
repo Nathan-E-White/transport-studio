@@ -100,6 +100,8 @@ Mixed-index tensors, arbitrary tensor rank, and dimension-generic index algebra 
 
 Sample an analytic vector or rank-two tensor section at Cartesian grid cell centers and express it in Cartesian and spherical components away from singularities.
 
+This Verification Problem lands in two sequential parts: the analytic chart and representation checks accompany the spherical adapter; the `SectionGrid3<T>` cell-center assertion accompanies the wrapper in the following frame/grid slice.
+
 Required evidence:
 
 - Cartesian/spherical point round trips;
@@ -149,11 +151,11 @@ Numerica types and errors remain behind the gateway. Default geometry interfaces
 
 ## Planned Delivery Slices
 
-After this draft PR is approved, create one umbrella issue and five sequential implementation issues. Each implementation PR branches from newly updated `main` after its predecessor merges.
+After this draft PR is approved and merged, create one umbrella issue and five sequential implementation issues. Each implementation PR branches from newly updated `main` after its predecessor merges.
 
 1. Private bundle/section core, typed errors, representations, and Cartesian adapter.
-2. Spherical adapter and chart/grid-section Verification Problem.
-3. ADM/Cholesky orthonormal frames, `SectionGrid3<T>`, and frame Verification Problem.
+2. Spherical adapter and the analytic chart portion of the chart/section Verification Problem.
+3. ADM/Cholesky orthonormal frames, analytic Levi-Civita derivatives, `SectionGrid3<T>`, the cell-center chart assertion, and the frame Verification Problem.
 4. U(1) sections, connections, covariant derivatives, and local gauge Verification Problem.
 5. Hopf `S³ -> S²` topology and Chern-number Verification Problem with Numerica evidence.
 
