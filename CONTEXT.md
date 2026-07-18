@@ -42,6 +42,30 @@ Coupled evolution of spacetime geometry, material motion, radiation fields, equa
 
 The documentation family for geometric representation, numerical evolution, differentiation, stochastic transport, and uncertainty methods shared by Relativistic Multiphysics and Monte Carlo transport. It is not a runtime package and does not merge the distinct meanings of Geometric Field and Transport Geometry.
 
+### Differential Form
+
+An alternating covariant Geometric Field of degree k, naturally pulled back and integrated over oriented k-dimensional domains. It is not interchangeable with an arbitrary tensor array or a cell-centered vector field.
+
+### Exterior Calculus
+
+The metric-independent calculus of Differential Forms using wedge products, pullbacks, the exterior derivative, and oriented integration. “External calculus” is not the canonical project term, and Exterior Calculus is not a synonym for ordinary vector calculus.
+
+### Discrete Differential Form
+
+A degree-specific value associated with an oriented vertex, edge, face, or cell and related through incidence. It represents an integral degree of freedom or cochain, not a point sample at a cell center.
+
+### Oriented Cell Complex
+
+A domain decomposition into oriented vertices, edges, faces, and cells with compatible incidence relations. A Cartesian grid does not become an Oriented Cell Complex merely by naming boundary faces.
+
+### Hodge Star
+
+The metric- and orientation-dependent correspondence between degree-k and complementary-degree Differential Forms. It is distinct from the metric-independent exterior derivative and may also encode material constitutive behavior.
+
+### Compatible Field Calculus
+
+A Mathematical Physics Substrate that preserves degree placement, orientation, incidence, pullback, integration, and declared metric duality across continuum and discrete field representations. It is not a public generic exterior-algebra package.
+
 ### Dynamical Spacetime Coupling
 
 The first implementable Relativistic Multiphysics slice. Matter and radiation contribute stress-energy, spacetime geometry evolves from that source term, and the updated geometry feeds the next matter/radiation step.

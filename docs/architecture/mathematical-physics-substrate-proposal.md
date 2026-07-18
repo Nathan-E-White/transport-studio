@@ -92,6 +92,11 @@ generic group theory, Kaluza-Klein theory, and every five-dimensional framework.
 
 **Deep module:** compatible field calculus over an oriented mesh or cell complex.
 
+Continuum Differential Forms, discrete cochains, and ordinary cell-centered fields
+remain distinct representations. Pullback, wedge product, exterior derivative, and
+oriented integration are metric-independent; Hodge, codifferential, and constitutive
+operations require explicit metric, orientation, and boundary policy.
+
 **Interface:** repository-owned forms or cochains, incidence/orientation operations,
 exterior derivative, integration, Hodge operations, decomposition results, and
 structure-preservation evidence.
@@ -111,6 +116,9 @@ decomposition, nontrivial harmonic flux, Gauss-constraint behavior, and converge
 **Activation gate:** name the cubical and simplicial representations and two
 consumers. Finite-element exterior calculus claims additionally require a discrete
 subcomplex and bounded cochain projection.
+
+The source basis and repository fit are recorded in
+[Differential Forms and Exterior Calculus Research](differential-forms-exterior-calculus-research.md).
 
 ### PRD 0003: Constraint-Aware Hyperbolic Conservation Laws
 
@@ -290,6 +298,7 @@ to a generic PDE package.
 
 - [PRD 0002: Geometric Fields And Sections](PRD-0002-geometric-field-sections.md)
 - [PRD 0003: Constraint-Aware Hyperbolic Conservation Laws](PRD-0003-constraint-aware-hyperbolic-conservation-laws.md)
+- [Differential Forms and Exterior Calculus Research](differential-forms-exterior-calculus-research.md)
 - [Mathematical Physics Substrate Research Note](mathematical-physics-substrate-research.md)
 - [ADR 0009: Geometric-Field Facade And Private Bundle Engine](ADR-0009-geometric-field-facade.md)
 - [Future-Track Notes Ledger](future-track-notes-ledger.md)
