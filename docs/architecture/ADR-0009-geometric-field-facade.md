@@ -35,6 +35,8 @@ The private engine owns:
 
 The first implementation supports existing scalar, vector, covector, and rank-two spatial/spacetime values plus `Complex64`. It does not implement arbitrary-rank tensor algebra.
 
+The facade is one deep module within the Mathematical Physics Substrate documentation family, not the public interface of that family. Later modules may consume geometric-field operations, but differential forms, physical conservation laws, discretizations, evolution methods, adjoints, stochastic measures, and uncertainty propagation retain separate interfaces and Verification Problems.
+
 ## Adapter Decisions
 
 - Cartesian is the identity chart adapter.
@@ -42,6 +44,7 @@ The first implementation supports existing scalar, vector, covector, and rank-tw
 - The orthonormal-frame adapter constructs 3+1-admissible tetrads through ADM lapse/shift decomposition and spatial Cholesky factorization.
 - U(1) support is gauge geometry only; electromagnetic dynamics remain outside this module.
 - The Hopf bundle over `S²` verifies nontrivial patch topology through north/south sections and first-Chern-number evidence.
+- SO(3), Lorentz, and U(1) actions are exposed only through supported chart, frame, and gauge operations. Generic group and representation machinery remains private.
 
 ## Compatibility Decisions
 
@@ -59,6 +62,7 @@ The first implementation supports existing scalar, vector, covector, and rank-tw
 - Existing Cartesian evolution remains stable.
 - The module creates no product solver capability by itself.
 - Runtime validation remains necessary because type-level chart/frame parameters are deferred.
+- A future Mathematical Physics Substrate module may depend on the facade without gaining access to private bundle construction.
 
 ## Rejected Alternatives
 
@@ -78,6 +82,10 @@ Rejected for the first program because it would spread type parameters through t
 
 Rejected because coordinate transformation does not provide metric factors, conservative fluxes, regularity, boundaries, or convergence.
 
+### Turn the facade into a general mathematical-physics interface
+
+Rejected because representation, discretization, evolution, stochastic inference, and uncertainty have different consumers and failure modes. Combining them would create a shallow module whose interface mirrors its implementation.
+
 ## Follow-Up Work
 
 - Open the five sequential implementation issues only after the documentation gate is approved.
@@ -89,3 +97,5 @@ Rejected because coordinate transformation does not provide metric factors, cons
 - [PRD 0002: Geometric Fields And Sections](PRD-0002-geometric-field-sections.md)
 - [Geometric Fields, Bundles, And Sections Evaluation](geometric-fields-bundles-sections-evaluation.md)
 - [Future-Track Notes Ledger](future-track-notes-ledger.md)
+- [Mathematical Physics Substrate Architecture Proposal](mathematical-physics-substrate-proposal.md)
+- [PRD 0003: Constraint-Aware Hyperbolic Conservation Laws](PRD-0003-constraint-aware-hyperbolic-conservation-laws.md)

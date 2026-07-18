@@ -399,6 +399,32 @@ The first slice can use idealized EOS behavior to test coupling seams. Tabulated
 - add out-of-bounds and consistency diagnostics;
 - connect tabulated EOS to primitive recovery only after failure behavior is explicit.
 
+### Mathematical Physics Research Topics
+
+#### Domain Note
+
+The Mathematical Physics Substrate is a documentation family, not a general mathematics package. A topic graduates only when it has a named consumer, a seam justified by at least two adapters, repository-owned failures, and a Verification Problem that tests the proposed interface.
+
+#### Deferred Topics And Gates
+
+- **Spectral and harmonic analysis:** select an angular-radiation, gravitational-wave, or tensor-mode consumer and define modal reconstruction and convergence evidence.
+- **Wavelets and multiresolution analysis:** select an AMR indicator, localized error estimate, or compression consumer and compare it with an existing estimator.
+- **Geometric measure theory and cut cells:** add a mesh/cut-cell geometry adapter beside analytic Transport Geometry, then verify conservative integration and intersection measures.
+- **Optimal transport:** select conservative remapping as the first use and prove mass preservation and remap convergence; do not add generic Wasserstein diagnostics first.
+- **Homogenization and multiscale analysis:** state scale-separation assumptions and compare resolved and effective material or opacity fixtures.
+- **Persistent homology:** keep it in analysis and require an evolving-field diagnostic with stability evidence before implementation.
+- **Clifford or geometric algebra:** defer until spin or polarized transport requires it; ordinary rotation and Lorentz-frame composition stays with the geometric-field facade.
+- **Dynamical systems and bifurcation theory:** name an equilibrium, instability threshold, or attractor Verification Problem first.
+- **Sheaf theory:** defer until ordinary atlas, overlap, and observation-consistency machinery proves insufficient.
+- **Category theory:** defer until a concrete composition seam reduces an existing interface rather than restating it abstractly.
+- **Twistor theory, noncommutative geometry, and higher categories:** no present repository seam or Verification Problem.
+
+Kaluza-Klein theory and all five-dimensional frameworks are excluded from the Mathematical Physics Substrate portfolio.
+
+#### Related Portfolio
+
+The eight-PRD organization, including activation-gated outlines for compatible forms, DG, variational integration, adjoints, stochastic measures, and UQ, is recorded in the [Mathematical Physics Substrate Architecture Proposal](mathematical-physics-substrate-proposal.md). Only [PRD 0003](PRD-0003-constraint-aware-hyperbolic-conservation-laws.md) is fully drafted in this documentation phase.
+
 ## Product Boundary
 
 The tracks above are not product-facing capabilities. Until they graduate through issue, ADR, implementation, verification, and capability-status updates, Transport Studio documentation and UI should continue to describe them as future, gated, substrate, or validation-only work.
@@ -410,4 +436,6 @@ In particular, product-facing strong-field or production numerical-relativity cl
 - [PRD 0001: Relativistic Multiphysics Domain Spine](PRD-0001-relativistic-multiphysics-spine.md)
 - [Relativistic Multiphysics Research Note](relativistic-multiphysics-research.md)
 - [ADR 0007: Staged Relativistic Multiphysics Kernel Promotion](ADR-0007.md)
+- [Mathematical Physics Substrate Architecture Proposal](mathematical-physics-substrate-proposal.md)
+- [Mathematical Physics Substrate Research Note](mathematical-physics-substrate-research.md)
 - [Transport Studio Context](../../CONTEXT.md)

@@ -32,6 +32,8 @@ The first program is verification-only. It must prove the abstraction with four 
 
 It must also prove nontrivial patch topology with the Hopf U(1) bundle over the two-sphere. Existing Cartesian evolution remains unchanged.
 
+This PRD is one member of the [Mathematical Physics Substrate](mathematical-physics-substrate-proposal.md) documentation family. It owns local geometric representation only; it does not become an umbrella for differential forms, numerical discretizations, evolution methods, Monte Carlo estimators, or uncertainty propagation.
+
 ## Users And Outcomes
 
 - Physics-kernel implementers can request field values in a named chart or frame without reproducing Jacobian and basis logic.
@@ -93,6 +95,26 @@ Mixed-index tensors, arbitrary tensor rank, and dimension-generic index algebra 
 - U(1) support includes complex sections, gauge transformations, connection one-forms, analytic covariant derivatives, and holonomy.
 - One phase and connection-sign convention must be recorded and used consistently in implementation and fixtures.
 - Electromagnetic fields, Maxwell evolution, charges, currents, and constrained field solvers belong to a separate future physics module that may consume this geometry.
+
+### Local Symmetry Boundary
+
+- Typed SO(3), Lorentz-frame, and U(1) actions may be added only where a supported chart, frame, section, or gauge transformation needs them.
+- Composition and inverse checks belong to the facade's transformation evidence.
+- Generic Lie groups, Lie algebras, and representation dispatch remain private implementation vocabulary.
+- Spherical-harmonic, spin, polarization, and general irreducible-representation analysis belong to separately gated consumers.
+
+## Adjacent Mathematical Capabilities
+
+The geometric-field module may be consumed by later Mathematical Physics Substrate PRDs, but it does not absorb their interfaces:
+
+- discrete differential forms and Hodge theory may use sections, charts, orientation, and connections;
+- hyperbolic conservation laws may use geometric representations while keeping physical flux/source evaluation independent of chart and discretization policy;
+- weak-form and DG adapters may consume both physical-law and compatible-calculus modules;
+- variational evolution may consume geometric fields and compatible forms for bounded fixtures;
+- differentiable verification may inspect repository-owned transformation and physics maps without exposing jet types;
+- stochastic transport and uncertainty modules remain separate from geometric representation.
+
+The portfolio, dependency order, activation gates, and deferred research topics are recorded in the [Mathematical Physics Substrate Architecture Proposal](mathematical-physics-substrate-proposal.md). [PRD 0003](PRD-0003-constraint-aware-hyperbolic-conservation-laws.md) is the only fully drafted sibling in this documentation phase.
 
 ## Verification Problems
 
@@ -183,6 +205,8 @@ Type-level chart/frame parameters remain an extension note, not an implementatio
 - No immediate rewrite of existing grid types or `SpacetimeCoordinate`.
 - No arbitrary-rank tensor algebra or type-level frame propagation.
 - No electromagnetic dynamics.
+- No differential-form, Hodge, finite-element, weak-form, DG, symplectic, adjoint, stochastic-measure, or uncertainty-propagation framework.
+- No public generic Lie-group, Lie-algebra, or representation-theory framework.
 - No Kaluza-Klein or five-dimensional framework.
 
 ## Related Documents
@@ -191,4 +215,7 @@ Type-level chart/frame parameters remain an extension note, not an implementatio
 - [Geometric Fields, Bundles, And Sections Evaluation](geometric-fields-bundles-sections-evaluation.md)
 - [Future-Track Notes Ledger](future-track-notes-ledger.md)
 - [Symbolica And Numerica Verification Gateway](symbolica-numerica-integration-research.md)
+- [Mathematical Physics Substrate Architecture Proposal](mathematical-physics-substrate-proposal.md)
+- [Mathematical Physics Substrate Research Note](mathematical-physics-substrate-research.md)
+- [PRD 0003: Constraint-Aware Hyperbolic Conservation Laws](PRD-0003-constraint-aware-hyperbolic-conservation-laws.md)
 - [Transport Studio Context](../../CONTEXT.md)

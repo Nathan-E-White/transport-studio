@@ -38,6 +38,10 @@ A product-facing statement of what a solver, backend, or model facet may honestl
 
 Coupled evolution of spacetime geometry, material motion, radiation fields, equation-of-state behavior, opacity behavior, and diagnostics in regimes where special or general relativity affects the model.
 
+### Mathematical Physics Substrate
+
+The documentation family for geometric representation, numerical evolution, differentiation, stochastic transport, and uncertainty methods shared by Relativistic Multiphysics and Monte Carlo transport. It is not a runtime package and does not merge the distinct meanings of Geometric Field and Transport Geometry.
+
 ### Dynamical Spacetime Coupling
 
 The first implementable Relativistic Multiphysics slice. Matter and radiation contribute stress-energy, spacetime geometry evolves from that source term, and the updated geometry feeds the next matter/radiation step.
@@ -65,6 +69,18 @@ A flux-conservative formulation of general relativistic hydrodynamics. It evolve
 ### Conservative Variables
 
 Numerical state variables arranged so finite-volume updates can preserve mass, momentum, and energy balances across cell faces.
+
+### Hyperbolic Conservation Law
+
+A physical evolution law whose local state, fluxes, sources, characteristic bounds, admissible states, and constraints can be defined independently of the numerical discretization used to evolve it. A Hyperbolic Conservation Law is not a mesh, Riemann solver, reconstruction method, or timestep scheme.
+
+### Admissible State
+
+A state satisfying the formulation-specific conditions required for physical and numerical meaning, such as positive density and pressure, subluminal velocity, Gray M1 realizability, or successful conservative-to-primitive consistency. Admissibility is not a universal clamp and does not by itself prove entropy stability.
+
+### Constraint Lifecycle
+
+The declared treatment of a mathematical or physical constraint: evolved as state, projected algebraically, solved through a dedicated operation, or monitored without mutation. The lifecycle keeps correction behavior and diagnostic evidence explicit without requiring a generic differential-algebraic-equation framework.
 
 ### Primitive Variables
 
