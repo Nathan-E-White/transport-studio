@@ -1,13 +1,15 @@
-import {Canvas} from "@react-three/fiber";
+import {Canvas, useThree} from "@react-three/fiber";
 import {Grid, Html, OrbitControls} from "@react-three/drei";
 import type {Diagnostic, Project, SceneEntity, TrackSample, TransportTallyDelta} from "@transport/domain";
 import type {EditorMode} from "../app/StudioApp";
 import {TrackLines} from "./TrackLines";
-import {type JSX, type ReactNode} from "react";
+import {useCallback, useEffect, useState, type JSX, type KeyboardEvent, type ReactNode} from "react";
+import {Vector3} from "three";
 import type {VisibilityTable} from "../state/editor";
 import {getModeEntityEmphasis, isEntityKindSelectableInMode} from "../state/editor";
 import {getViewportEntityPresentation, pickViewportEntity, type ViewportEntityPresentation} from "./viewportEntityPresentation";
 import {createTallyResultPresentation, type TallyResultPresentation} from "./tallyResultPresentation";
+import {resolveViewportKeyboardCommand, type ViewportKeyboardCommand} from "./viewportKeyboard";
 
 interface TransportViewportProps {
     readonly project: Project;
@@ -36,8 +38,49 @@ export function TransportViewport({
                                   }: TransportViewportProps) {
     const selectedEntity = project.scene.entities.find((entity) => entity.id === selectedEntityId);
     const tallyPresentation = createTallyResultPresentation(selectedEntity, tallies, tallyDiagnostics);
+    const [cameraCommand, setCameraCommand] = useState<CameraCommand>({sequence: 0, type: "reset"});
+    const [cameraStatus, setCameraStatus] = useState("Camera ready.");
+    const [cameraPose, setCameraPose] = useState({position: "12.000,9.000,14.000", target: "0.000,0.000,0.000"});
+    const selectedPresentation = selectedEntity ? getViewportEntityPresentation(selectedEntity, visibility) : undefined;
+
+    function handleViewportKeyDown(event: KeyboardEvent<HTMLElement>) {
+        const command = resolveViewportKeyboardCommand(event.nativeEvent, event.target, event.currentTarget);
+        if (!command) return;
+        event.preventDefault();
+        if (command === "inspect") {
+            const focusedEntityId = event.target instanceof HTMLElement ? event.target.dataset.entityId : undefined;
+            const entityToInspect = focusedEntityId
+                ? project.scene.entities.find((entity) => entity.id === focusedEntityId)
+                : selectedEntity;
+            const presentation = entityToInspect ? getViewportEntityPresentation(entityToInspect, visibility) : selectedPresentation;
+            if (entityToInspect?.kind === "tally" && !showTallies) {
+                setCameraStatus("Enable Tallies before focusing a tally entity.");
+                return;
+            }
+            if (!entityToInspect || entityToInspect.kind === "material" || !presentation?.visible) {
+                setCameraStatus("Select a visible geometry, source, or tally entity before pressing F.");
+                return;
+            }
+            if (entityToInspect.id !== selectedEntityId) onSelect(entityToInspect.id);
+            setCameraCommand((current) => ({sequence: current.sequence + 1, type: command, entity: entityToInspect}));
+            setCameraStatus(`Focused ${entityToInspect.name}.`);
+            return;
+        }
+        setCameraCommand((current) => ({sequence: current.sequence + 1, type: command}));
+        setCameraStatus(CAMERA_STATUS[command]);
+    }
+
+    const handleCameraApplied = useCallback((position: Vector3, target: Vector3) => {
+        setCameraPose({position: formatCameraVector(position), target: formatCameraVector(target)});
+    }, []);
+
     return (
+      <section id="transport-viewport" className="transport-viewport" role="region" aria-label="Transport viewport" tabIndex={0}
+          aria-describedby="viewport-keyboard-help" onKeyDown={handleViewportKeyDown}
+          data-camera-command={cameraCommand.type} data-camera-sequence={cameraCommand.sequence}
+          data-camera-position={cameraPose.position} data-camera-target={cameraPose.target}>
         <Canvas camera={{position: [12, 9, 14], fov: 42}} shadows>
+            <KeyboardCameraController command={cameraCommand} onApplied={handleCameraApplied}/>
             <color attach="background" args={["#070b16"]}/>
             <fog attach="fog" args={["#070b16", 22, 46]}/>
             <ambientLight intensity={0.7}/>
@@ -71,7 +114,80 @@ export function TransportViewport({
             {showAxes && <AxesOverlay/>}
             <OrbitControls makeDefault enableDamping dampingFactor={0.08}/>
         </Canvas>
+        <p id="viewport-keyboard-help" className="viewport-keyboard-help">Keyboard: W/A/S/D move · Q/E height · F focus selection · Home reset</p>
+        <p className="viewport-camera-status" role="status">{cameraStatus}</p>
+      </section>
     );
+}
+
+interface CameraCommand {
+    readonly sequence: number;
+    readonly type: ViewportKeyboardCommand;
+    readonly entity?: SceneEntity;
+}
+
+const CAMERA_STATUS: Readonly<Record<Exclude<ViewportKeyboardCommand, "inspect">, string>> = {
+    forward: "Camera moved forward.",
+    backward: "Camera moved backward.",
+    left: "Camera moved left.",
+    right: "Camera moved right.",
+    down: "Camera moved down.",
+    up: "Camera moved up.",
+    reset: "Camera reset to the default view.",
+};
+
+function KeyboardCameraController({command, onApplied}: {
+    readonly command: CameraCommand;
+    readonly onApplied: (position: Vector3, target: Vector3) => void;
+}) {
+    const {camera, controls} = useThree();
+    useEffect(() => {
+        if (command.sequence === 0) return;
+        const orbit = controls as {target?: Vector3; update?: () => void} | null;
+        const target = orbit?.target ?? new Vector3(0, 0, 0);
+        const movement = new Vector3();
+        const direction = new Vector3();
+        camera.getWorldDirection(direction);
+        direction.y = 0;
+        if (direction.lengthSq() === 0) direction.set(0, 0, -1);
+        direction.normalize();
+        const right = new Vector3().crossVectors(direction, camera.up).normalize();
+
+        switch (command.type) {
+            case "forward": movement.copy(direction); break;
+            case "backward": movement.copy(direction).multiplyScalar(-1); break;
+            case "left": movement.copy(right).multiplyScalar(-1); break;
+            case "right": movement.copy(right); break;
+            case "down": movement.set(0, -1, 0); break;
+            case "up": movement.set(0, 1, 0); break;
+            case "reset":
+                camera.position.set(12, 9, 14);
+                target.set(0, 0, 0);
+                camera.lookAt(target);
+                orbit?.update?.();
+                onApplied(camera.position, target);
+                return;
+            case "inspect": {
+                const position = command.entity?.transform.position;
+                if (!position) return;
+                target.set(position.x, position.y, position.z);
+                camera.position.set(position.x + 6, position.y + 4, position.z + 7);
+                camera.lookAt(target);
+                orbit?.update?.();
+                onApplied(camera.position, target);
+                return;
+            }
+        }
+        camera.position.add(movement);
+        target.add(movement);
+        orbit?.update?.();
+        onApplied(camera.position, target);
+    }, [camera, command, controls, onApplied]);
+    return null;
+}
+
+function formatCameraVector(vector: Vector3): string {
+    return `${vector.x.toFixed(3)},${vector.y.toFixed(3)},${vector.z.toFixed(3)}`;
 }
 
 function TallyResultOverlay({entity, presentation}: {
@@ -215,6 +331,7 @@ function ViewportEntityPick({entity, mode, presentation, onSelect, children}: {
 }) {
     return <button type="button" className="viewport-entity-pick"
         aria-label={`Select ${entity.name} in viewport`}
+        data-viewport-entity-pick="true" data-entity-id={entity.id}
         title={presentation.selectable ? `Select ${entity.name}` : `${entity.name} is unavailable in ${mode} mode.`}
         disabled={!presentation.selectable}
         onClick={(event) => {event.stopPropagation(); onSelect();}}>{children}</button>;

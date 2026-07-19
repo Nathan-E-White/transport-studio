@@ -172,6 +172,9 @@ function StudioWorkbench() {
                     </div>
                 </div>
 
+                <button className="viewport-focus-shortcut" type="button"
+                    onClick={() => document.getElementById("transport-viewport")?.focus()}>Focus viewport</button>
+
                 <ModeSwitcher/>
 
                 <div className="toolbar-actions">
