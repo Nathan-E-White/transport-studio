@@ -43,6 +43,49 @@ test("opens the studio shell and runs the main browser flows", async ({page}) =>
   await page.getByRole("button", {name: "design"}).click();
   await expect(page.locator(".viewport-hud.top-left")).toContainText("DESIGN MODE");
 
+  await page.getByRole("treeitem", {name: "Shield Slab, geometry"}).click();
+  await page.getByRole("button", {name: "probe"}).click();
+
+  const projectTreeToggle = page.getByRole("button", {name: "Project Tree"});
+  const inspectorToggle = page.getByRole("button", {name: "Inspector"});
+  const runDockToggle = page.getByRole("button", {name: "Run Dock"});
+  const viewport = page.locator(".viewport-region");
+  const expandedViewport = await viewport.boundingBox();
+  expect(expandedViewport).not.toBeNull();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    await page.evaluate(() => document.documentElement.clientWidth),
+  );
+
+  await projectTreeToggle.click();
+  await inspectorToggle.click();
+  await runDockToggle.click();
+  await expect(projectTreeToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(runDockToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#studio-project-tree-panel")).toBeHidden();
+  await expect(page.locator("#studio-inspector-panel")).toBeHidden();
+  await expect(page.locator("#studio-run-dock-panel")).toBeHidden();
+
+  const collapsedViewport = await viewport.boundingBox();
+  expect(collapsedViewport).not.toBeNull();
+  expect(collapsedViewport!.width).toBeGreaterThan(expandedViewport!.width);
+  expect(collapsedViewport!.height).toBeGreaterThan(expandedViewport!.height);
+
+  await projectTreeToggle.click();
+  await projectTreeToggle.click();
+  await projectTreeToggle.click();
+  await inspectorToggle.click();
+  await runDockToggle.click();
+  await expect(projectTreeToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(inspectorToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(runDockToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("treeitem", {name: "Shield Slab, geometry"})).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.locator(".inspector-panel")).toContainText("Shield Slab");
+  await expect(page.locator(".viewport-hud.top-left")).toContainText("PROBE MODE");
+
   const runTab = page.getByRole("tab", {name: "run"});
   await expect(page.getByRole("tablist", {name: "Run details"})).toBeVisible();
   await expect(runTab).toHaveAttribute("aria-selected", "true");

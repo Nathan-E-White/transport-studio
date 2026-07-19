@@ -22,16 +22,22 @@ button, input { font: inherit; }
 button { color: inherit; }
 
 .studio-shell {
+  --left-panel-width: 310px;
+  --right-panel-width: 360px;
+  --bottom-panel-height: 154px;
   display: grid;
   height: 100%;
-  grid-template-columns: 310px minmax(520px, 1fr) 360px;
-  grid-template-rows: 64px minmax(0, 1fr) 154px;
+  grid-template-columns: var(--left-panel-width) minmax(520px, 1fr) var(--right-panel-width);
+  grid-template-rows: 64px minmax(0, 1fr) var(--bottom-panel-height);
   grid-template-areas:
     "toolbar toolbar toolbar"
     "left viewport right"
     "bottom bottom bottom";
   background: radial-gradient(circle at 50% -10%, rgba(0, 229, 255, 0.16), transparent 30%), var(--bg-0);
 }
+.studio-shell[data-left-panel-open="false"] { --left-panel-width: 0px; }
+.studio-shell[data-right-panel-open="false"] { --right-panel-width: 0px; }
+.studio-shell[data-bottom-panel-open="false"] { --bottom-panel-height: 0px; }
 
 .toolbar {
   grid-area: toolbar;
@@ -50,7 +56,7 @@ button { color: inherit; }
 .brand-subtitle, .compact { color: var(--text-muted); font-size: 0.78rem; margin: 2px 0 0; }
 
 .mode-switcher { display: flex; gap: 6px; padding: 5px; background: rgba(5, 8, 22, 0.42); border: 1px solid var(--line); border-radius: 14px; }
-.mode-button, .toolbar button, .icon-button, .bottom-tabs button {
+.mode-button, .toolbar button, .icon-button, .bottom-tabs button, .shell-panel-toggle {
   border: 1px solid var(--line);
   background: rgba(24, 35, 61, 0.78);
   color: #edf2ff;
@@ -71,6 +77,9 @@ button { color: inherit; }
 .left-panel { grid-area: left; background: rgba(10, 16, 32, 0.96); border-right: 1px solid var(--line); overflow: auto; }
 .right-panel { grid-area: right; background: rgba(10, 16, 32, 0.96); border-left: 1px solid var(--line); overflow: auto; }
 .viewport-region { grid-area: viewport; min-width: 0; min-height: 0; position: relative; overflow: hidden; }
+.shell-panel-controls { position: absolute; z-index: 6; top: 14px; right: 14px; display: flex; gap: 5px; padding: 5px; border: 1px solid var(--line); border-radius: 14px; background: rgba(7, 11, 22, 0.68); backdrop-filter: blur(14px); box-shadow: 0 12px 40px rgba(0,0,0,0.24); }
+.shell-panel-toggle { color: var(--text-muted); padding: 7px 8px; }
+.shell-panel-toggle.active { color: var(--cyan); border-color: rgba(0, 229, 255, 0.3); }
 .bottom-panel { grid-area: bottom; background: rgba(12, 18, 34, 0.98); border-top: 1px solid var(--line); min-height: 0; }
 .panel { padding: 16px; }
 .panel h2 { font-size: 1rem; margin: 0; }
@@ -190,7 +199,7 @@ button { color: inherit; }
 .diagnostic-list-horizontal { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 @media (max-width: 1100px) {
-  .studio-shell { grid-template-columns: 270px 1fr; grid-template-areas: "toolbar toolbar" "left viewport" "bottom bottom"; }
+  .studio-shell { --left-panel-width: 270px; --right-panel-width: 0px; grid-template-columns: var(--left-panel-width) 1fr; grid-template-areas: "toolbar toolbar" "left viewport" "bottom bottom"; }
   .right-panel { display: none; }
   .run-metrics { grid-template-columns: repeat(3, minmax(110px, 1fr)); }
 }

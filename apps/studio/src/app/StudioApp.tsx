@@ -10,6 +10,7 @@ import {createTauriNativePhotonSmokeBridge} from "./nativePhotonSmokeTauriBridge
 import {ProjectTree} from "../components/project-tree/ProjectTree";
 import {StyleSelectorBoundary} from "../components/style-selector/StyleSelectorBoundary";
 import {ModeSwitcher} from "../components/project-tree/ModeSwitcher/ModeSwitcher";
+import {SHELL_PANEL_IDS, ShellPanelControls} from "../components/ShellPanelControls";
 import {InspectorPanel} from "../panels/InspectorPanel";
 import {RunPanel} from "../panels/RunPanel";
 import {TransportViewport} from "../viewport/TransportViewport";
@@ -61,6 +62,7 @@ function StudioWorkbench() {
     const [showTallies, setShowTallies] = useState(true);
     const [showAxes, setShowAxes] = useState(true);
     const mode = state.shell.activeMode;
+    const {leftPanelOpen, rightPanelOpen, bottomDockOpen} = state.shell;
 
     const diagnostics = useMemo<readonly Diagnostic[]>(() => [
         ...validateProject(project),
@@ -130,7 +132,12 @@ function StudioWorkbench() {
 
     return (
 
-        <div className="studio-shell">
+        <div
+            className="studio-shell"
+            data-left-panel-open={leftPanelOpen}
+            data-right-panel-open={rightPanelOpen}
+            data-bottom-panel-open={bottomDockOpen}
+        >
             <header className="toolbar">
                 <div className="brand-lockup">
                     <div className="brand-mark">τ</div>
@@ -150,13 +157,14 @@ function StudioWorkbench() {
                 </div>
             </header>
 
-            <aside className="left-panel">
+            <aside id={SHELL_PANEL_IDS.projectTree} className="left-panel" hidden={!leftPanelOpen}>
                 <ProjectTree
                     diagnostics={diagnostics}
                 />
             </aside>
 
             <main className="viewport-region">
+                <ShellPanelControls/>
                 <TransportViewport
                     project={presentationProject}
                     tracks={showTracks ? tracks : []}
@@ -181,12 +189,12 @@ function StudioWorkbench() {
                 </div>
             </main>
 
-            <aside className="right-panel">
+            <aside id={SHELL_PANEL_IDS.inspector} className="right-panel" hidden={!rightPanelOpen}>
                 <InspectorPanel entity={selectedEntity} diagnostics={diagnostics} tracks={tracks}
                                 project={presentationProject}/>
             </aside>
 
-            <footer className="bottom-panel">
+            <footer id={SHELL_PANEL_IDS.runDock} className="bottom-panel" hidden={!bottomDockOpen}>
                 <RunPanel
                     config={runConfiguration}
                     diagnostics={diagnostics}

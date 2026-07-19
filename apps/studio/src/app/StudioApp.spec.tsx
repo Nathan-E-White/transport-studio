@@ -362,6 +362,39 @@ describe("StudioApp spec", () => {
         expect(mocks.runToyPhotonTransport).not.toHaveBeenCalled();
     });
 
+    it("collapses and restores shell panels without losing unrelated editor state", () => {
+        render(<StudioApp/>);
+
+        fireEvent.click(screen.getByRole("button", {name: "Select Water Moderator"}));
+        fireEvent.click(screen.getByRole("button", {name: "probe"}));
+
+        const projectTreeToggle = screen.getByRole("button", {name: "Project Tree"});
+        const inspectorToggle = screen.getByRole("button", {name: "Inspector"});
+        const runDockToggle = screen.getByRole("button", {name: "Run Dock"});
+        expect(projectTreeToggle).toHaveAttribute("aria-expanded", "true");
+        expect(inspectorToggle).toHaveAttribute("aria-expanded", "true");
+        expect(runDockToggle).toHaveAttribute("aria-expanded", "true");
+
+        fireEvent.click(projectTreeToggle);
+        fireEvent.click(inspectorToggle);
+        fireEvent.click(runDockToggle);
+
+        expect(projectTreeToggle).toHaveAttribute("aria-expanded", "false");
+        expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
+        expect(runDockToggle).toHaveAttribute("aria-expanded", "false");
+        expect(document.getElementById("studio-project-tree-panel")).toHaveAttribute("hidden");
+        expect(document.getElementById("studio-inspector-panel")).toHaveAttribute("hidden");
+        expect(document.getElementById("studio-run-dock-panel")).toHaveAttribute("hidden");
+
+        fireEvent.click(projectTreeToggle);
+        fireEvent.click(inspectorToggle);
+        fireEvent.click(runDockToggle);
+
+        expect(screen.getByText("tree selected entity: water-1")).toBeTruthy();
+        expect(screen.getByText("inspector entity: Water Moderator")).toBeTruthy();
+        expect(screen.getByText("PROBE MODE")).toBeTruthy();
+    });
+
     it("keeps entity selection synchronized between the project tree, viewport, inspector, and title HUD", () => {
         render(<StudioApp/>);
 
