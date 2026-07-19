@@ -6,6 +6,10 @@
     "apps/*",
     "packages/*"
   ],
+  "overrides": {
+    "qs": "6.15.3",
+    "uuid": "11.1.1"
+  },
   "scripts": {
     "dev": "bun run launch:web",
     "launch": "bun run launch:native",
