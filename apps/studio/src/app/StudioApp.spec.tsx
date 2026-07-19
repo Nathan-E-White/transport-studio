@@ -1,6 +1,6 @@
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import type {Project, TransportBackendEvent, TransportBackendMetadata} from "@transport/domain";
+import type {Project, SceneEntity, TransportBackendEvent, TransportBackendMetadata} from "@transport/domain";
 import type {NativePhotonSmokeBridge} from "@transport/transport-worker";
 import {StudioApp} from "./StudioApp";
 import {getPrimarySelection, useEditorStore} from "../state/editor";
@@ -210,6 +210,7 @@ function ProjectTreeMock() {
             <p>tree selected entity: {selectedEntityId ?? "none"}</p>
             <p>tree shield visible: {String(shield?.visible ?? false)}</p>
             <p>tree shield included: {String(shield?.includedInCompile ?? true)}</p>
+            <p>tree shield x: {shield?.transform.position.x}</p>
             <p>
                 scene
                 stats: {stats.geometry} geometry, {stats.materials} materials, {stats.sources} sources, {stats.tallies} tallies
@@ -236,15 +237,21 @@ vi.mock("../components/style-selector/StyleSelectorBoundary", () => ({
 
 vi.mock("../panels/InspectorPanel", () => ({
     InspectorPanel: (props: {
-        entity?: { name: string };
+        entity?: SceneEntity;
         diagnostics: readonly unknown[];
-        tracks: readonly unknown[]
+        tracks: readonly unknown[];
+        onEntityChange: (baseline: SceneEntity, candidate: SceneEntity) => void;
     }) => (
         <section aria-label="Inspector panel">
             <h2>Inspector panel</h2>
             <p>inspector entity: {props.entity?.name ?? "none"}</p>
             <p>inspector diagnostics: {props.diagnostics.length}</p>
             <p>inspector tracks: {props.tracks.length}</p>
+            <p>inspector position x: {props.entity?.transform.position.x ?? "none"}</p>
+            {props.entity && <button type="button" onClick={() => props.onEntityChange(props.entity!, {
+                ...props.entity!,
+                transform: {...props.entity!.transform, position: {...props.entity!.transform.position, x: 9}},
+            })}>Move Inspector Entity</button>}
         </section>
     )
 }));
@@ -290,7 +297,7 @@ vi.mock("../viewport/TransportViewport", () => ({
         showAxes: boolean;
         mode: string;
         visibility: unknown;
-        project: {scene: {entities: readonly {id: string; visible: boolean}[]}};
+        project: {scene: {entities: readonly {id: string; visible: boolean; transform: {position: {x: number}}}[]}};
     }) => (
         <section aria-label="Transport viewport">
             <h2>Transport viewport</h2>
@@ -300,6 +307,7 @@ vi.mock("../viewport/TransportViewport", () => ({
             <p>viewport tallies visible: {String(props.showTallies)}</p>
             <p>viewport axes visible: {String(props.showAxes)}</p>
             <p>viewport shield visible: {String(props.project.scene.entities.find((entity) => entity.id === "shield-1")?.visible)}</p>
+            <p>viewport shield x: {props.project.scene.entities.find((entity) => entity.id === "shield-1")?.transform.position.x}</p>
         </section>
     )
 }));
@@ -413,6 +421,17 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("tree selected entity: dose-1")).toBeTruthy();
         expect(screen.getByText("viewport selected entity: dose-1")).toBeTruthy();
         expect(screen.getByText("inspector entity: Dose Tally")).toBeTruthy();
+    });
+
+    it("propagates accepted Inspector edits through the authoritative Editable Scene", () => {
+        render(<StudioApp/>);
+
+        expect(screen.getByText("inspector entity: Shield Slab")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", {name: "Move Inspector Entity"}));
+
+        expect(screen.getByText("tree shield x: 9")).toBeInTheDocument();
+        expect(screen.getByText("viewport shield x: 9")).toBeInTheDocument();
+        expect(screen.getByText("inspector position x: 9")).toBeInTheDocument();
     });
 
     it("runs the toy photon simulation, enters run mode, and summarizes terminal track outcomes", async () => {

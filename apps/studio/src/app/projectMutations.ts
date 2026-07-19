@@ -59,6 +59,15 @@ export function deleteEntity(project: Project, entityId: string): Project {
   );
 }
 
+export function replaceEntity(project: Project, candidate: SceneEntity): Project {
+  const current = project.scene.entities.find((entity) => entity.id === candidate.id);
+  if (!current || current.kind !== candidate.kind) return project;
+  return updateProjectEntities(
+    project,
+    project.scene.entities.map((entity) => entity.id === candidate.id ? candidate : entity),
+  );
+}
+
 export function setEntityVisible(project: Project, entityId: string, visible: boolean): Project {
   return updateProjectEntities(
     project,

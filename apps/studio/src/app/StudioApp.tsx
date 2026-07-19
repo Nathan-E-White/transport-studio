@@ -196,7 +196,12 @@ function StudioWorkbench() {
 
             <aside id={SHELL_PANEL_IDS.inspector} className="right-panel" hidden={!rightPanelOpen}>
                 <InspectorPanel entity={selectedEntity} diagnostics={diagnostics} tracks={tracks}
-                                project={presentationProject}/>
+                                project={presentationProject}
+                                editDiagnostics={state.inspectorEditDiagnostics}
+                                editingDisabledReason={resultView === "submitted"
+                                    ? "Submitted run snapshots are read-only. Return to the current scene to edit."
+                                    : undefined}
+                                onEntityChange={(baseline, candidate) => dispatch({type: "apply-inspector-edit", baseline, candidate})}/>
             </aside>
 
             <footer id={SHELL_PANEL_IDS.runDock} className="bottom-panel" hidden={!bottomDockOpen}>

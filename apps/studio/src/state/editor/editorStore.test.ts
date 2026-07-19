@@ -95,4 +95,32 @@ describe("Editable Scene authoritative store", () => {
         expect(compiled.ok).toBe(true);
         expect(compiled.value?.tallies.some((candidate) => candidate.id === tally.id)).toBe(false);
     });
+
+    it("atomically merges Inspector fields, preserves Tree changes, and rejects conflicts or locks", () => {
+        const initial = createEditorStoreState(createInitialProject());
+        const geometry = initial.scene.project!.scene.entities.find((entity) => entity.kind === "geometry")!;
+        const changedEntity = {...geometry, transform: {...geometry.transform, position: {x: 9, y: 0, z: 0}}};
+        const ref = {kind: geometry.kind, id: geometry.id};
+
+        const hidden = editorStoreReducer(initial, {type: "set-visible", ref, visible: false});
+        const changed = editorStoreReducer(hidden, {type: "apply-inspector-edit", baseline: geometry, candidate: changedEntity});
+        expect(changed.scene.project!.scene.entities.find((entity) => entity.id === geometry.id)?.transform.position.x).toBe(9);
+        expect(changed.scene.project!.scene.entities.find((entity) => entity.id === geometry.id)?.visible).toBe(false);
+        expect(initial.scene.project!.scene.entities.find((entity) => entity.id === geometry.id)?.transform.position.x).toBe(0);
+
+        const locked = editorStoreReducer(initial, {type: "set-locked", ref, locked: true});
+        const lockedResult = editorStoreReducer(locked, {type: "apply-inspector-edit", baseline: geometry, candidate: changedEntity});
+        expect(lockedResult.scene.project).toBe(locked.scene.project);
+        expect(lockedResult.inspectorEditDiagnostics[0]?.code).toBe("inspector.entity.locked");
+
+        const concurrentEntity = {...geometry, transform: {...geometry.transform, position: {x: 5, y: 0, z: 0}}};
+        const concurrent = editorStoreReducer(initial, {type: "apply-inspector-edit", baseline: geometry, candidate: concurrentEntity});
+        const conflict = editorStoreReducer(concurrent, {type: "apply-inspector-edit", baseline: geometry, candidate: changedEntity});
+        expect(conflict.scene.project!.scene.entities.find((entity) => entity.id === geometry.id)?.transform.position.x).toBe(5);
+        expect(conflict.inspectorEditDiagnostics[0]?.code).toBe("inspector.entity.conflict");
+
+        const source = initial.scene.project!.scene.entities.find((entity) => entity.kind === "source")!;
+        const selectedElsewhere = editorStoreReducer(conflict, {type: "select-one", ref: {kind: source.kind, id: source.id}});
+        expect(selectedElsewhere.inspectorEditDiagnostics).toEqual([]);
+    });
 });

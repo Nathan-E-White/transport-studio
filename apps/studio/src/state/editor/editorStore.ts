@@ -50,6 +50,7 @@ import {
     setEntityVisible,
     updateEntityMetadata,
 } from "../../app/projectMutations";
+import {commitInspectorCandidate, type InspectorEditDiagnostic} from "../../app/inspectorEditing";
 
 export interface EditorSceneState {
     readonly project: Project | null;
@@ -91,6 +92,7 @@ export interface EditorStoreState {
     readonly selection: EditorSelectionState;
     readonly validation: EditorValidationState;
     readonly stale: EditorStaleState;
+    readonly inspectorEditDiagnostics: readonly InspectorEditDiagnostic[];
 }
 
 export type EditorStoreAction =
@@ -102,6 +104,7 @@ export type EditorStoreAction =
 
     | { readonly type: "create-project-entity"; readonly kind: SceneEntity["kind"] }
     | { readonly type: "update-project-entity-metadata"; readonly ref: EditorEntityRef; readonly patch: {readonly name?: string; readonly description?: string; readonly tags?: readonly string[]} }
+    | { readonly type: "apply-inspector-edit"; readonly baseline: SceneEntity; readonly candidate: SceneEntity }
     | { readonly type: "duplicate-project-entity"; readonly ref: EditorEntityRef }
     | { readonly type: "delete-project-entity"; readonly ref: EditorEntityRef }
 
@@ -143,6 +146,7 @@ export const initialEditorStoreState: EditorStoreState = {
         diagnostics: [],
     },
     stale: CLEAN_STALE_STATE,
+    inspectorEditDiagnostics: [],
 };
 
 export function createEditorStoreState(project: Project, initialVisibility: VisibilityTable = {}): EditorStoreState {
@@ -229,6 +233,16 @@ export function editorStoreReducer(
             );
         }
 
+        case "apply-inspector-edit": {
+            const project = requireProject(state);
+            const result = commitInspectorCandidate(project, action.candidate, action.baseline);
+            if (!result.ok) return {...state, inspectorEditDiagnostics: result.diagnostics};
+            return markProjectChanged({
+                ...syncProject(state, result.project),
+                inspectorEditDiagnostics: [],
+            }, dirtyReasonForEntityKind(action.candidate.kind));
+        }
+
         case "duplicate-project-entity": {
             const project = requireProject(state);
             const current = project.scene.entities.find((entity) => entity.id === action.ref.id);
@@ -271,12 +285,14 @@ export function editorStoreReducer(
             return {
                 ...state,
                 selection: selectOne(state.selection, action.ref),
+                inspectorEditDiagnostics: [],
             };
 
         case "select-many":
             return {
                 ...state,
                 selection: selectMany(state.selection, action.refs.filter((ref) => isSelectable(state, ref))),
+                inspectorEditDiagnostics: [],
             };
 
         case "toggle-selected":
@@ -284,12 +300,14 @@ export function editorStoreReducer(
             return {
                 ...state,
                 selection: toggleSelected(state.selection, action.ref),
+                inspectorEditDiagnostics: [],
             };
 
         case "clear-selection":
             return {
                 ...state,
                 selection: clearSelection(state.selection),
+                inspectorEditDiagnostics: [],
             };
 
         case "set-hovered":

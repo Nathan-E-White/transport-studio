@@ -47,7 +47,7 @@ test("opens the studio shell and runs the main browser flows", async ({page}) =>
   await page.getByRole("button", {name: "probe"}).click();
 
   const projectTreeToggle = page.getByRole("button", {name: "Project Tree"});
-  const inspectorToggle = page.getByRole("button", {name: "Inspector"});
+  const inspectorToggle = page.getByRole("button", {name: "Inspector", exact: true});
   const runDockToggle = page.getByRole("button", {name: "Run Dock"});
   const viewport = page.locator(".viewport-region");
   const expandedViewport = await viewport.boundingBox();

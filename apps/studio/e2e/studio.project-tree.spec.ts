@@ -14,7 +14,7 @@ test("project tree drives real editor CRUD state", async ({page}) => {
 
   await entityRow(page, "Shield Slab", "geometry").click();
   await expect(page.getByRole("heading", {name: "Shield Slab"})).toBeVisible();
-  await expect(page.locator(".property-row", {hasText: "Rotation"})).toContainText("0.00, 0.00, 0.00");
+  await expect(page.getByLabel("Rotation value")).toContainText("0.00, 0.00, 0.00");
 
   await clickRowAction(page, "Shield Slab", "Edit entity metadata");
   await page.getByLabel("Name").fill("Shield Plate");
