@@ -11,6 +11,7 @@ import {
 export type ProjectTreeBadgeKind =
     | "invalid"
     | "warning"
+    | "info"
     | "stale"
     | "helper-only"
     | "missing-material"
@@ -29,13 +30,12 @@ export interface ProjectTreeBadge {
 export interface ProjectTreeBadgeInput {
     readonly node: ProjectTreeNode;
     readonly visibility: VisibilityTable;
-    readonly validationErrors: readonly EditorDiagnostic[];
-    readonly validationWarnings: readonly EditorDiagnostic[];
+    readonly validationDiagnostics: readonly EditorDiagnostic[];
     readonly staleReasons: readonly string[];
 }
 
 export function getProjectTreeBadges(input: ProjectTreeBadgeInput): readonly ProjectTreeBadge[] {
-    const { node, visibility, validationErrors, validationWarnings, staleReasons } = input;
+    const { node, visibility, validationDiagnostics, staleReasons } = input;
 
     if (!node.entityRef) {
         return [];
@@ -44,13 +44,12 @@ export function getProjectTreeBadges(input: ProjectTreeBadgeInput): readonly Pro
     const ref = node.entityRef;
     const flags = getEntityViewFlags(visibility, ref);
 
-    const entityErrors = validationErrors.filter((diagnostic) =>
+    const entityDiagnostics = validationDiagnostics.filter((diagnostic) =>
         diagnostic.entity ? entityKey(diagnostic.entity) === entityKey(ref) : false,
     );
-
-    const entityWarnings = validationWarnings.filter((diagnostic) =>
-        diagnostic.entity ? entityKey(diagnostic.entity) === entityKey(ref) : false,
-    );
+    const entityErrors = entityDiagnostics.filter((diagnostic) => diagnostic.severity === "error");
+    const entityWarnings = entityDiagnostics.filter((diagnostic) => diagnostic.severity === "warning");
+    const entityInfos = entityDiagnostics.filter((diagnostic) => diagnostic.severity === "info");
 
     const badges: ProjectTreeBadge[] = [];
 
@@ -72,6 +71,15 @@ export function getProjectTreeBadges(input: ProjectTreeBadgeInput): readonly Pro
         });
     }
 
+    if (entityInfos.length > 0) {
+        badges.push({
+            kind: "info",
+            label: "info",
+            title: summarizeDiagnostics(entityInfos, "Entity information"),
+            severity: "info",
+        });
+    }
+
     if (isEntityStale(staleReasons, ref)) {
         badges.push({
             kind: "stale",
@@ -90,7 +98,7 @@ export function getProjectTreeBadges(input: ProjectTreeBadgeInput): readonly Pro
         });
     }
 
-    if (ref.kind === "geometry" && hasDiagnosticCode(entityErrors, entityWarnings, "missing-material")) {
+    if (ref.kind === "geometry" && hasDiagnosticCode(entityDiagnostics, "missing-material")) {
         badges.push({
             kind: "missing-material",
             label: "material?",
@@ -99,7 +107,7 @@ export function getProjectTreeBadges(input: ProjectTreeBadgeInput): readonly Pro
         });
     }
 
-    if (ref.kind === "region" && hasDiagnosticCode(entityErrors, entityWarnings, "unassigned-region")) {
+    if (ref.kind === "region" && hasDiagnosticCode(entityDiagnostics, "unassigned-region")) {
         badges.push({
             kind: "unassigned-region",
             label: "unassigned",
@@ -165,11 +173,10 @@ export function summarizeDiagnostics(
 }
 
 export function hasDiagnosticCode(
-    errors: readonly EditorDiagnostic[],
-    warnings: readonly EditorDiagnostic[],
+    diagnostics: readonly EditorDiagnostic[],
     code: string,
 ): boolean {
-    return [...errors, ...warnings].some((diagnostic) => diagnostic.code === code);
+    return diagnostics.some((diagnostic) => diagnostic.code === code);
 }
 
 export function isEntityStale(reasons: readonly string[], ref: EditorEntityRef): boolean {

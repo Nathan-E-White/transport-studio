@@ -46,23 +46,10 @@ function ProjectTreeInner({
   );
 
   useEffect(() => {
-    const errors: EditorDiagnostic[] = [];
-    const warnings: EditorDiagnostic[] = [];
-
-    for (const diagnostic of diagnostics) {
-      const normalized = normalizeDiagnostic(diagnostic, project.scene.entities);
-      if (!normalized) {
-        continue;
-      }
-
-      if (normalized.severity === "error") {
-        errors.push(normalized);
-      } else if (normalized.severity === "warning") {
-        warnings.push(normalized);
-      }
-    }
-
-    dispatch({type: "set-validation-result", errors, warnings});
+    dispatch({
+      type: "set-validation-result",
+      diagnostics: diagnostics.map((diagnostic) => normalizeDiagnostic(diagnostic, project.scene.entities)),
+    });
   }, [diagnostics, dispatch, project.scene.entities]);
 
   const filteredMetadata = useMemo(() => {
@@ -209,7 +196,7 @@ function entityRefForEntity(entity: SceneEntity): EditorEntityRef {
 function normalizeDiagnostic(
   diagnostic: Diagnostic,
   entities: readonly SceneEntity[],
-): EditorDiagnostic | null {
+): EditorDiagnostic {
   const entity = diagnostic.entityId
     ? entities.find((candidate) => candidate.id === diagnostic.entityId)
     : undefined;
@@ -217,6 +204,7 @@ function normalizeDiagnostic(
   return {
     id: `${diagnostic.severity}:${diagnostic.entityId ?? "project"}:${diagnostic.message}`,
     severity: diagnostic.severity,
+    code: diagnostic.code,
     message: diagnostic.message,
     entity: entity ? entityRefForEntity(entity) : undefined,
   };

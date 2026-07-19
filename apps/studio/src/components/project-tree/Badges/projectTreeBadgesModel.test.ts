@@ -20,8 +20,7 @@ describe("getProjectTreeBadges", () => {
         const badges = getProjectTreeBadges({
             node: geometryNode,
             visibility: {},
-            validationErrors: [],
-            validationWarnings: [],
+            validationDiagnostics: [],
             staleReasons: [],
         });
 
@@ -32,7 +31,7 @@ describe("getProjectTreeBadges", () => {
         const badges = getProjectTreeBadges({
             node: geometryNode,
             visibility: {},
-            validationErrors: [
+            validationDiagnostics: [
                 {
                     id: "e1",
                     severity: "error",
@@ -43,7 +42,6 @@ describe("getProjectTreeBadges", () => {
                     },
                 },
             ],
-            validationWarnings: [],
             staleReasons: [],
         });
 
@@ -54,8 +52,7 @@ describe("getProjectTreeBadges", () => {
         const badges = getProjectTreeBadges({
             node: geometryNode,
             visibility: {},
-            validationErrors: [],
-            validationWarnings: [
+            validationDiagnostics: [
                 {
                     id: "w1",
                     severity: "warning",
@@ -88,8 +85,7 @@ describe("getProjectTreeBadges", () => {
                     helperOnly: false,
                 },
             },
-            validationErrors: [],
-            validationWarnings: [],
+            validationDiagnostics: [],
             staleReasons: [],
         });
 
@@ -104,8 +100,7 @@ describe("getProjectTreeBadges", () => {
         const badges = getProjectTreeBadges({
             node: geometryNode,
             visibility: {},
-            validationErrors: [],
-            validationWarnings: [],
+            validationDiagnostics: [],
             staleReasons: ["geometry-changed"],
         });
 

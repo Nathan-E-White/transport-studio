@@ -25,7 +25,12 @@ export function validateProject(project: Project): readonly Diagnostic[] {
 
   for (const entity of entities) {
     if (entity.kind === "geometry" && !entity.materialId) {
-      diagnostics.push({ severity: "warning", message: `Geometry '${entity.name}' has no material assigned.`, entityId: entity.id });
+      diagnostics.push({
+        severity: "warning",
+        code: "missing-material",
+        message: `Geometry '${entity.name}' has no material assigned.`,
+        entityId: entity.id,
+      });
     }
   }
 

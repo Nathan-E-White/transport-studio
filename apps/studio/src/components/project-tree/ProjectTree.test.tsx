@@ -193,4 +193,47 @@ describe("ProjectTree", () => {
 
     expect(screen.getByText("warning")).toBeInTheDocument();
   });
+
+  it("preserves mixed diagnostic codes, severity, messages, and entity association", () => {
+    renderProjectTree({
+      diagnostics: [
+        {
+          severity: "warning",
+          code: "missing-material",
+          message: "Shield Slab needs a material assignment.",
+          entityId: "geom-1" as Project["scene"]["entities"][number]["id"],
+        },
+        {
+          severity: "warning",
+          code: "future-diagnostic-code",
+          message: "A future warning remains generic.",
+          entityId: "geom-1" as Project["scene"]["entities"][number]["id"],
+        },
+        {
+          severity: "error",
+          message: "An uncoded error remains invalid.",
+          entityId: "geom-1" as Project["scene"]["entities"][number]["id"],
+        },
+        {
+          severity: "info",
+          code: "future-informational-code",
+          message: "An informational diagnostic remains visible.",
+          entityId: "geom-1" as Project["scene"]["entities"][number]["id"],
+        },
+      ],
+    });
+
+    const row = screen.getByRole("treeitem", {name: "Shield Slab, geometry"});
+    const badges = within(row).getByLabelText("Project tree badges");
+    expect(within(badges).getByText("material?")).toHaveAttribute("data-badge-kind", "missing-material");
+    expect(within(badges).getByText("warning")).toHaveAttribute(
+      "title",
+      "2 diagnostics: Shield Slab needs a material assignment.; A future warning remains generic.",
+    );
+    expect(within(badges).getByText("invalid")).toHaveAttribute("title", "An uncoded error remains invalid.");
+    expect(within(badges).getByText("info")).toHaveAttribute(
+      "title",
+      "An informational diagnostic remains visible.",
+    );
+  });
 });

@@ -53,6 +53,10 @@ test("project tree drives real editor CRUD state", async ({page}) => {
   await clickRowAction(page, "New Source", "Delete this entity");
   await expect(entityRow(page, "New Source", "source")).toHaveCount(0);
 
+  await page.getByRole("button", {name: "+ Geometry"}).click();
+  await expect(entityRow(page, "New Geometry", "geometry").locator('[data-badge-kind="missing-material"]')).toBeVisible();
+  await clickRowAction(page, "New Geometry", "Delete this entity");
+
   await page.getByRole("button", {name: /Run Toy Photons/}).click();
   await expect(page.locator(".viewport-hud.top-left")).toContainText(/64 sampled tracks/);
 

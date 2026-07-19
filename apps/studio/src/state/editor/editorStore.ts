@@ -64,8 +64,7 @@ export type EditorBottomDockTab =
 export interface EditorValidationState {
     readonly hasErrors: boolean;
     readonly hasWarnings: boolean;
-    readonly errors: readonly EditorDiagnostic[];
-    readonly warnings: readonly EditorDiagnostic[];
+    readonly diagnostics: readonly EditorDiagnostic[];
 }
 
 export interface EditorDiagnostic {
@@ -107,7 +106,7 @@ export type EditorStoreAction =
     | { readonly type: "set-locked"; readonly ref: EditorEntityRef; readonly locked: boolean }
     | { readonly type: "set-included-in-compile"; readonly ref: EditorEntityRef; readonly includedInCompile: boolean }
 
-    | { readonly type: "set-validation-result"; readonly errors: readonly EditorDiagnostic[]; readonly warnings: readonly EditorDiagnostic[] }
+    | { readonly type: "set-validation-result"; readonly diagnostics: readonly EditorDiagnostic[] }
     | { readonly type: "mark-validated" }
     | { readonly type: "mark-compiled" }
     | { readonly type: "mark-scene-clean" }
@@ -128,8 +127,7 @@ export const initialEditorStoreState: EditorStoreState = {
     validation: {
         hasErrors: false,
         hasWarnings: false,
-        errors: [],
-        warnings: [],
+        diagnostics: [],
     },
     stale: CLEAN_STALE_STATE,
 };
@@ -285,10 +283,9 @@ export function editorStoreReducer(
             return {
                 ...state,
                 validation: {
-                    hasErrors: action.errors.length > 0,
-                    hasWarnings: action.warnings.length > 0,
-                    errors: action.errors,
-                    warnings: action.warnings,
+                    hasErrors: action.diagnostics.some((diagnostic) => diagnostic.severity === "error"),
+                    hasWarnings: action.diagnostics.some((diagnostic) => diagnostic.severity === "warning"),
+                    diagnostics: action.diagnostics,
                 },
                 stale: markValidated(state.stale),
             };

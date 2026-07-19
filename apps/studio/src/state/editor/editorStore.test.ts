@@ -6,7 +6,7 @@ describe("Editable Scene authoritative store", () => {
     it("propagates authoring facts once while preserving independent visibility and compile inclusion", () => {
         const initial = editorStoreReducer(
             createEditorStoreState(createInitialProject()),
-            {type: "set-validation-result", errors: [], warnings: []},
+            {type: "set-validation-result", diagnostics: []},
         );
         const entity = initial.scene.project!.scene.entities[0];
         const ref = {kind: entity.kind, id: entity.id};
@@ -19,7 +19,7 @@ describe("Editable Scene authoritative store", () => {
             visible: false,
             includedInCompile: entity.includedInCompile ?? true,
         });
-        expect(hidden.validation.errors).toEqual([]);
+        expect(hidden.validation.diagnostics).toEqual([]);
         expect(hidden.stale).toMatchObject({
             validationStale: true,
             compiledProblemStale: true,

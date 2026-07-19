@@ -102,6 +102,7 @@ function StudioWorkbench() {
         const compileResult = compileTransportProblem(project);
         setCompileDiagnostics(compileResult.diagnostics.map((item) => ({
             severity: item.level,
+            code: item.code,
             message: `${item.code}: ${item.message}`,
             entityId: item.entityId as Diagnostic["entityId"],
         })));
