@@ -11,7 +11,7 @@ interface TransportViewportProps {
     readonly selectedEntityId?: string;
     readonly onSelect: (entityId: string) => void;
     readonly showTallies: boolean;
-    readonly showDiagnostics: boolean;
+    readonly showAxes: boolean;
     readonly mode: EditorMode;
 }
 
@@ -21,7 +21,7 @@ export function TransportViewport({
                                       selectedEntityId,
                                       onSelect,
                                       showTallies,
-                                      showDiagnostics,
+                                      showAxes,
                                       mode
                                   }: TransportViewportProps) {
     return (
@@ -46,7 +46,7 @@ export function TransportViewport({
 
             <TrackLines tracks={tracks}/>
             {tracks.length > 0 && <EventMarkers tracks={tracks}/>}
-            {showDiagnostics && <AxisLabels/>}
+            {showAxes && <AxesOverlay/>}
             <OrbitControls makeDefault enableDamping dampingFactor={0.08}/>
         </Canvas>
     );
@@ -177,7 +177,7 @@ function EventMarkers({tracks}: { readonly tracks: readonly TrackSample[] }) {
     );
 }
 
-function AxisLabels() {
+function AxesOverlay() {
     return (
         <group>
             <Html position={[10, 0, 0]} className="axis-label">+X beam</Html>

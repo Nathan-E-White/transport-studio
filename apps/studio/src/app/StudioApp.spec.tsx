@@ -287,7 +287,7 @@ vi.mock("../viewport/TransportViewport", () => ({
         tracks: readonly unknown[];
         selectedEntityId?: string;
         showTallies: boolean;
-        showDiagnostics: boolean;
+        showAxes: boolean;
         mode: string;
         project: {scene: {entities: readonly {id: string; visible: boolean}[]}};
     }) => (
@@ -297,7 +297,7 @@ vi.mock("../viewport/TransportViewport", () => ({
             <p>viewport selected entity: {props.selectedEntityId ?? "none"}</p>
             <p>viewport tracks: {props.tracks.length}</p>
             <p>viewport tallies visible: {String(props.showTallies)}</p>
-            <p>viewport diagnostics visible: {String(props.showDiagnostics)}</p>
+            <p>viewport axes visible: {String(props.showAxes)}</p>
             <p>viewport shield visible: {String(props.project.scene.entities.find((entity) => entity.id === "shield-1")?.visible)}</p>
         </section>
     )
@@ -604,15 +604,15 @@ describe("StudioApp spec", () => {
         fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
         await waitFor(() => expect(screen.getByText("viewport tracks: 4")).toBeTruthy());
         expect(screen.getByText("viewport tallies visible: true")).toBeTruthy();
-        expect(screen.getByText("viewport diagnostics visible: true")).toBeTruthy();
+        expect(screen.getByText("viewport axes visible: true")).toBeTruthy();
 
         fireEvent.click(screen.getByRole("checkbox", {name: "Tracks"}));
         fireEvent.click(screen.getByRole("checkbox", {name: "Tallies"}));
-        fireEvent.click(screen.getByRole("checkbox", {name: "Diagnostics"}));
+        fireEvent.click(screen.getByRole("checkbox", {name: "Axes"}));
 
         expect(screen.getByText("viewport tracks: 0")).toBeTruthy();
         expect(screen.getByText("viewport tallies visible: false")).toBeTruthy();
-        expect(screen.getByText("viewport diagnostics visible: false")).toBeTruthy();
+        expect(screen.getByText("viewport axes visible: false")).toBeTruthy();
         expect(screen.getByText("inspector tracks: 4")).toBeTruthy();
         expect(screen.getByText("run panel tracks: 4")).toBeTruthy();
         expect(screen.getByText("4 sampled tracks · 1 escaped · 1 absorbed")).toBeTruthy();

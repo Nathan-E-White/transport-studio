@@ -62,7 +62,7 @@ function StudioWorkbench() {
     const [compileDiagnostics, setCompileDiagnostics] = useState<readonly Diagnostic[]>([]);
     const [showTracks, setShowTracks] = useState(true);
     const [showTallies, setShowTallies] = useState(true);
-    const [showDiagnostics, setShowDiagnostics] = useState(true);
+    const [showAxes, setShowAxes] = useState(true);
     const mode = state.shell.activeMode;
     const bottomTab = state.shell.bottomDockTab;
 
@@ -177,7 +177,7 @@ function StudioWorkbench() {
                     selectedEntityId={selectedEntityId}
                     onSelect={(entityId) => selectEntity(entityId)}
                     showTallies={showTallies}
-                    showDiagnostics={showDiagnostics}
+                    showAxes={showAxes}
                     mode={mode}
                 />
                 <div className="viewport-hud top-left">
@@ -190,8 +190,8 @@ function StudioWorkbench() {
                                   onChange={(event) => setShowTracks(event.target.checked)}/> Tracks</label>
                     <label><input type="checkbox" checked={showTallies}
                                   onChange={(event) => setShowTallies(event.target.checked)}/> Tallies</label>
-                    <label><input type="checkbox" checked={showDiagnostics}
-                                  onChange={(event) => setShowDiagnostics(event.target.checked)}/> Diagnostics</label>
+                    <label><input type="checkbox" checked={showAxes}
+                                  onChange={(event) => setShowAxes(event.target.checked)}/> Axes</label>
                 </div>
             </main>
 

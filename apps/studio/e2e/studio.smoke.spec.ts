@@ -16,6 +16,12 @@ test("opens the studio shell and runs the main browser flows", async ({page}) =>
   await expect(page.getByRole("treeitem", {name: "Photon Beam, source"})).toBeVisible();
   await expect(page.getByRole("treeitem", {name: "Detector Plane, tally"})).toBeVisible();
 
+  await expect(page.locator(".axis-label")).toHaveCount(3);
+  await page.getByRole("checkbox", {name: "Axes"}).uncheck();
+  await expect(page.locator(".axis-label")).toHaveCount(0);
+  await page.getByRole("checkbox", {name: "Axes"}).check();
+  await expect(page.locator(".axis-label")).toHaveCount(3);
+
   await page.getByRole("button", {name: "probe"}).click();
   await expect(page.locator(".viewport-hud.top-left")).toContainText("PROBE MODE");
 
