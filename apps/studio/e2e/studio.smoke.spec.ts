@@ -28,7 +28,13 @@ test("opens the studio shell and runs the main browser flows", async ({page}) =>
   await page.getByRole("checkbox", {name: "Axes"}).check();
   await expect(page.locator(".axis-label")).toHaveCount(3);
 
-  await page.getByRole("button", {name: "probe"}).click();
+  const designMode = page.getByRole("button", {name: "design"});
+  const probeMode = page.getByRole("button", {name: "probe"});
+  await expect(designMode).toHaveAttribute("aria-pressed", "true");
+  await probeMode.focus();
+  await probeMode.press("Enter");
+  await expect(probeMode).toBeFocused();
+  await expect(probeMode).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".viewport-hud.top-left")).toContainText("PROBE MODE");
 
   await page.getByRole("button", {name: "analyze"}).click();
@@ -36,6 +42,22 @@ test("opens the studio shell and runs the main browser flows", async ({page}) =>
 
   await page.getByRole("button", {name: "design"}).click();
   await expect(page.locator(".viewport-hud.top-left")).toContainText("DESIGN MODE");
+
+  const runTab = page.getByRole("tab", {name: "run"});
+  await expect(page.getByRole("tablist", {name: "Run details"})).toBeVisible();
+  await expect(runTab).toHaveAttribute("aria-selected", "true");
+  await expect(runTab).toHaveAttribute("aria-controls", "bottom-dock-panel-run");
+  await expect(page.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "bottom-dock-tab-run");
+  await runTab.focus();
+  await runTab.press("ArrowRight");
+  const talliesTab = page.getByRole("tab", {name: "tallies"});
+  await expect(talliesTab).toBeFocused();
+  await expect(talliesTab).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", {name: "tracks"}).click();
+  await expect(page.getByRole("tab", {name: "tracks"})).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", {name: "tracks"}).press("Home");
+  await expect(runTab).toBeFocused();
+  await expect(runTab).toHaveAttribute("aria-selected", "true");
 
   await page.getByRole("button", {name: /Run Toy Photons/}).click();
   await expect(page.locator(".viewport-hud.top-left")).toContainText(/64 sampled tracks/);

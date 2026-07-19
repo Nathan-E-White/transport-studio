@@ -9,6 +9,7 @@ import {createInitialProject} from "./createInitialProject";
 import {createTauriNativePhotonSmokeBridge} from "./nativePhotonSmokeTauriBridge";
 import {ProjectTree} from "../components/project-tree/ProjectTree";
 import {StyleSelectorBoundary} from "../components/style-selector/StyleSelectorBoundary";
+import {ModeSwitcher} from "../components/project-tree/ModeSwitcher/ModeSwitcher";
 import {InspectorPanel} from "../panels/InspectorPanel";
 import {RunPanel} from "../panels/RunPanel";
 import {TransportViewport} from "../viewport/TransportViewport";
@@ -16,7 +17,6 @@ import {
     EditorStateRoot,
     getPrimarySelection,
     useEditorStore,
-    type EditorBottomDockTab,
     type EditorMode as StoreEditorMode,
 } from "../state/editor";
 import {
@@ -34,9 +34,6 @@ import {
 import {createNativeExecutionAdapter, createToyExecutionAdapter} from "./runExecutionAdapters";
 
 export type EditorMode = StoreEditorMode;
-export type BottomTab = EditorBottomDockTab;
-
-const modes: readonly EditorMode[] = ["design", "probe", "run", "analyze", "debug"];
 
 export function StudioApp() {
     return <EditorStateRoot initialProject={createInitialProject()}><StudioWorkbench/></EditorStateRoot>;
@@ -64,7 +61,6 @@ function StudioWorkbench() {
     const [showTallies, setShowTallies] = useState(true);
     const [showAxes, setShowAxes] = useState(true);
     const mode = state.shell.activeMode;
-    const bottomTab = state.shell.bottomDockTab;
 
     const diagnostics = useMemo<readonly Diagnostic[]>(() => [
         ...validateProject(project),
@@ -144,17 +140,7 @@ function StudioWorkbench() {
                     </div>
                 </div>
 
-                <nav className="mode-switcher" aria-label="Editor modes">
-                    {modes.map((candidateMode) => (
-                        <button
-                            key={candidateMode}
-                            className={candidateMode === mode ? "mode-button active" : "mode-button"}
-                            onClick={() => dispatch({type: "set-mode", mode: candidateMode})}
-                        >
-                            {candidateMode}
-                        </button>
-                    ))}
-                </nav>
+                <ModeSwitcher/>
 
                 <div className="toolbar-actions">
                     <StyleSelectorBoundary/>
@@ -205,8 +191,6 @@ function StudioWorkbench() {
                     config={runConfiguration}
                     diagnostics={diagnostics}
                     tracks={tracks}
-                    activeTab={bottomTab}
-                    onTabChange={(tab) => dispatch({type: "set-bottom-dock-tab", tab})}
                     sceneStats={sceneStats}
                     freshness={freshness}
                     renderingBlock={renderingBlock}

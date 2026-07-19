@@ -251,8 +251,6 @@ vi.mock("../panels/InspectorPanel", () => ({
 
 vi.mock("../panels/RunPanel", () => ({
     RunPanel: (props: {
-        activeTab: string;
-        onTabChange: (tab: "run" | "tallies" | "tracks" | "diagnostics" | "console") => void;
         config: { backend: string };
         tracks: readonly unknown[];
         diagnostics: readonly { message: string }[];
@@ -261,10 +259,11 @@ vi.mock("../panels/RunPanel", () => ({
         renderingBlock: {message: string} | null;
         resultView: "current" | "submitted";
         onResultViewChange: (view: "current" | "submitted") => void;
-    }) => (
-        <section aria-label="Run panel">
+    }) => {
+        const {state, dispatch} = useEditorStore();
+        return <section aria-label="Run panel">
             <h2>Run panel</h2>
-            <p>active run tab: {props.activeTab}</p>
+            <p>active run tab: {state.shell.bottomDockTab}</p>
             <p>run panel backend: {props.config.backend}</p>
             <p>run panel tracks: {props.tracks.length}</p>
             <p>run panel diagnostics: {props.diagnostics.length}</p>
@@ -276,10 +275,10 @@ vi.mock("../panels/RunPanel", () => ({
             {props.diagnostics.map((diagnostic) => <p key={diagnostic.message}>{diagnostic.message}</p>)}
             <p>run panel scene
                 stats: {props.sceneStats.geometry}/{props.sceneStats.materials}/{props.sceneStats.sources}/{props.sceneStats.tallies}</p>
-            <button type="button" onClick={() => props.onTabChange("tracks")}>Open Tracks Tab</button>
-            <button type="button" onClick={() => props.onTabChange("diagnostics")}>Open Diagnostics Tab</button>
+            <button type="button" onClick={() => dispatch({type: "set-bottom-dock-tab", tab: "tracks"})}>Open Tracks Tab</button>
+            <button type="button" onClick={() => dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"})}>Open Diagnostics Tab</button>
         </section>
-    )
+    }
 }));
 
 vi.mock("../viewport/TransportViewport", () => ({
@@ -349,9 +348,12 @@ describe("StudioApp spec", () => {
     it("lets the user change work modes without running the transport simulation", () => {
         render(<StudioApp/>);
 
+        expect(screen.getByRole("button", {name: "design"})).toHaveAttribute("aria-pressed", "true");
         fireEvent.click(screen.getByRole("button", {name: "probe"}));
         expect(screen.getByText("PROBE MODE")).toBeTruthy();
         expect(screen.getByText("viewport mode: probe")).toBeTruthy();
+        expect(screen.getByRole("button", {name: "probe"})).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByRole("button", {name: "design"})).toHaveAttribute("aria-pressed", "false");
 
         fireEvent.click(screen.getByRole("button", {name: "analyze"}));
         expect(screen.getByText("ANALYZE MODE")).toBeTruthy();
