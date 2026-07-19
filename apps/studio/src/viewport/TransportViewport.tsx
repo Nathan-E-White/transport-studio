@@ -3,8 +3,9 @@ import {Grid, Html, OrbitControls} from "@react-three/drei";
 import type {Diagnostic, Project, SceneEntity, TrackSample, TransportTallyDelta} from "@transport/domain";
 import type {EditorMode} from "../app/StudioApp";
 import {TrackLines} from "./TrackLines";
-import {type JSX} from "react";
+import {type JSX, type ReactNode} from "react";
 import type {VisibilityTable} from "../state/editor";
+import {getModeEntityEmphasis, isEntityKindSelectableInMode} from "../state/editor";
 import {getViewportEntityPresentation, pickViewportEntity, type ViewportEntityPresentation} from "./viewportEntityPresentation";
 import {createTallyResultPresentation, type TallyResultPresentation} from "./tallyResultPresentation";
 
@@ -44,7 +45,13 @@ export function TransportViewport({
             <pointLight position={[-8, 3, 0]} intensity={1.8} color="#00e5ff"/>
             <Grid args={[34, 34]} cellSize={1} sectionSize={5} fadeDistance={42} fadeStrength={1.8}/>
 
-            {project.scene.entities.map((entity) => ({entity, presentation: getViewportEntityPresentation(entity, visibility)}))
+            {project.scene.entities.map((entity) => {
+              const presentation = getViewportEntityPresentation(entity, visibility);
+              return {entity, presentation: {
+                ...presentation,
+                selectable: presentation.selectable && isEntityKindSelectableInMode(mode, entity.kind),
+              }};
+            })
               .filter(({presentation}) => presentation.visible)
               .map(({entity, presentation}) => (
                 <EntityMesh
@@ -111,6 +118,7 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation
     const position: [number, number, number] = [p.x, p.y, p.z];
     const scale: [number, number, number] = [s.x, s.y, s.z];
     const select = () => pickViewportEntity(entity, presentation, onSelect);
+    const emphasis = getModeEntityEmphasis(mode, entity.kind);
 
     if (entity.kind === "material") return null;
 
@@ -125,11 +133,14 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation
                     <coneGeometry args={[0.38, 1.15, 32]}/>
                     <meshStandardMaterial color={selected ? "#ffd166" : "#00e5ff"}
                                           emissive={selected ? "#5a3d00" : "#003844"} emissiveIntensity={0.8}
-                                          wireframe={presentation.helperOnly}/>
+                                          transparent={true} opacity={0.35 + emphasis * 0.65}
+                                          wireframe={presentation.helperOnly || mode === "debug"}/>
                 </mesh>
                 <BeamGuide length={5.5} selected={selected}/>
                 <Html distanceFactor={12} position={[0, 0.8, 0]} center className="scene-label">
-                    {entity.name}{presentation.helperOnly ? " · helper" : ""} · {direction.x.toFixed(0)},{direction.y.toFixed(0)},{direction.z.toFixed(0)}
+                    <ViewportEntityPick entity={entity} mode={mode} presentation={presentation} onSelect={select}>
+                        {entity.name}{presentation.helperOnly ? " · helper" : ""} · {direction.x.toFixed(0)},{direction.y.toFixed(0)},{direction.z.toFixed(0)}
+                    </ViewportEntityPick>
                 </Html>
             </group>
         );
@@ -145,7 +156,7 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation
                 <mesh>
                     <boxGeometry args={[1, 1, 1]}/>
                     <meshStandardMaterial color={selected ? "#ffd166" : "#3ddc97"} transparent={true}
-                                          opacity={mode === "probe" || selected ? 0.35 : 0.22}
+                                          opacity={selected ? 0.48 : 0.12 + emphasis * 0.3}
                                           wireframe={mode === "debug"}/>
                 </mesh>
                 <mesh scale={[1.04, 1.04, 1.04]}>
@@ -153,7 +164,9 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation
                     <meshBasicMaterial color="#3ddc97" wireframe={true} transparent={true} opacity={0.35}/>
                 </mesh>
                 <Html distanceFactor={13} position={[0, 0.65, 0]} center
-                      className="scene-label green">{entity.name}{presentation.helperOnly ? " · helper" : ""}</Html>
+                      className="scene-label green"><ViewportEntityPick entity={entity} mode={mode} presentation={presentation} onSelect={select}>
+                    {entity.name}{presentation.helperOnly ? " · helper" : ""}
+                </ViewportEntityPick></Html>
             </group>
         );
     }
@@ -178,17 +191,33 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation
                                 bg
                     }
                     <meshStandardMaterial color={selected ? "#ffd166" : "#7aa2ff"} transparent={true}
-                                          opacity={presentation.helperOnly ? 0.24 : selected ? 0.68 : 0.48}
-                                          roughness={0.4} metalness={0.08} wireframe={presentation.helperOnly}/>
+                                          opacity={presentation.helperOnly ? 0.24 : selected ? 0.68 : 0.12 + emphasis * 0.42}
+                                          roughness={0.4} metalness={0.08} wireframe={presentation.helperOnly || mode === "debug"}/>
                 </mesh>
                 {selected && <SelectionBox/>}
                 <Html distanceFactor={14} position={[0, 0.72, 0]} center
-                      className="scene-label blue">{entity.name}{presentation.helperOnly ? " · helper" : ""}</Html>
+                      className="scene-label blue"><ViewportEntityPick entity={entity} mode={mode} presentation={presentation} onSelect={select}>
+                    {entity.name}{presentation.helperOnly ? " · helper" : ""}
+                </ViewportEntityPick></Html>
             </group>
         );
     }
 
     return null;
+}
+
+function ViewportEntityPick({entity, mode, presentation, onSelect, children}: {
+    readonly entity: SceneEntity;
+    readonly mode: EditorMode;
+    readonly presentation: ViewportEntityPresentation;
+    readonly onSelect: () => void;
+    readonly children: ReactNode;
+}) {
+    return <button type="button" className="viewport-entity-pick"
+        aria-label={`Select ${entity.name} in viewport`}
+        title={presentation.selectable ? `Select ${entity.name}` : `${entity.name} is unavailable in ${mode} mode.`}
+        disabled={!presentation.selectable}
+        onClick={(event) => {event.stopPropagation(); onSelect();}}>{children}</button>;
 }
 
 function SelectionBox() {

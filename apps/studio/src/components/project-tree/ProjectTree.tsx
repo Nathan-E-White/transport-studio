@@ -5,6 +5,8 @@ import {
   EditorEntityMetadata,
   EditorEntityRef,
   buildProjectTree,
+  getEditorModeBehavior,
+  getModeEditingDisabledReason,
   getPrimarySelection,
   selectProjectTreeMetadata,
   selectVisibility,
@@ -36,6 +38,8 @@ function ProjectTreeInner({
   const project = state.scene.project;
   if (!project) throw new Error("Project Tree requires an Editable Scene project");
   const selectedEntityId = getPrimarySelection(state.selection)?.id;
+  const modeBehavior = getEditorModeBehavior(state.shell.activeMode);
+  const modeEditingDisabledReason = getModeEditingDisabledReason(state.shell.activeMode);
   const visibility = useMemo(() => selectVisibility(state), [state.visibility]);
   const [searchQuery, setSearchQuery] = useState("");
   const [editingEntityId, setEditingEntityId] = useState<string | undefined>();
@@ -59,6 +63,13 @@ function ProjectTreeInner({
       diagnostics: diagnostics.map((diagnostic) => normalizeDiagnostic(diagnostic, project.scene.entities)),
     });
   }, [diagnostics, dispatch, project.scene.entities]);
+
+  useEffect(() => {
+    if (modeBehavior.editingEnabled) return;
+    setEditingEntityId(undefined);
+    setDrafts({});
+    setSettingsOpen(false);
+  }, [modeBehavior.editingEnabled]);
 
   const filteredMetadata = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -119,8 +130,10 @@ function ProjectTreeInner({
                 <h2>{project.name}</h2>
                 <p className="muted compact">{project.metadata.physicsModelVersion}</p>
               </div>
-              <button ref={settingsButtonRef} className="icon-button" type="button" title="Project settings"
-                aria-label="Project settings" onClick={() => setSettingsOpen(true)}>⚙</button>
+              <button ref={settingsButtonRef} className="icon-button" type="button"
+                title={modeEditingDisabledReason ?? "Project settings"}
+                aria-label="Project settings" disabled={!modeBehavior.editingEnabled}
+                onClick={() => setSettingsOpen(true)}>⚙</button>
             </div>
 
             <div className="stat-grid">
@@ -132,11 +145,14 @@ function ProjectTreeInner({
 
             <div className="project-tree-create" aria-label="Create entities">
               {CREATE_KINDS.map((kind) => (
-                <button key={kind} type="button" onClick={() => dispatch({type: "create-project-entity", kind})}>
+                <button key={kind} type="button" disabled={!modeBehavior.editingEnabled}
+                  title={modeEditingDisabledReason}
+                  onClick={() => dispatch({type: "create-project-entity", kind})}>
                   + {labelForKind(kind)}
                 </button>
               ))}
             </div>
+            {!modeBehavior.editingEnabled && <p className="mode-action-explanation" role="status">{modeEditingDisabledReason}</p>}
 
             <label className="asset-search">
               <span>Search entities</span>

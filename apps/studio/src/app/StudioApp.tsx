@@ -17,6 +17,8 @@ import {TransportViewport} from "../viewport/TransportViewport";
 import {
     EditorStateRoot,
     getPrimarySelection,
+    getEditorModeBehavior,
+    getModeEditingDisabledReason,
     selectVisibility,
     useEditorStore,
     type EditorMode as StoreEditorMode,
@@ -69,6 +71,7 @@ function StudioWorkbench() {
     const [showAxes, setShowAxes] = useState(true);
     const [selectedResultTallyId, setSelectedResultTallyId] = useState<string | undefined>();
     const mode = state.shell.activeMode;
+    const modeBehavior = getEditorModeBehavior(mode);
     const {leftPanelOpen, rightPanelOpen, bottomDockOpen} = state.shell;
 
     const diagnostics = useMemo<readonly Diagnostic[]>(() => [
@@ -202,6 +205,8 @@ function StudioWorkbench() {
                 <div className="viewport-hud top-left">
                     <span className="hud-kicker">{mode.toUpperCase()} MODE</span>
                     <strong>{selectedEntity?.name ?? "No entity selected"}</strong>
+                    <span>{modeBehavior.description}</span>
+                    <span>Emphasis: {modeBehavior.viewportEmphasis}</span>
                     <span>{tracks.length} sampled tracks · {escapedCount} escaped · {absorbedCount} absorbed</span>
                 </div>
                 <div className="viewport-hud bottom-right">
@@ -220,7 +225,7 @@ function StudioWorkbench() {
                                 editDiagnostics={state.inspectorEditDiagnostics}
                                 editingDisabledReason={resultView === "submitted"
                                     ? "Submitted run snapshots are read-only. Return to the current scene to edit."
-                                    : undefined}
+                                    : getModeEditingDisabledReason(mode)}
                                 onEntityChange={(baseline, candidate) => dispatch({type: "apply-inspector-edit", baseline, candidate})}/>
             </aside>
 

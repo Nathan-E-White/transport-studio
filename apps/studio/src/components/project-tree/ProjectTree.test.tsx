@@ -98,6 +98,11 @@ function MakeGeometryNonSelectable() {
   })}>Make geometry non-selectable</button>;
 }
 
+function SetProbeMode() {
+  const {dispatch} = useEditorStore();
+  return <button type="button" onClick={() => dispatch({type: "set-mode", mode: "probe"})}>Use probe mode</button>;
+}
+
 describe("ProjectTree", () => {
   it("reports actionable failures through the consolidated public boundary", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -263,6 +268,49 @@ describe("ProjectTree", () => {
     fireEvent.keyDown(row, {key: "Enter"});
 
     expect(row).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("exposes mode-specific selection and disables authoring actions with an explanation", () => {
+    render(
+      <EditorStoreProvider initialProject={project}>
+        <SetProbeMode/>
+        <ProjectTree diagnostics={[]}/>
+      </EditorStoreProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", {name: "Use probe mode"}));
+
+    const material = screen.getByRole("treeitem", {name: "Water, material, unavailable in probe mode"});
+    const source = screen.getByRole("treeitem", {name: "Photon Beam, source"});
+    expect(material).toHaveAttribute("aria-disabled", "true");
+    expect(material).toHaveAttribute("tabindex", "-1");
+    fireEvent.click(material);
+    expect(material).toHaveAttribute("aria-selected", "false");
+    fireEvent.click(source);
+    expect(source).toHaveAttribute("aria-selected", "true");
+
+    expect(screen.getByRole("button", {name: "+ Geometry"})).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Probe mode is read-only");
+    expect(within(source).getAllByRole("button").every((button) => button.hasAttribute("disabled"))).toBe(true);
+  });
+
+  it("closes an inline metadata draft when the editor enters a read-only mode", () => {
+    render(
+      <EditorStoreProvider initialProject={project}>
+        <SetProbeMode/>
+        <ProjectTree diagnostics={[]}/>
+      </EditorStoreProvider>,
+    );
+    const geometry = screen.getByRole("treeitem", {name: "Shield Slab, geometry"});
+    fireEvent.click(within(geometry).getByRole("button", {name: "Edit entity metadata"}));
+    fireEvent.change(screen.getByLabelText("Name"), {target: {value: "Unsaved draft"}});
+
+    fireEvent.click(screen.getByRole("button", {name: "Use probe mode"}));
+
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+    expect(screen.getByRole("treeitem", {name: "Shield Slab, geometry"})).toBeInTheDocument();
+    expect(screen.queryByText("Unsaved draft")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Probe mode is read-only");
   });
 
   it("opens and saves the metadata editor", () => {

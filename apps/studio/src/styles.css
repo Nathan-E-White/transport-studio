@@ -68,6 +68,9 @@ button { color: inherit; }
 }
 .mode-button { text-transform: capitalize; padding: 7px 10px; color: var(--text-muted); border-color: transparent; background: transparent; }
 .mode-button.active { color: #06101d; background: var(--gold); box-shadow: 0 0 16px rgba(255, 209, 102, 0.24); }
+.mode-action-explanation { margin: 8px 0; color: var(--text-muted); font-size: 0.78rem; line-height: 1.35; }
+.viewport-entity-pick { appearance: none; border: 0; padding: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.viewport-entity-pick:disabled { cursor: not-allowed; opacity: 0.55; }
 .toolbar-actions { margin-left: auto; display: flex; gap: 10px; }
 .style-pack-controls, .style-pack-selector { display: flex; align-items: center; gap: 6px; }
 .style-pack-selector__label { color: var(--text-muted); font-size: 0.78rem; }

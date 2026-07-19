@@ -387,7 +387,7 @@ describe("StudioApp spec", () => {
     it("collapses and restores shell panels without losing unrelated editor state", () => {
         render(<StudioApp/>);
 
-        fireEvent.click(screen.getByRole("button", {name: "Select Water Moderator"}));
+        fireEvent.click(screen.getByRole("button", {name: "Select Dose Tally"}));
         fireEvent.click(screen.getByRole("button", {name: "probe"}));
 
         const projectTreeToggle = screen.getByRole("button", {name: "Project Tree"});
@@ -412,8 +412,8 @@ describe("StudioApp spec", () => {
         fireEvent.click(inspectorToggle);
         fireEvent.click(runDockToggle);
 
-        expect(screen.getByText("tree selected entity: water-1")).toBeTruthy();
-        expect(screen.getByText("inspector entity: Water Moderator")).toBeTruthy();
+        expect(screen.getByText("tree selected entity: dose-1")).toBeTruthy();
+        expect(screen.getByText("inspector entity: Dose Tally")).toBeTruthy();
         expect(screen.getByText("PROBE MODE")).toBeTruthy();
     });
 
@@ -508,6 +508,7 @@ describe("StudioApp spec", () => {
         expect(hiddenShield).toMatchObject({id: "shield-1", visible: false});
         expect(hiddenShield?.includedInCompile).toBeUndefined();
 
+        fireEvent.click(screen.getByRole("button", {name: "design"}));
         fireEvent.click(screen.getByRole("button", {name: "Exclude Shield Slab"}));
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
@@ -526,6 +527,7 @@ describe("StudioApp spec", () => {
         await waitFor(() => expect(screen.getByText("run results freshness: current")).toBeTruthy());
         expect(screen.getByText("run panel tracks: 4")).toBeTruthy();
 
+        fireEvent.click(screen.getByRole("button", {name: "design"}));
         fireEvent.click(screen.getByRole("button", {name: "Hide Shield Slab"}));
 
         await waitFor(() => expect(screen.getByText("run results freshness: stale")).toBeTruthy());
@@ -656,6 +658,7 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("1 sampled tracks · 0 escaped · 1 absorbed")).toBeTruthy();
         expect(screen.getByText("active run tab: run")).toBeTruthy();
 
+        fireEvent.click(screen.getByRole("button", {name: "design"}));
         fireEvent.click(screen.getByRole("button", {name: "Delete Dose Tally"}));
         await waitFor(() => expect(screen.getByText(/Results were submitted from Editable Scene revision/)).toBeTruthy());
         fireEvent.click(screen.getByRole("button", {name: "View submitted scene"}));

@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {createInitialProject} from "../../app/createInitialProject";
 import {compileTransportProblem} from "@transport/domain/compile/CompileTransportProblem";
+import type {SceneEntity} from "@transport/domain";
 import {createEditorStoreState, editorStoreReducer, selectVisibility} from "./editorStore";
 
 describe("Editable Scene authoritative store", () => {
@@ -103,7 +104,7 @@ describe("Editable Scene authoritative store", () => {
     it("rejects non-selectable selection while preserving hidden, locked, and helper eligibility", () => {
         const project = createInitialProject();
         const [material, geometry, source, tally] = project.scene.entities;
-        const ref = (entity: typeof material) => ({kind: entity.kind, id: entity.id});
+        const ref = (entity: SceneEntity) => ({kind: entity.kind, id: entity.id});
         const initial = createEditorStoreState(project, {
             [`${material.kind}:${material.id}`]: {visible: true, selectable: false, locked: false, includedInCompile: true, helperOnly: false},
             [`${geometry.kind}:${geometry.id}`]: {visible: true, selectable: true, locked: false, includedInCompile: false, helperOnly: true},
@@ -169,5 +170,31 @@ describe("Editable Scene authoritative store", () => {
         const source = initial.scene.project!.scene.entities.find((entity) => entity.kind === "source")!;
         const selectedElsewhere = editorStoreReducer(conflict, {type: "select-one", ref: {kind: source.kind, id: source.id}});
         expect(selectedElsewhere.inspectorEditDiagnostics).toEqual([]);
+    });
+
+    it("enforces mode selection and manipulation policy at the authoritative store boundary", () => {
+        const initial = createEditorStoreState(createInitialProject());
+        const entities = initial.scene.project!.scene.entities;
+        const material = entities.find((entity) => entity.kind === "material")!;
+        const source = entities.find((entity) => entity.kind === "source")!;
+        const tally = entities.find((entity) => entity.kind === "tally")!;
+        const ref = (entity: SceneEntity) => ({kind: entity.kind, id: entity.id});
+
+        const selectedMaterial = editorStoreReducer(initial, {type: "select-one", ref: ref(material)});
+        const probe = editorStoreReducer(selectedMaterial, {type: "set-mode", mode: "probe"});
+        expect(probe.selection.selected).toEqual([]);
+        expect(editorStoreReducer(probe, {type: "select-one", ref: ref(material)})).toBe(probe);
+        expect(editorStoreReducer(probe, {type: "select-one", ref: ref(source)}).selection.selected).toEqual([ref(source)]);
+
+        const analyze = editorStoreReducer(probe, {type: "set-mode", mode: "analyze"});
+        expect(editorStoreReducer(analyze, {type: "select-one", ref: ref(source)})).toBe(analyze);
+        expect(editorStoreReducer(analyze, {type: "select-one", ref: ref(tally)}).selection.selected).toEqual([ref(tally)]);
+
+        const unchangedProject = analyze.scene.project;
+        const rejectedCreate = editorStoreReducer(analyze, {type: "create-project-entity", kind: "tally"});
+        const rejectedVisibility = editorStoreReducer(analyze, {type: "set-visible", ref: ref(tally), visible: false});
+        expect(rejectedCreate).toBe(analyze);
+        expect(rejectedVisibility).toBe(analyze);
+        expect(analyze.scene.project).toBe(unchangedProject);
     });
 });

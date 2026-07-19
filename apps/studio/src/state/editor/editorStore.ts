@@ -9,6 +9,8 @@ import {
 import {
     DEFAULT_EDITOR_MODE,
     EditorMode,
+    getEditorModeBehavior,
+    isEntityKindSelectableInMode,
 } from "./modes";
 import {
     CLEAN_STALE_STATE,
@@ -176,14 +178,23 @@ export function editorStoreReducer(
     action: EditorStoreAction,
 ): EditorStoreState {
     switch (action.type) {
-        case "set-mode":
+        case "set-mode": {
+            const selection = selectMany(
+                state.selection,
+                state.selection.selected.filter((ref) => isEntityKindSelectableInMode(action.mode, ref.kind)),
+            );
             return {
                 ...state,
                 shell: {
                     ...state.shell,
                     activeMode: action.mode,
                 },
+                selection: selection.hovered && !isEntityKindSelectableInMode(action.mode, selection.hovered.kind)
+                    ? setHovered(selection, null)
+                    : selection,
+                inspectorEditDiagnostics: [],
             };
+        }
 
         case "set-bottom-dock-tab":
             return {
@@ -223,6 +234,7 @@ export function editorStoreReducer(
             };
 
         case "create-project-entity": {
+            if (!canEditScene(state)) return state;
             const project = requireProject(state);
             const next = addEntity(project, action.kind);
             const created = next.scene.entities.at(-1);
@@ -230,6 +242,7 @@ export function editorStoreReducer(
         }
 
         case "update-project-settings": {
+            if (!canEditScene(state)) return state;
             const errors = validateProjectSettings(action.settings);
             if (errors.length > 0) return {...state, projectSettingsErrors: errors};
             return markProjectChanged({
@@ -241,6 +254,7 @@ export function editorStoreReducer(
         }
 
         case "update-project-entity-metadata": {
+            if (!canEditScene(state)) return state;
             const project = requireProject(state);
             const current = project.scene.entities.find((entity) => entity.id === action.ref.id);
             if (!current) return state;
@@ -251,6 +265,7 @@ export function editorStoreReducer(
         }
 
         case "apply-inspector-edit": {
+            if (!canEditScene(state)) return state;
             const project = requireProject(state);
             const result = commitInspectorCandidate(project, action.candidate, action.baseline);
             if (!result.ok) return {...state, inspectorEditDiagnostics: result.diagnostics};
@@ -261,6 +276,7 @@ export function editorStoreReducer(
         }
 
         case "duplicate-project-entity": {
+            if (!canEditScene(state)) return state;
             const project = requireProject(state);
             const current = project.scene.entities.find((entity) => entity.id === action.ref.id);
             if (!current) return state;
@@ -286,6 +302,7 @@ export function editorStoreReducer(
         }
 
         case "delete-project-entity": {
+            if (!canEditScene(state)) return state;
             const project = requireProject(state);
             const current = project.scene.entities.find((entity) => entity.id === action.ref.id);
             if (!current) return state;
@@ -298,7 +315,7 @@ export function editorStoreReducer(
         }
 
         case "select-one":
-            if (!isSelectable(state, action.ref)) return state;
+            if (!isSelectable(state, action.ref) || !isEntityKindSelectableInMode(state.shell.activeMode, action.ref.kind)) return state;
             return {
                 ...state,
                 selection: selectOne(state.selection, action.ref),
@@ -308,12 +325,13 @@ export function editorStoreReducer(
         case "select-many":
             return {
                 ...state,
-                selection: selectMany(state.selection, action.refs.filter((ref) => isSelectable(state, ref))),
+                selection: selectMany(state.selection, action.refs.filter((ref) => isSelectable(state, ref)
+                    && isEntityKindSelectableInMode(state.shell.activeMode, ref.kind))),
                 inspectorEditDiagnostics: [],
             };
 
         case "toggle-selected":
-            if (!isSelectable(state, action.ref)) return state;
+            if (!isSelectable(state, action.ref) || !isEntityKindSelectableInMode(state.shell.activeMode, action.ref.kind)) return state;
             return {
                 ...state,
                 selection: toggleSelected(state.selection, action.ref),
@@ -328,18 +346,21 @@ export function editorStoreReducer(
             };
 
         case "set-hovered":
+            if (action.ref && !isEntityKindSelectableInMode(state.shell.activeMode, action.ref.kind)) return state;
             return {
                 ...state,
                 selection: setHovered(state.selection, action.ref),
             };
 
         case "set-inspector-focus":
+            if (action.ref && !isEntityKindSelectableInMode(state.shell.activeMode, action.ref.kind)) return state;
             return {
                 ...state,
                 selection: setInspectorFocus(state.selection, action.ref),
             };
 
         case "set-visible":
+            if (!canEditScene(state)) return state;
             return markProjectChanged({
                 ...state,
                 scene: state.scene.project ? {...state.scene, project: setEntityVisible(state.scene.project, action.ref.id, action.visible)} : state.scene,
@@ -347,6 +368,7 @@ export function editorStoreReducer(
             }, "visibility-changed");
 
         case "set-locked":
+            if (!canEditScene(state)) return state;
             return markProjectChanged({
                 ...state,
                 scene: state.scene.project ? {...state.scene, project: setEntityLocked(state.scene.project, action.ref.id, action.locked)} : state.scene,
@@ -354,6 +376,7 @@ export function editorStoreReducer(
             }, "unknown");
 
         case "set-included-in-compile":
+            if (!canEditScene(state)) return state;
             if (getEntityViewFlags(state.visibility, action.ref).helperOnly && action.includedInCompile) return state;
             return markProjectChanged({
                 ...state,
@@ -362,6 +385,7 @@ export function editorStoreReducer(
             }, "compile-inclusion-changed");
 
         case "set-selectable": {
+            if (!canEditScene(state)) return state;
             const visibility = setViewSelectable(state.visibility, action.ref, action.selectable);
             return action.selectable
                 ? {...state, visibility}
@@ -369,6 +393,7 @@ export function editorStoreReducer(
         }
 
         case "set-helper-only": {
+            if (!canEditScene(state)) return state;
             const visibility = setEntityViewFlags(state.visibility, action.ref, {
                 helperOnly: action.helperOnly,
                 includedInCompile: action.helperOnly ? false : getEntityViewFlags(state.visibility, action.ref).includedInCompile,
@@ -437,6 +462,10 @@ function markProjectChanged(state: EditorStoreState, reason: EditorDirtyReason, 
 function requireProject(state: EditorStoreState): Project {
     if (!state.scene.project) throw new Error("Editable Scene store has no project");
     return state.scene.project;
+}
+
+function canEditScene(state: EditorStoreState): boolean {
+    return getEditorModeBehavior(state.shell.activeMode).editingEnabled;
 }
 
 export function selectProjectTreeMetadata(state: EditorStoreState) {
