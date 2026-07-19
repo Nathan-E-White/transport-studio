@@ -16,6 +16,12 @@ test("opens the studio shell and runs the main browser flows", async ({page}) =>
   await expect(page.getByRole("treeitem", {name: "Photon Beam, source"})).toBeVisible();
   await expect(page.getByRole("treeitem", {name: "Detector Plane, tally"})).toBeVisible();
 
+  await page.getByRole("combobox", {name: "Style Pack"}).selectOption("livermore");
+  await page.reload();
+  await expect(page.getByRole("combobox", {name: "Style Pack"})).toHaveValue("livermore");
+  await page.getByRole("button", {name: "Reset Style Pack"}).click();
+  await expect(page.getByRole("combobox", {name: "Style Pack"})).toHaveValue("default");
+
   await expect(page.locator(".axis-label")).toHaveCount(3);
   await page.getByRole("checkbox", {name: "Axes"}).uncheck();
   await expect(page.locator(".axis-label")).toHaveCount(0);

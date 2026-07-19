@@ -8,6 +8,7 @@ export interface StyleSelectorContextValue {
     activePackID: StylePackID;
     packs: readonly StylePack[];
     setActivePackID: (packID: StylePackID) => void;
+    resetActivePack: () => void;
 }
 
 export const StyleSelectorContext = createContext<StyleSelectorContextValue | undefined>(undefined);
