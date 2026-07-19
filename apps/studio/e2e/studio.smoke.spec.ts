@@ -101,13 +101,20 @@ test("opens the studio shell and runs the main browser flows", async ({page}) =>
   await page.getByRole("tab", {name: "tracks"}).press("Home");
   await expect(runTab).toBeFocused();
   await expect(runTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".run-session-details")).toContainText("idle");
 
   await page.getByRole("button", {name: /Run Toy Photons/}).click();
   await expect(page.locator(".viewport-hud.top-left")).toContainText(/64 sampled tracks/);
   await expect(page.locator(".run-dock")).toContainText("visual-ts");
+  await expect(page.locator(".run-session-details")).toContainText("completed");
+  await expect(page.locator(".run-session-details")).toContainText("terminal");
+  await expect(page.getByRole("region", {name: "Preparation provenance"})).toContainText("Visual TypeScript Toy Transport");
+  await expect(page.getByRole("region", {name: "Backend provenance"})).toContainText("visual-ts");
+  await expect(page.getByRole("status", {name: "Run outcome"})).toContainText("Completed");
 
   await page.getByRole("button", {name: "Clear"}).click();
   await expect(page.locator(".viewport-hud.top-left")).toContainText("0 sampled tracks");
+  await expect(page.locator(".run-session-details")).toContainText("idle");
 
   await page.getByRole("button", {name: "Run Native Rust"}).click();
   await expect(page.locator(".run-dock")).toContainText(

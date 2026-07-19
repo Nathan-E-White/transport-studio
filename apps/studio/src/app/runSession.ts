@@ -328,6 +328,10 @@ export function selectRunDiagnostics(snapshot: RunSessionStoreSnapshot): readonl
     return snapshot.current?.diagnostics ?? EMPTY_DIAGNOSTICS;
 }
 
+export function selectCurrentRunSession(snapshot: RunSessionStoreSnapshot): RunSessionState | null {
+    return snapshot.current;
+}
+
 export function selectRunBackend(snapshot: RunSessionStoreSnapshot): Project["runConfiguration"]["backend"] {
     if (!snapshot.current) return "visual-ts";
     switch (snapshot.current.adapterMetadata.id) {

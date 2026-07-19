@@ -22,6 +22,7 @@ import {
 } from "../state/editor";
 import {
     createRunSessionStore,
+    selectCurrentRunSession,
     selectRenderableTracks,
     selectRenderingBlock,
     selectResultView,
@@ -52,6 +53,7 @@ function StudioWorkbench() {
     const runSessionStore = runSessionStoreRef.current;
     const tracks = useRunSessionSelector(runSessionStore, selectRenderableTracks);
     const runDiagnostics = useRunSessionSelector(runSessionStore, selectRunDiagnostics);
+    const runSession = useRunSessionSelector(runSessionStore, selectCurrentRunSession);
     const runBackend = useRunSessionSelector(runSessionStore, selectRunBackend);
     const freshness = useRunSessionSelector(runSessionStore, selectRunFreshness);
     const renderingBlock = useRunSessionSelector(runSessionStore, selectRenderingBlock);
@@ -203,6 +205,7 @@ function StudioWorkbench() {
                     freshness={freshness}
                     renderingBlock={renderingBlock}
                     resultView={resultView}
+                    session={runSession}
                     onResultViewChange={(view) => runSessionStore.setResultView(view)}
                 />
             </footer>

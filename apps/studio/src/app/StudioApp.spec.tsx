@@ -258,6 +258,7 @@ vi.mock("../panels/RunPanel", () => ({
         freshness: "empty" | "fresh" | "stale";
         renderingBlock: {message: string} | null;
         resultView: "current" | "submitted";
+        session: unknown;
         onResultViewChange: (view: "current" | "submitted") => void;
     }) => {
         const {state, dispatch} = useEditorStore();

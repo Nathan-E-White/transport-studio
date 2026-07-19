@@ -4,6 +4,7 @@ import type {
   RunRenderingBlock,
   RunResultView,
   RunSessionFreshness,
+  RunSessionState,
 } from "../app/runSession";
 import {
   BottomDockTabs,
@@ -11,6 +12,7 @@ import {
   bottomDockTabId,
 } from "../components/BottomDock/BottomDockTabs";
 import {useEditorStore, type EditorBottomDockTab} from "../state/editor";
+import {RunSessionDetails} from "./RunSessionDetails";
 
 interface RunPanelProps {
   readonly config: RunConfiguration;
@@ -20,6 +22,7 @@ interface RunPanelProps {
   readonly freshness: RunSessionFreshness;
   readonly renderingBlock: RunRenderingBlock | null;
   readonly resultView: RunResultView;
+  readonly session: RunSessionState | null;
   readonly onResultViewChange: (view: RunResultView) => void;
 }
 
@@ -31,25 +34,33 @@ export function RunPanel({
   freshness,
   renderingBlock,
   resultView,
+  session,
   onResultViewChange,
 }: RunPanelProps) {
   const {state} = useEditorStore();
   const activeTab = state.shell.bottomDockTab;
-  const escaped = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
-  const absorbed = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
+  const sessionTracks = session?.tracks ?? tracks;
+  const runDiagnostics = session?.diagnostics ?? diagnostics;
+  const submittedConfig = session?.input.submittedScene.project.runConfiguration ?? config;
+  const submittedHistories = session?.input.problem.settings.histories ?? config.histories;
+  const capturedEscaped = sessionTracks.filter((track) => track.events.at(-1)?.type === "escape").length;
+  const capturedAbsorbed = sessionTracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
+  const renderableEscaped = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
+  const renderableAbsorbed = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
 
   return (
     <section className="run-dock">
       <BottomDockTabs/>
       <DockPanel tab="run" activeTab={activeTab}>
+        <RunSessionDetails session={session}/>
         <div className="run-metrics">
-            <Metric label="backend" value={config.backend} />
-            <Metric label="histories" value={config.histories.toLocaleString()} />
-            <Metric label="batch" value={config.batchSize.toLocaleString()} />
-            <Metric label="visible" value={tracks.length} />
-            <Metric label="escaped" value={escaped} />
-            <Metric label="absorbed" value={absorbed} />
-            <Metric label="diagnostics" value={diagnostics.length} />
+            <Metric label="backend" value={session?.adapterMetadata.id ?? config.backend} />
+            <Metric label="histories" value={submittedHistories.toLocaleString()} />
+            <Metric label="batch" value={submittedConfig.batchSize.toLocaleString()} />
+            <Metric label={session ? "sampled" : "visible"} value={sessionTracks.length} />
+            <Metric label="escaped" value={capturedEscaped} />
+            <Metric label="absorbed" value={capturedAbsorbed} />
+            <Metric label="diagnostics" value={runDiagnostics.length} />
             <Metric label="results" value={freshness === "fresh" ? "current" : freshness} />
             {renderingBlock && (
               <div className="dock-copy" role="status">
@@ -67,7 +78,7 @@ export function RunPanel({
         <div className="dock-copy">{sceneStats.tallies} tally entities are available. MVP visualization uses detector glyphs and a placeholder heat overlay.</div>
       </DockPanel>
       <DockPanel tab="tracks" activeTab={activeTab}>
-        <div className="dock-copy">Showing {tracks.length} sampled histories. Final event mix: {escaped} escaped, {absorbed} absorbed.</div>
+        <div className="dock-copy">Showing {tracks.length} sampled histories. Final event mix: {renderableEscaped} escaped, {renderableAbsorbed} absorbed.</div>
       </DockPanel>
       <DockPanel tab="diagnostics" activeTab={activeTab}>
         <div className="diagnostic-list-horizontal">
@@ -75,7 +86,7 @@ export function RunPanel({
         </div>
       </DockPanel>
       <DockPanel tab="console" activeTab={activeTab}>
-        <div className="console-line">{getConsoleStatus(config.backend, tracks.length, config.histories, diagnostics)}</div>
+        <div className="console-line">{getConsoleStatus(session, config, diagnostics)}</div>
       </DockPanel>
     </section>
   );
@@ -109,22 +120,24 @@ function Metric({ label, value }: { readonly label: string; readonly value: stri
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function getConsoleStatus(
-  backend: RunConfiguration["backend"],
-  trackCount: number,
-  histories: number,
-  diagnostics: readonly Diagnostic[],
-): string {
-  if (backend === "native") {
-    const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
+function getConsoleStatus(session: RunSessionState | null, config: RunConfiguration, diagnostics: readonly Diagnostic[]): string {
+  if (session) {
+    const histories = session.input.problem.settings.histories;
+    const terminal = session.status === "failed"
+      ? session.terminalFailure?.code ?? "run.session.failed"
+      : `${session.status} · ${session.phase}`;
 
     return [
-      `tauri://run_photon_smoke complete`,
-      `${trackCount} tracks`,
+      `${session.adapterMetadata.id} ${terminal}`,
+      `${session.tracks.length} tracks`,
       `${histories.toLocaleString()} requested histories`,
-      warnings.length > 0 ? `${warnings.length} warnings` : "no warnings",
+      `${session.diagnostics.length} run diagnostics`,
     ].join(" · ");
   }
 
+  if (config.backend === "native") {
+    const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
+    return `tauri://run_photon_smoke idle · ${config.histories.toLocaleString()} configured histories · ${warnings.length} project warnings`;
+  }
   return "transport-worker:// idle · visual-ts backend armed · project graph clean";
 }

@@ -194,6 +194,24 @@ button { color: inherit; }
 .metric { border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.035); }
 .metric span { display: block; color: var(--text-muted); text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.06em; }
 .metric strong { display: block; margin-top: 5px; font-size: 1.05rem; }
+.run-session-details { display: grid; gap: 10px; margin-bottom: 10px; }
+.run-session-header { display: flex; align-items: center; justify-content: space-between; }
+.run-session-header h3, .run-session-provenance h4 { margin: 0; }
+.run-session-status { padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--text-muted); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.08em; }
+.run-session-status.running { color: var(--cyan); }
+.run-session-status.completed { color: var(--green); }
+.run-session-status.failed { color: var(--red); }
+.run-session-lifecycle, .run-session-provenance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.run-session-provenance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.run-session-provenance { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: rgba(24, 35, 61, 0.36); }
+.run-session-provenance-details { display: grid; gap: 6px; margin: 0; }
+.run-session-detail { min-width: 0; }
+.run-session-detail dt { color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; }
+.run-session-detail dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.run-session-outcome { display: grid; gap: 4px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; }
+.run-session-outcome.success { border-color: rgba(72, 213, 151, 0.35); background: rgba(72, 213, 151, 0.08); }
+.run-session-outcome.failure { border-color: rgba(255, 107, 129, 0.35); background: rgba(255, 107, 129, 0.08); }
+.run-session-warning { margin: 0; color: var(--gold); }
 .dock-copy, .console-line { color: #d8def5; border: 1px solid var(--line); background: rgba(255,255,255,0.025); border-radius: 14px; padding: 13px; }
 .console-line { color: var(--green); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .diagnostic-list-horizontal { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
