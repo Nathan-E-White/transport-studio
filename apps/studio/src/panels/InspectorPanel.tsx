@@ -34,7 +34,7 @@ export function InspectorPanel({ entity, diagnostics, tracks, project }: Inspect
 
           <PropertySection title="Transform">
             <Property label="Position" value={formatVec(getTransformVec(entity, "position"))} />
-            <Property label="Rotation" value={formatVec(getTransformVec(entity, "rotation"))} />
+            <Property label="Rotation" value={formatVec(getTransformVec(entity, "rotationEuler"))} />
             <Property label="Scale" value={formatVec(getTransformVec(entity, "scale"))} />
           </PropertySection>
 
@@ -87,15 +87,9 @@ type Vec3Like = Partial<{ readonly x: number; readonly y: number; readonly z: nu
 
 function getTransformVec(
   entity: SceneEntity,
-  key: "position" | "rotation" | "scale",
+  key: keyof SceneEntity["transform"],
 ): Vec3Like {
-  const xForm: Partial<Record<"position" | "rotation" | "scale", Partial<{
-    readonly x: number;
-    readonly y: number;
-    readonly z: number
-  }> | undefined | null>> | undefined = entity.transform as Partial<Record<"position" | "rotation" | "scale", Vec3Like>> | undefined;
-  //return entity.transform?.[key];
-  return xForm?.[key];
+  return entity.transform?.[key];
 }
 
 function renderEntitySpecificProperties(entity: SceneEntity) {
