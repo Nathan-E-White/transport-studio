@@ -30,7 +30,16 @@ import {
     setInspectorFocus,
     toggleSelected,
 } from "./selection";
-import {VisibilityTable} from "./visibility";
+import {
+    VisibilityTable,
+    getEntityViewFlags,
+    removeEntityViewFlags,
+    setEntityViewFlags,
+    setIncludedInCompile as setViewIncludedInCompile,
+    setLocked as setViewLocked,
+    setSelectable as setViewSelectable,
+    setVisible as setViewVisible,
+} from "./visibility";
 import type {Project, SceneEntity} from "@transport/domain";
 import {
     addEntity,
@@ -78,6 +87,7 @@ export interface EditorDiagnostic {
 export interface EditorStoreState {
     readonly shell: EditorShellState;
     readonly scene: EditorSceneState;
+    readonly visibility: VisibilityTable;
     readonly selection: EditorSelectionState;
     readonly validation: EditorValidationState;
     readonly stale: EditorStaleState;
@@ -105,6 +115,8 @@ export type EditorStoreAction =
     | { readonly type: "set-visible"; readonly ref: EditorEntityRef; readonly visible: boolean }
     | { readonly type: "set-locked"; readonly ref: EditorEntityRef; readonly locked: boolean }
     | { readonly type: "set-included-in-compile"; readonly ref: EditorEntityRef; readonly includedInCompile: boolean }
+    | { readonly type: "set-selectable"; readonly ref: EditorEntityRef; readonly selectable: boolean }
+    | { readonly type: "set-helper-only"; readonly ref: EditorEntityRef; readonly helperOnly: boolean }
 
     | { readonly type: "set-validation-result"; readonly diagnostics: readonly EditorDiagnostic[] }
     | { readonly type: "mark-validated" }
@@ -123,6 +135,7 @@ export const initialEditorStoreState: EditorStoreState = {
     scene: {
         project: null,
     },
+    visibility: {},
     selection: EMPTY_SELECTION_STATE,
     validation: {
         hasErrors: false,
@@ -132,9 +145,16 @@ export const initialEditorStoreState: EditorStoreState = {
     stale: CLEAN_STALE_STATE,
 };
 
-export function createEditorStoreState(project: Project): EditorStoreState {
-    const state = syncProject(initialEditorStoreState, project);
-    const initialSelection = project.scene.entities[1];
+export function createEditorStoreState(project: Project, initialVisibility: VisibilityTable = {}): EditorStoreState {
+    const visibility = createVisibility(project, initialVisibility);
+    const state = {
+        ...syncProject(initialEditorStoreState, reconcileProjectViewFlags(project, visibility)),
+        visibility,
+    };
+    const preferredSelection = project.scene.entities[1];
+    const initialSelection = preferredSelection && isSelectable(state, {kind: preferredSelection.kind, id: preferredSelection.id})
+        ? preferredSelection
+        : project.scene.entities.find((entity) => isSelectable(state, {kind: entity.kind, id: entity.id}));
     return initialSelection ? {
         ...state,
         selection: selectOne(state.selection, {kind: initialSelection.kind, id: initialSelection.id}),
@@ -214,7 +234,24 @@ export function editorStoreReducer(
             const current = project.scene.entities.find((entity) => entity.id === action.ref.id);
             if (!current) return state;
             const next = duplicateEntity(project, action.ref.id);
-            return markProjectChanged(syncProject(state, next), dirtyReasonForEntityKind(current.kind), next.scene.entities.at(-1));
+            const duplicate = next.scene.entities.at(-1);
+            if (!duplicate) return state;
+            const sourceFlags = getEntityViewFlags(state.visibility, action.ref);
+            const duplicateRef = {kind: duplicate.kind, id: duplicate.id};
+            const withVisibility = {
+                ...syncProject(state, next),
+                visibility: setEntityViewFlags(state.visibility, duplicateRef, {
+                    ...sourceFlags,
+                    visible: duplicate.visible && sourceFlags.visible,
+                    locked: duplicate.locked || sourceFlags.locked,
+                    includedInCompile: sourceFlags.helperOnly ? false : sourceFlags.includedInCompile,
+                }),
+            };
+            return markProjectChanged(
+                withVisibility,
+                dirtyReasonForEntityKind(current.kind),
+                sourceFlags.selectable ? duplicate : undefined,
+            );
         }
 
         case "delete-project-entity": {
@@ -222,10 +259,15 @@ export function editorStoreReducer(
             const current = project.scene.entities.find((entity) => entity.id === action.ref.id);
             if (!current) return state;
             const changed = markProjectChanged(syncProject(state, deleteEntity(project, action.ref.id)), dirtyReasonForEntityKind(current.kind));
-            return {...changed, selection: removeEntityFromSelection(changed.selection, action.ref)};
+            return {
+                ...changed,
+                visibility: removeEntityViewFlags(changed.visibility, action.ref),
+                selection: removeEntityFromSelection(changed.selection, action.ref),
+            };
         }
 
         case "select-one":
+            if (!isSelectable(state, action.ref)) return state;
             return {
                 ...state,
                 selection: selectOne(state.selection, action.ref),
@@ -234,10 +276,11 @@ export function editorStoreReducer(
         case "select-many":
             return {
                 ...state,
-                selection: selectMany(state.selection, action.refs),
+                selection: selectMany(state.selection, action.refs.filter((ref) => isSelectable(state, ref))),
             };
 
         case "toggle-selected":
+            if (!isSelectable(state, action.ref)) return state;
             return {
                 ...state,
                 selection: toggleSelected(state.selection, action.ref),
@@ -265,19 +308,41 @@ export function editorStoreReducer(
             return markProjectChanged({
                 ...state,
                 scene: state.scene.project ? {...state.scene, project: setEntityVisible(state.scene.project, action.ref.id, action.visible)} : state.scene,
+                visibility: setViewVisible(state.visibility, action.ref, action.visible),
             }, "visibility-changed");
 
         case "set-locked":
             return markProjectChanged({
                 ...state,
                 scene: state.scene.project ? {...state.scene, project: setEntityLocked(state.scene.project, action.ref.id, action.locked)} : state.scene,
+                visibility: setViewLocked(state.visibility, action.ref, action.locked),
             }, "unknown");
 
         case "set-included-in-compile":
+            if (getEntityViewFlags(state.visibility, action.ref).helperOnly && action.includedInCompile) return state;
             return markProjectChanged({
                 ...state,
                 scene: state.scene.project ? {...state.scene, project: setEntityIncludedInCompile(state.scene.project, action.ref.id, action.includedInCompile)} : state.scene,
+                visibility: setViewIncludedInCompile(state.visibility, action.ref, action.includedInCompile),
             }, "compile-inclusion-changed");
+
+        case "set-selectable": {
+            const visibility = setViewSelectable(state.visibility, action.ref, action.selectable);
+            return action.selectable
+                ? {...state, visibility}
+                : {...state, visibility, selection: removeEntityFromSelection(state.selection, action.ref)};
+        }
+
+        case "set-helper-only": {
+            const visibility = setEntityViewFlags(state.visibility, action.ref, {
+                helperOnly: action.helperOnly,
+                includedInCompile: action.helperOnly ? false : getEntityViewFlags(state.visibility, action.ref).includedInCompile,
+            });
+            const scene = action.helperOnly && state.scene.project
+                ? {...state.scene, project: setEntityIncludedInCompile(state.scene.project, action.ref.id, false)}
+                : state.scene;
+            return markProjectChanged({...state, scene, visibility}, "compile-inclusion-changed");
+        }
 
         case "set-validation-result":
             return {
@@ -348,10 +413,43 @@ export function selectProjectTreeMetadata(state: EditorStoreState) {
 }
 
 export function selectVisibility(state: EditorStoreState): VisibilityTable {
-    return Object.fromEntries((state.scene.project?.scene.entities ?? []).map((entity) => [
-        entityKey({kind: entity.kind, id: entity.id}),
-        {visible: entity.visible, locked: entity.locked, selectable: true, includedInCompile: entity.includedInCompile ?? true, helperOnly: false},
-    ]));
+    return state.visibility;
+}
+
+function createVisibility(project: Project, initial: VisibilityTable): VisibilityTable {
+    return Object.fromEntries(project.scene.entities.map((entity) => {
+        const ref = {kind: entity.kind, id: entity.id};
+        const supplied = getEntityViewFlags(initial, ref);
+        return [entityKey(ref), {
+            ...supplied,
+            visible: supplied.visible && entity.visible,
+            locked: supplied.locked || entity.locked,
+            includedInCompile: supplied.helperOnly ? false : supplied.includedInCompile && (entity.includedInCompile ?? true),
+        }];
+    }));
+}
+
+function reconcileProjectViewFlags(project: Project, visibility: VisibilityTable): Project {
+    return {
+        ...project,
+        scene: {
+            ...project.scene,
+            entities: project.scene.entities.map((entity) => {
+                const flags = getEntityViewFlags(visibility, {kind: entity.kind, id: entity.id});
+                return {
+                    ...entity,
+                    visible: flags.visible,
+                    locked: flags.locked,
+                    includedInCompile: flags.includedInCompile ? entity.includedInCompile : false,
+                };
+            }),
+        },
+    };
+}
+
+function isSelectable(state: EditorStoreState, ref: EditorEntityRef): boolean {
+    const exists = state.scene.project?.scene.entities.some((entity) => entity.id === ref.id && entity.kind === ref.kind) ?? false;
+    return exists && getEntityViewFlags(state.visibility, ref).selectable;
 }
 
 function dirtyReasonForEntityKind(kind: EditorEntityKind): EditorDirtyReason {

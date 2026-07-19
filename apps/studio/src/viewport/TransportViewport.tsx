@@ -4,6 +4,8 @@ import type {Project, SceneEntity, TrackSample} from "@transport/domain";
 import type {EditorMode} from "../app/StudioApp";
 import {TrackLines} from "./TrackLines";
 import {type JSX} from "react";
+import type {VisibilityTable} from "../state/editor";
+import {getViewportEntityPresentation, pickViewportEntity, type ViewportEntityPresentation} from "./viewportEntityPresentation";
 
 interface TransportViewportProps {
     readonly project: Project;
@@ -13,6 +15,7 @@ interface TransportViewportProps {
     readonly showTallies: boolean;
     readonly showAxes: boolean;
     readonly mode: EditorMode;
+    readonly visibility: VisibilityTable;
 }
 
 export function TransportViewport({
@@ -22,7 +25,8 @@ export function TransportViewport({
                                       onSelect,
                                       showTallies,
                                       showAxes,
-                                      mode
+                                      mode,
+                                      visibility,
                                   }: TransportViewportProps) {
     return (
         <Canvas camera={{position: [12, 9, 14], fov: 42}} shadows>
@@ -33,7 +37,9 @@ export function TransportViewport({
             <pointLight position={[-8, 3, 0]} intensity={1.8} color="#00e5ff"/>
             <Grid args={[34, 34]} cellSize={1} sectionSize={5} fadeDistance={42} fadeStrength={1.8}/>
 
-            {project.scene.entities.filter((entity) => entity.visible).map((entity) => (
+            {project.scene.entities.map((entity) => ({entity, presentation: getViewportEntityPresentation(entity, visibility)}))
+              .filter(({presentation}) => presentation.visible)
+              .map(({entity, presentation}) => (
                 <EntityMesh
                     key={entity.id}
                     entity={entity}
@@ -41,6 +47,7 @@ export function TransportViewport({
                     onSelect={onSelect}
                     showTallies={showTallies}
                     mode={mode}
+                    presentation={presentation}
                 />
             ))}
 
@@ -52,18 +59,20 @@ export function TransportViewport({
     );
 }
 
-function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
+function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation}: {
     readonly entity: SceneEntity;
     readonly selected: boolean;
     readonly onSelect: (id: string) => void;
     readonly showTallies: boolean;
-    readonly mode: EditorMode
+    readonly mode: EditorMode;
+    readonly presentation: ViewportEntityPresentation;
 }) {
 
     const p = entity.transform.position;
     const s = entity.transform.scale;
     const position: [number, number, number] = [p.x, p.y, p.z];
     const scale: [number, number, number] = [s.x, s.y, s.z];
+    const select = () => pickViewportEntity(entity, presentation, onSelect);
 
     if (entity.kind === "material") return null;
 
@@ -72,16 +81,17 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
         return (
             <group position={position} onClick={(event) => {
                 event.stopPropagation();
-                onSelect(entity.id);
-            }}>
+                select();
+            }} userData={presentation}>
                 <mesh rotation={[0, 0, -Math.PI / 2]}>
                     <coneGeometry args={[0.38, 1.15, 32]}/>
                     <meshStandardMaterial color={selected ? "#ffd166" : "#00e5ff"}
-                                          emissive={selected ? "#5a3d00" : "#003844"} emissiveIntensity={0.8}/>
+                                          emissive={selected ? "#5a3d00" : "#003844"} emissiveIntensity={0.8}
+                                          wireframe={presentation.helperOnly}/>
                 </mesh>
                 <BeamGuide length={5.5} selected={selected}/>
                 <Html distanceFactor={12} position={[0, 0.8, 0]} center className="scene-label">
-                    {entity.name} · {direction.x.toFixed(0)},{direction.y.toFixed(0)},{direction.z.toFixed(0)}
+                    {entity.name}{presentation.helperOnly ? " · helper" : ""} · {direction.x.toFixed(0)},{direction.y.toFixed(0)},{direction.z.toFixed(0)}
                 </Html>
             </group>
         );
@@ -92,8 +102,8 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
         return (
             <group position={position} scale={scale} onClick={(event) => {
                 event.stopPropagation();
-                onSelect(entity.id);
-            }}>
+                select();
+            }} userData={presentation}>
                 <mesh>
                     <boxGeometry args={[1, 1, 1]}/>
                     <meshStandardMaterial color={selected ? "#ffd166" : "#3ddc97"} transparent={true}
@@ -105,7 +115,7 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
                     <meshBasicMaterial color="#3ddc97" wireframe={true} transparent={true} opacity={0.35}/>
                 </mesh>
                 <Html distanceFactor={13} position={[0, 0.65, 0]} center
-                      className="scene-label green">{entity.name}</Html>
+                      className="scene-label green">{entity.name}{presentation.helperOnly ? " · helper" : ""}</Html>
             </group>
         );
     }
@@ -121,8 +131,8 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
         return (
             <group position={position} scale={scale} onClick={(event): void => {
                 event.stopPropagation();
-                onSelect(entity.id);
-            }}>
+                select();
+            }} userData={presentation}>
                 <mesh castShadow={true} receiveShadow={true}>
                     {
                         entity.primitive === "sphere" ? sg :
@@ -130,11 +140,12 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
                                 bg
                     }
                     <meshStandardMaterial color={selected ? "#ffd166" : "#7aa2ff"} transparent={true}
-                                          opacity={selected ? 0.68 : 0.48} roughness={0.4} metalness={0.08}/>
+                                          opacity={presentation.helperOnly ? 0.24 : selected ? 0.68 : 0.48}
+                                          roughness={0.4} metalness={0.08} wireframe={presentation.helperOnly}/>
                 </mesh>
                 {selected && <SelectionBox/>}
                 <Html distanceFactor={14} position={[0, 0.72, 0]} center
-                      className="scene-label blue">{entity.name}</Html>
+                      className="scene-label blue">{entity.name}{presentation.helperOnly ? " · helper" : ""}</Html>
             </group>
         );
     }

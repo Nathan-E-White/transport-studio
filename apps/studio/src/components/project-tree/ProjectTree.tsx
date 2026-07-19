@@ -35,7 +35,7 @@ function ProjectTreeInner({
   const project = state.scene.project;
   if (!project) throw new Error("Project Tree requires an Editable Scene project");
   const selectedEntityId = getPrimarySelection(state.selection)?.id;
-  const visibility = useMemo(() => selectVisibility(state), [state.scene.project]);
+  const visibility = useMemo(() => selectVisibility(state), [state.visibility]);
   const [searchQuery, setSearchQuery] = useState("");
   const [editingEntityId, setEditingEntityId] = useState<string | undefined>();
   const [drafts, setDrafts] = useState<Record<string, ProjectTreeMetadataDraft>>({});

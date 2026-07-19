@@ -13,7 +13,7 @@ export interface ProjectTreeEntityRowProps {
 
 export function ProjectTreeEntityRow({node, allowDelete = true, onRequestEdit}: Readonly<ProjectTreeEntityRowProps>) {
   const {state, dispatch} = useEditorStore();
-  const visibility = useMemo(() => selectVisibility(state), [state.scene.project]);
+  const visibility = useMemo(() => selectVisibility(state), [state.visibility]);
   const row = useMemo(() => buildProjectTreeEntityRowModel({node, selection: state.selection, visibility}), [node, state.selection, visibility]);
   if (!row) return null;
   const icon = buildEntityIconModel(row.ref.kind);

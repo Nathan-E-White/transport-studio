@@ -14,6 +14,7 @@ import {
     initialEditorStoreState
 } from "./editorStore";
 import type {Project} from "@transport/domain";
+import type {VisibilityTable} from "./visibility";
 
 interface EditorStoreContextValue {
     readonly state: EditorStoreState;
@@ -24,13 +25,14 @@ const EditorStoreContext = createContext<EditorStoreContextValue | null>(null);
 
 export interface EditorStoreProviderProps extends PropsWithChildren {
     readonly initialProject?: Project;
+    readonly initialVisibility?: VisibilityTable;
 }
 
-export function EditorStoreProvider({children, initialProject}: EditorStoreProviderProps) {
+export function EditorStoreProvider({children, initialProject, initialVisibility}: EditorStoreProviderProps) {
 
     const [state, dispatch] = useReducer(
         editorStoreReducer,
-        initialProject ? createEditorStoreState(initialProject) : initialEditorStoreState,
+        initialProject ? createEditorStoreState(initialProject, initialVisibility) : initialEditorStoreState,
     );
 
     const value = useMemo(

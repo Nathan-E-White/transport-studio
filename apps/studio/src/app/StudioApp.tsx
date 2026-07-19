@@ -17,6 +17,7 @@ import {TransportViewport} from "../viewport/TransportViewport";
 import {
     EditorStateRoot,
     getPrimarySelection,
+    selectVisibility,
     useEditorStore,
     type EditorMode as StoreEditorMode,
 } from "../state/editor";
@@ -46,6 +47,7 @@ function StudioWorkbench() {
     const {state, dispatch} = useEditorStore();
     const project = state.scene.project!;
     const selectedEntityId = getPrimarySelection(state.selection)?.id;
+    const visibility = selectVisibility(state);
     const runSessionStoreRef = useRef<RunSessionStore | null>(null);
     if (runSessionStoreRef.current === null) {
         runSessionStoreRef.current = createRunSessionStore({initialProject: project});
@@ -175,6 +177,7 @@ function StudioWorkbench() {
                     showTallies={showTallies}
                     showAxes={showAxes}
                     mode={mode}
+                    visibility={visibility}
                 />
                 <div className="viewport-hud top-left">
                     <span className="hud-kicker">{mode.toUpperCase()} MODE</span>

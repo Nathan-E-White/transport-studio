@@ -289,6 +289,7 @@ vi.mock("../viewport/TransportViewport", () => ({
         showTallies: boolean;
         showAxes: boolean;
         mode: string;
+        visibility: unknown;
         project: {scene: {entities: readonly {id: string; visible: boolean}[]}};
     }) => (
         <section aria-label="Transport viewport">

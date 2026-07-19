@@ -3,7 +3,7 @@ import {describe, expect, it, vi} from "vitest";
 import type {Project} from "@transport/domain";
 import {IDENTITY_TRANSFORM} from "@transport/shared";
 import {ProjectTree, ProjectTreeProps} from "./ProjectTree";
-import {EditorStoreProvider} from "../../state/editor";
+import {EditorStoreProvider, type VisibilityTable, useEditorStore} from "../../state/editor";
 
 const project: Project = {
   id: "project-1" as Project["id"],
@@ -88,6 +88,16 @@ function renderProjectTree(overrides: Partial<ProjectTreeProps> = {}) {
   return props;
 }
 
+function MakeGeometryNonSelectable() {
+  const {state, dispatch} = useEditorStore();
+  const geometry = state.scene.project!.scene.entities.find((entity) => entity.kind === "geometry")!;
+  return <button type="button" onClick={() => dispatch({
+    type: "set-selectable",
+    ref: {kind: geometry.kind, id: geometry.id},
+    selectable: false,
+  })}>Make geometry non-selectable</button>;
+}
+
 describe("ProjectTree", () => {
   it("reports actionable failures through the consolidated public boundary", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -131,6 +141,59 @@ describe("ProjectTree", () => {
     fireEvent.click(screen.getByRole("treeitem", {name: "Water, material"}));
 
     expect(screen.getByRole("treeitem", {name: "Water, material"})).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("honors live non-selectable, helper-only, hidden, and locked interaction state", () => {
+    const visibility: VisibilityTable = {
+      "geometry:geom-1": {visible: true, selectable: false, locked: false, includedInCompile: true, helperOnly: false},
+      "material:mat-1": {visible: true, selectable: true, locked: false, includedInCompile: false, helperOnly: true},
+      "source:src-1": {visible: false, selectable: true, locked: false, includedInCompile: true, helperOnly: false},
+      "tally:tally-1": {visible: true, selectable: true, locked: true, includedInCompile: true, helperOnly: false},
+    };
+    render(
+      <EditorStoreProvider initialProject={project} initialVisibility={visibility}>
+        <ProjectTree diagnostics={[]}/>
+      </EditorStoreProvider>,
+    );
+
+    const hidden = screen.getByRole("treeitem", {name: "Photon Beam, source, hidden"});
+    fireEvent.click(hidden);
+    expect(hidden).toHaveAttribute("aria-selected", "true");
+
+    const nonSelectable = screen.getByRole("treeitem", {name: "Shield Slab, geometry, not selectable"});
+    fireEvent.click(nonSelectable);
+    expect(nonSelectable).toHaveAttribute("aria-selected", "false");
+    expect(nonSelectable).toHaveAttribute("tabindex", "-1");
+    expect(hidden).toHaveAttribute("aria-selected", "true");
+
+    const helper = screen.getByRole("treeitem", {name: "Water, material, excluded from compiled problem, editor helper only"});
+    expect(within(helper).getByText("helper")).toBeInTheDocument();
+    expect(within(helper).getByRole("button", {name: "Helper-only entities cannot be included in the compiled problem"})).toBeDisabled();
+    fireEvent.click(helper);
+    expect(helper).toHaveAttribute("aria-selected", "true");
+
+    const locked = screen.getByRole("treeitem", {name: "Dose Tally, tally, locked"});
+    expect(within(locked).getByRole("button", {name: "Locked entities cannot be edited"})).toBeDisabled();
+    fireEvent.click(locked);
+    expect(locked).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("updates row eligibility when selectability changes after mount", () => {
+    render(
+      <EditorStoreProvider initialProject={project}>
+        <MakeGeometryNonSelectable/>
+        <ProjectTree diagnostics={[]}/>
+      </EditorStoreProvider>,
+    );
+    const selectable = screen.getByRole("treeitem", {name: "Shield Slab, geometry"});
+    fireEvent.click(selectable);
+    expect(selectable).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(screen.getByRole("button", {name: "Make geometry non-selectable"}));
+
+    const ineligible = screen.getByRole("treeitem", {name: "Shield Slab, geometry, not selectable"});
+    expect(ineligible).toHaveAttribute("aria-selected", "false");
+    expect(ineligible).toHaveAttribute("tabindex", "-1");
   });
 
   it("supports keyboard selection through the public tree interface", () => {
