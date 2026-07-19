@@ -7,6 +7,43 @@ export interface EntityMetadataPatch {
   readonly description?: string;
 }
 
+export interface EditableProjectSettings {
+  readonly name: string;
+  readonly histories: number;
+  readonly batchSize: number;
+  readonly seed: number;
+  readonly visibleHistoryBudget: number;
+}
+
+export function validateProjectSettings(settings: EditableProjectSettings): readonly string[] {
+  const errors: string[] = [];
+  if (!settings.name.trim()) errors.push("Project name is required.");
+  for (const [label, value] of [
+    ["Histories", settings.histories],
+    ["Batch size", settings.batchSize],
+    ["Seed", settings.seed],
+    ["Visible history budget", settings.visibleHistoryBudget],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) errors.push(`${label} must be a positive integer.`);
+  }
+  return errors;
+}
+
+export function updateProjectSettings(project: Project, settings: EditableProjectSettings): Project {
+  return {
+    ...project,
+    name: settings.name,
+    runConfiguration: {
+      ...project.runConfiguration,
+      histories: settings.histories,
+      batchSize: settings.batchSize,
+      seed: settings.seed,
+      visibleHistoryBudget: settings.visibleHistoryBudget,
+    },
+    metadata: {...project.metadata, modifiedAt: new Date().toISOString()},
+  };
+}
+
 export function addEntity(project: Project, kind: SceneEntity["kind"]): Project {
   return updateProjectEntities(project, [...project.scene.entities, createDefaultEntity(kind)]);
 }

@@ -123,6 +123,66 @@ describe("ProjectTree", () => {
     expect(screen.getByRole("button", {name: "+ Geometry"})).toBeInTheDocument();
   });
 
+  it("opens Project Settings, cancels atomically, and restores keyboard focus", () => {
+    renderProjectTree();
+    const settingsButton = screen.getByRole("button", {name: "Project settings"});
+
+    fireEvent.click(settingsButton);
+
+    const dialog = screen.getByRole("dialog", {name: "Project Settings"});
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByLabelText("Project name")).toHaveValue("Photon Testbed");
+    expect(screen.getByLabelText("Project name")).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByLabelText("Project name"), {key: "Tab", shiftKey: true});
+    expect(screen.getByRole("button", {name: "Save Project Settings"})).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("button", {name: "Save Project Settings"}), {key: "Tab"});
+    expect(screen.getByLabelText("Project name")).toHaveFocus();
+
+    fireEvent.change(screen.getByLabelText("Project name"), {target: {value: "Discarded Name"}});
+    fireEvent.change(screen.getByLabelText("Histories"), {target: {value: "250"}});
+    fireEvent.click(screen.getByRole("button", {name: "Cancel"}));
+
+    expect(screen.queryByRole("dialog", {name: "Project Settings"})).not.toBeInTheDocument();
+    expect(screen.getByText("Photon Testbed")).toBeInTheDocument();
+    expect(settingsButton).toHaveFocus();
+
+    fireEvent.click(settingsButton);
+    expect(screen.getByLabelText("Project name")).toHaveValue("Photon Testbed");
+    fireEvent.keyDown(screen.getByRole("dialog", {name: "Project Settings"}), {key: "Escape"});
+    expect(screen.queryByRole("dialog", {name: "Project Settings"})).not.toBeInTheDocument();
+    expect(settingsButton).toHaveFocus();
+  });
+
+  it("saves all modeled Project Settings together and rejects an invalid draft without partial updates", () => {
+    renderProjectTree();
+    const settingsButton = screen.getByRole("button", {name: "Project settings"});
+    fireEvent.click(settingsButton);
+
+    fireEvent.change(screen.getByLabelText("Project name"), {target: {value: "Updated Testbed"}});
+    fireEvent.change(screen.getByLabelText("Histories"), {target: {value: "0"}});
+    fireEvent.change(screen.getByLabelText("Batch size"), {target: {value: "25"}});
+    fireEvent.click(screen.getByRole("button", {name: "Save Project Settings"}));
+
+    expect(screen.getByRole("alert", {name: "Project Settings errors"})).toHaveTextContent("Histories must be a positive integer");
+    expect(screen.queryByText("Updated Testbed")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Histories"), {target: {value: "250"}});
+    fireEvent.change(screen.getByLabelText("Seed"), {target: {value: "17"}});
+    fireEvent.change(screen.getByLabelText("Visible history budget"), {target: {value: "20"}});
+    fireEvent.click(screen.getByRole("button", {name: "Save Project Settings"}));
+
+    expect(screen.queryByRole("dialog", {name: "Project Settings"})).not.toBeInTheDocument();
+    expect(screen.getByText("Updated Testbed")).toBeInTheDocument();
+    expect(settingsButton).toHaveFocus();
+
+    fireEvent.click(settingsButton);
+    expect(screen.getByLabelText("Histories")).toHaveValue(250);
+    expect(screen.getByLabelText("Batch size")).toHaveValue(25);
+    expect(screen.getByLabelText("Seed")).toHaveValue(17);
+    expect(screen.getByLabelText("Visible history budget")).toHaveValue(20);
+  });
+
   it("filters by tag while preserving the search surface", () => {
     renderProjectTree();
 

@@ -40,6 +40,53 @@ describe("Editable Scene authoritative store", () => {
         expect("run" in changed).toBe(false);
     });
 
+    it("updates modeled project settings as one immutable transaction", () => {
+        const initial = createEditorStoreState(createInitialProject());
+        const originalProject = initial.scene.project!;
+        const changed = editorStoreReducer(initial, {
+            type: "update-project-settings",
+            settings: {
+                name: "Updated Project",
+                histories: 250,
+                batchSize: 25,
+                seed: 17,
+                visibleHistoryBudget: 20,
+            },
+        });
+
+        expect(changed.scene.project).not.toBe(originalProject);
+        expect(changed.scene.project).toMatchObject({
+            name: "Updated Project",
+            runConfiguration: {histories: 250, batchSize: 25, seed: 17, visibleHistoryBudget: 20},
+        });
+        expect(originalProject.name).not.toBe("Updated Project");
+        expect(changed.stale.reasons).toContain("run-settings-changed");
+    });
+
+    it("rejects invalid project settings at the store boundary without dirtying or mutating the project", () => {
+        const initial = createEditorStoreState(createInitialProject());
+        const rejected = editorStoreReducer(initial, {
+            type: "update-project-settings",
+            settings: {
+                name: " ",
+                histories: 0,
+                batchSize: Number.NaN,
+                seed: -1,
+                visibleHistoryBudget: 0,
+            },
+        });
+
+        expect(rejected.scene.project).toBe(initial.scene.project);
+        expect(rejected.stale).toBe(initial.stale);
+        expect(rejected.projectSettingsErrors).toEqual([
+            "Project name is required.",
+            "Histories must be a positive integer.",
+            "Batch size must be a positive integer.",
+            "Seed must be a positive integer.",
+            "Visible history budget must be a positive integer.",
+        ]);
+    });
+
     it("does not stale derived physics when selection changes and clears deleted selection", () => {
         const initial = createEditorStoreState(createInitialProject());
         const entity = initial.scene.project!.scene.entities[0];

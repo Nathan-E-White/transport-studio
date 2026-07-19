@@ -48,6 +48,9 @@ import {
     setEntityIncludedInCompile,
     setEntityLocked,
     setEntityVisible,
+    updateProjectSettings,
+    validateProjectSettings,
+    type EditableProjectSettings,
     updateEntityMetadata,
 } from "../../app/projectMutations";
 import {commitInspectorCandidate, type InspectorEditDiagnostic} from "../../app/inspectorEditing";
@@ -93,6 +96,7 @@ export interface EditorStoreState {
     readonly validation: EditorValidationState;
     readonly stale: EditorStaleState;
     readonly inspectorEditDiagnostics: readonly InspectorEditDiagnostic[];
+    readonly projectSettingsErrors: readonly string[];
 }
 
 export type EditorStoreAction =
@@ -103,6 +107,7 @@ export type EditorStoreAction =
     | { readonly type: "set-bottom-dock-open"; readonly open: boolean }
 
     | { readonly type: "create-project-entity"; readonly kind: SceneEntity["kind"] }
+    | { readonly type: "update-project-settings"; readonly settings: EditableProjectSettings }
     | { readonly type: "update-project-entity-metadata"; readonly ref: EditorEntityRef; readonly patch: {readonly name?: string; readonly description?: string; readonly tags?: readonly string[]} }
     | { readonly type: "apply-inspector-edit"; readonly baseline: SceneEntity; readonly candidate: SceneEntity }
     | { readonly type: "duplicate-project-entity"; readonly ref: EditorEntityRef }
@@ -147,6 +152,7 @@ export const initialEditorStoreState: EditorStoreState = {
     },
     stale: CLEAN_STALE_STATE,
     inspectorEditDiagnostics: [],
+    projectSettingsErrors: [],
 };
 
 export function createEditorStoreState(project: Project, initialVisibility: VisibilityTable = {}): EditorStoreState {
@@ -221,6 +227,17 @@ export function editorStoreReducer(
             const next = addEntity(project, action.kind);
             const created = next.scene.entities.at(-1);
             return markProjectChanged(syncProject(state, next), dirtyReasonForEntityKind(action.kind), created);
+        }
+
+        case "update-project-settings": {
+            const errors = validateProjectSettings(action.settings);
+            if (errors.length > 0) return {...state, projectSettingsErrors: errors};
+            return markProjectChanged({
+                ...syncProject(state, updateProjectSettings(requireProject(state), action.settings)),
+                projectSettingsErrors: [],
+            },
+                "run-settings-changed",
+            );
         }
 
         case "update-project-entity-metadata": {

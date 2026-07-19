@@ -12,6 +12,21 @@ test("project tree drives real editor CRUD state", async ({page}) => {
 
   await gotoStudio(page, failures);
 
+  const settingsButton = page.getByRole("button", {name: "Project settings"});
+  await settingsButton.click();
+  await expect(page.getByRole("dialog", {name: "Project Settings"})).toBeVisible();
+  await expect(page.getByLabel("Project name")).toBeFocused();
+  await page.getByLabel("Project name").fill("Discarded Browser Project");
+  await page.getByRole("button", {name: "Cancel"}).click();
+  await expect(page.getByRole("heading", {name: "Photon Shielding Sandbox"})).toBeVisible();
+  await expect(settingsButton).toBeFocused();
+
+  await settingsButton.click();
+  await page.getByLabel("Project name").fill("Browser Project");
+  await page.getByLabel("Histories").fill("250");
+  await page.getByRole("button", {name: "Save Project Settings"}).click();
+  await expect(page.getByRole("heading", {name: "Browser Project"})).toBeVisible();
+
   await entityRow(page, "Shield Slab", "geometry").click();
   await expect(page.getByRole("heading", {name: "Shield Slab"})).toBeVisible();
   await expect(page.getByLabel("Rotation value")).toContainText("0.00, 0.00, 0.00");

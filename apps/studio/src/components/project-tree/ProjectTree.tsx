@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {Diagnostic, SceneEntity} from "@transport/domain";
 import {
   EditorDiagnostic,
@@ -13,6 +13,7 @@ import {
 import {ProjectTreeEmptyState} from "./EmptyState/ProjectTreeEmptyState";
 import {ProjectTreeGroup, ProjectTreeMetadataDraft} from "./Group/ProjectTreeGroup";
 import {ProjectTreeBoundary} from "./ProjectTreeBoundary";
+import {ProjectSettingsDialog} from "./ProjectSettingsDialog";
 
 export interface ProjectTreeProps {
   readonly diagnostics: readonly Diagnostic[];
@@ -39,6 +40,13 @@ function ProjectTreeInner({
   const [searchQuery, setSearchQuery] = useState("");
   const [editingEntityId, setEditingEntityId] = useState<string | undefined>();
   const [drafts, setDrafts] = useState<Record<string, ProjectTreeMetadataDraft>>({});
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    settingsButtonRef.current?.focus();
+  }, []);
 
   const entitiesById = useMemo(
     () => new Map<string, SceneEntity>(project.scene.entities.map((entity) => [entity.id, entity])),
@@ -111,7 +119,8 @@ function ProjectTreeInner({
                 <h2>{project.name}</h2>
                 <p className="muted compact">{project.metadata.physicsModelVersion}</p>
               </div>
-              <button className="icon-button" type="button" title="Project settings">⚙</button>
+              <button ref={settingsButtonRef} className="icon-button" type="button" title="Project settings"
+                aria-label="Project settings" onClick={() => setSettingsOpen(true)}>⚙</button>
             </div>
 
             <div className="stat-grid">
@@ -168,6 +177,12 @@ function ProjectTreeInner({
                   ))
               )}
             </div>
+            {settingsOpen && (
+              <ProjectSettingsDialog project={project} onCancel={closeSettings} onSave={(settings) => {
+                dispatch({type: "update-project-settings", settings});
+                closeSettings();
+              }}/>
+            )}
           </section>
     </>
   );

@@ -153,6 +153,14 @@ button { color: inherit; }
 .project-tree-edit { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: rgba(5,8,22,0.42); padding: 10px; }
 .project-tree-edit label { display: grid; gap: 5px; color: var(--text-muted); font-size: 0.76rem; text-transform: uppercase; }
 .project-tree-edit__actions { display: flex; gap: 8px; justify-content: flex-end; }
+.project-settings-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(2, 4, 12, 0.72); }
+.project-settings-dialog { width: min(440px, 100%); max-height: calc(100vh - 40px); overflow: auto; display: grid; gap: 14px; padding: 18px; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--bg-1); box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
+.project-settings-dialog h2 { margin: 0; }
+.project-settings-dialog form { display: grid; gap: 10px; }
+.project-settings-dialog label { display: grid; gap: 5px; color: var(--text-muted); font-size: 0.78rem; }
+.project-settings-dialog input { min-width: 0; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2); color: var(--text); }
+.project-settings-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.project-settings-actions button { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-3); color: var(--text); cursor: pointer; }
 
 .entity-title-card { display: flex; gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 18px; padding: 12px; background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)); margin-bottom: 14px; }
 .large-entity-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 16px; color: #06101d; font-size: 1.3rem; font-weight: 900; }
