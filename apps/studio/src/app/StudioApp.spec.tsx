@@ -219,6 +219,7 @@ function ProjectTreeMock() {
             <button type="button" onClick={() => dispatch({type: "select-one", ref: ref("dose-1")})}>Select Dose Tally</button>
             <button type="button" onClick={() => dispatch({type: "set-visible", ref: ref("shield-1"), visible: false})}>Hide Shield Slab</button>
             <button type="button" onClick={() => dispatch({type: "set-included-in-compile", ref: ref("shield-1"), includedInCompile: false})}>Exclude Shield Slab</button>
+            <button type="button" onClick={() => dispatch({type: "delete-project-entity", ref: ref("dose-1")})}>Delete Dose Tally</button>
         </section>
     );
 }
@@ -240,6 +241,7 @@ vi.mock("../panels/InspectorPanel", () => ({
         entity?: SceneEntity;
         diagnostics: readonly unknown[];
         tracks: readonly unknown[];
+        project: {scene: {entities: readonly {id: string; name: string; kind: string}[]}};
         onEntityChange: (baseline: SceneEntity, candidate: SceneEntity) => void;
     }) => (
         <section aria-label="Inspector panel">
@@ -259,7 +261,10 @@ vi.mock("../panels/InspectorPanel", () => ({
 vi.mock("../panels/RunPanel", () => ({
     RunPanel: (props: {
         config: { backend: string };
+        project: {scene: {entities: readonly {id: string; name: string; kind: string}[]}};
         tracks: readonly unknown[];
+        tallies: readonly unknown[];
+        tallyDiagnostics: readonly unknown[];
         diagnostics: readonly { message: string }[];
         sceneStats: { geometry: number; materials: number; sources: number; tallies: number };
         freshness: "empty" | "fresh" | "stale";
@@ -267,6 +272,7 @@ vi.mock("../panels/RunPanel", () => ({
         resultView: "current" | "submitted";
         session: unknown;
         onResultViewChange: (view: "current" | "submitted") => void;
+        onTallySelect: (tallyId: string) => void;
     }) => {
         const {state, dispatch} = useEditorStore();
         return <section aria-label="Run panel">
@@ -274,12 +280,15 @@ vi.mock("../panels/RunPanel", () => ({
             <p>active run tab: {state.shell.bottomDockTab}</p>
             <p>run panel backend: {props.config.backend}</p>
             <p>run panel tracks: {props.tracks.length}</p>
+            <p>run panel tallies: {props.tallies.length}</p>
+            <p>run panel project tally: {props.project.scene.entities.find((entity) => entity.kind === "tally")?.name ?? "none"}</p>
             <p>run panel diagnostics: {props.diagnostics.length}</p>
             <p>run results freshness: {props.freshness === "fresh" ? "current" : props.freshness}</p>
             {props.renderingBlock && <p>{props.renderingBlock.message}</p>}
             {props.renderingBlock && props.resultView === "current" && (
                 <button type="button" onClick={() => props.onResultViewChange("submitted")}>View submitted scene</button>
             )}
+            {props.tallies.length > 0 && <button type="button" onClick={() => props.onTallySelect("dose-1")}>Select Submitted Tally Result</button>}
             {props.diagnostics.map((diagnostic) => <p key={diagnostic.message}>{diagnostic.message}</p>)}
             <p>run panel scene
                 stats: {props.sceneStats.geometry}/{props.sceneStats.materials}/{props.sceneStats.sources}/{props.sceneStats.tallies}</p>
@@ -292,22 +301,25 @@ vi.mock("../panels/RunPanel", () => ({
 vi.mock("../viewport/TransportViewport", () => ({
     TransportViewport: (props: {
         tracks: readonly unknown[];
+        tallies: readonly unknown[];
         selectedEntityId?: string;
         showTallies: boolean;
         showAxes: boolean;
         mode: string;
         visibility: unknown;
-        project: {scene: {entities: readonly {id: string; visible: boolean; transform: {position: {x: number}}}[]}};
+        project: {scene: {entities: readonly {id: string; name: string; visible: boolean; transform: {position: {x: number}}}[]}};
     }) => (
         <section aria-label="Transport viewport">
             <h2>Transport viewport</h2>
             <p>viewport mode: {props.mode}</p>
             <p>viewport selected entity: {props.selectedEntityId ?? "none"}</p>
             <p>viewport tracks: {props.tracks.length}</p>
+            <p>viewport tally results: {props.tallies.length}</p>
             <p>viewport tallies visible: {String(props.showTallies)}</p>
             <p>viewport axes visible: {String(props.showAxes)}</p>
             <p>viewport shield visible: {String(props.project.scene.entities.find((entity) => entity.id === "shield-1")?.visible)}</p>
             <p>viewport shield x: {props.project.scene.entities.find((entity) => entity.id === "shield-1")?.transform.position.x}</p>
+            <p>viewport presented tally: {props.project.scene.entities.find((entity) => entity.id === "dose-1")?.name ?? "none"}</p>
         </section>
     )
 }));
@@ -604,6 +616,11 @@ describe("StudioApp spec", () => {
                 ]
             },
             {
+                type: "tallyDelta",
+                runId: "native-314159",
+                delta: {tallyId: "dose-1", scores: [7]}
+            },
+            {
                 type: "runCompleted",
                 runId: "native-314159",
                 summary: {
@@ -623,6 +640,8 @@ describe("StudioApp spec", () => {
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
         await waitFor(() => expect(screen.getByText("run panel tracks: 1")).toBeTruthy());
+        expect(screen.getByText("run panel tallies: 1")).toBeTruthy();
+        expect(screen.getByText("viewport tally results: 1")).toBeTruthy();
         expect(mocks.runNativePhotonSmokeBackend).toHaveBeenCalledWith({
             id: "compiled-current-scene",
             status: "compiled",
@@ -636,6 +655,14 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("physics_data.simple_coefficients: Native photon backend used simple coefficients because tabular cross-section data was not supplied.")).toBeTruthy();
         expect(screen.getByText("1 sampled tracks · 0 escaped · 1 absorbed")).toBeTruthy();
         expect(screen.getByText("active run tab: run")).toBeTruthy();
+
+        fireEvent.click(screen.getByRole("button", {name: "Delete Dose Tally"}));
+        await waitFor(() => expect(screen.getByText(/Results were submitted from Editable Scene revision/)).toBeTruthy());
+        fireEvent.click(screen.getByRole("button", {name: "View submitted scene"}));
+        expect(screen.getByText("run panel project tally: Dose Tally")).toBeTruthy();
+        fireEvent.click(screen.getByRole("button", {name: "Select Submitted Tally Result"}));
+        expect(screen.getByText("viewport selected entity: dose-1")).toBeTruthy();
+        expect(screen.getByText("viewport presented tally: Dose Tally")).toBeTruthy();
     });
 
     it("lets the user inspect run-panel tabs without rerunning transport", async () => {

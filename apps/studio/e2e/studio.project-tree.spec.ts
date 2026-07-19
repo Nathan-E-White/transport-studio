@@ -27,6 +27,9 @@ test("project tree drives real editor CRUD state", async ({page}) => {
   await page.getByRole("button", {name: "Save Project Settings"}).click();
   await expect(page.getByRole("heading", {name: "Browser Project"})).toBeVisible();
 
+  await entityRow(page, "Detector Plane", "tally").click();
+  await expect(page.getByText(/No statistical result is available yet/)).toBeVisible();
+
   await entityRow(page, "Shield Slab", "geometry").click();
   await expect(page.getByRole("heading", {name: "Shield Slab"})).toBeVisible();
   await expect(page.getByLabel("Rotation value")).toContainText("0.00, 0.00, 0.00");

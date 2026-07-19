@@ -61,6 +61,7 @@ export interface RunSessionState {
     readonly diagnostics: readonly RunSessionDiagnostic[];
     readonly tracks: readonly TrackSample[];
     readonly tallies: readonly TransportTallyDelta[];
+    readonly invalidTallyIds?: readonly string[];
     readonly provenance: TransportRunProvenance | null;
     readonly summary: TransportRunSummary | null;
     readonly terminalFailure: TransportBackendDiagnostic | null;
@@ -135,6 +136,7 @@ export interface CreateRunSessionStoreOptions {
 const EMPTY_TRACKS: readonly TrackSample[] = Object.freeze([]);
 const EMPTY_TALLIES: readonly TransportTallyDelta[] = Object.freeze([]);
 const EMPTY_DIAGNOSTICS: readonly RunSessionDiagnostic[] = Object.freeze([]);
+const RENDERABLE_TALLY_CACHE = new WeakMap<RunSessionState, readonly TransportTallyDelta[]>();
 const JOURNAL_VERSION = "1.0.0" as const;
 
 export function createRunSessionStore(options: CreateRunSessionStoreOptions): RunSessionStore {
@@ -213,6 +215,7 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
             diagnostics: EMPTY_DIAGNOSTICS,
             tracks: EMPTY_TRACKS,
             tallies: EMPTY_TALLIES,
+            invalidTallyIds: Object.freeze([]),
             provenance: null,
             summary: null,
             terminalFailure: null,
@@ -320,8 +323,14 @@ export function selectRenderableTracks(snapshot: RunSessionStoreSnapshot): reado
 }
 
 export function selectRenderableTallies(snapshot: RunSessionStoreSnapshot): readonly TransportTallyDelta[] {
-    if (!snapshot.current) return EMPTY_TALLIES;
-    return canRenderResults(snapshot) ? snapshot.current.tallies : EMPTY_TALLIES;
+    if (!snapshot.current || !canRenderResults(snapshot)) return EMPTY_TALLIES;
+    const invalid = snapshot.current.invalidTallyIds ?? [];
+    if (invalid.length === 0) return snapshot.current.tallies;
+    const cached = RENDERABLE_TALLY_CACHE.get(snapshot.current);
+    if (cached) return cached;
+    const renderable = Object.freeze(snapshot.current.tallies.filter((result) => !invalid.includes(result.tallyId)));
+    RENDERABLE_TALLY_CACHE.set(snapshot.current, renderable);
+    return renderable;
 }
 
 export function selectRunDiagnostics(snapshot: RunSessionStoreSnapshot): readonly RunSessionDiagnostic[] {
@@ -427,10 +436,23 @@ function reduceBackendEvent(state: RunSessionState, event: TransportBackendEvent
             return reduceMiddle(state, event, "tracks", {
                 tracks: deepFreeze([...state.tracks, ...event.samples.map(convertTransportTrackSample)]),
             });
-        case "tallyDelta":
-            return reduceMiddle(state, event, "tallies", {
-                tallies: deepFreeze([...state.tallies, structuredClone(event.delta)]),
+        case "tallyDelta": {
+            const accumulation = accumulateTallyDelta(state.tallies, event.delta);
+            const nextState = accumulation.shapeMismatch
+                ? appendDiagnostics(state, [{
+                    level: "error",
+                    code: "run.tally.delta_shape_mismatch",
+                    message: `Tally '${event.delta.tallyId}' changed score length from ${accumulation.existingLength} to ${event.delta.scores.length}; its accumulated result was suppressed.`,
+                    entityId: event.delta.tallyId,
+                }])
+                : state;
+            return reduceMiddle(nextState, event, "tallies", {
+                tallies: accumulation.tallies,
+                invalidTallyIds: accumulation.shapeMismatch
+                    ? Object.freeze([...new Set([...(state.invalidTallyIds ?? []), event.delta.tallyId])])
+                    : state.invalidTallyIds,
             });
+        }
         case "diagnostic":
             return reduceMiddle(appendDiagnostics(state, [event.diagnostic]), event, "diagnostics", {});
         case "runCompleted":
@@ -455,6 +477,20 @@ function reduceBackendEvent(state: RunSessionState, event: TransportBackendEvent
                 phase: "terminal",
             });
     }
+}
+
+function accumulateTallyDelta(
+    current: readonly TransportTallyDelta[],
+    delta: TransportTallyDelta,
+): {readonly tallies: readonly TransportTallyDelta[]; readonly shapeMismatch: boolean; readonly existingLength?: number} {
+    const existingIndex = current.findIndex((result) => result.tallyId === delta.tallyId);
+    if (existingIndex < 0) return {tallies: deepFreeze([...current, structuredClone(delta)]), shapeMismatch: false};
+    const existing = current[existingIndex];
+    if (existing.scores.length !== delta.scores.length) {
+        return {tallies: current, shapeMismatch: true, existingLength: existing.scores.length};
+    }
+    const next = {tallyId: delta.tallyId, scores: existing.scores.map((score, index) => score + delta.scores[index])};
+    return {tallies: deepFreeze(current.map((result, index) => index === existingIndex ? next : result)), shapeMismatch: false};
 }
 
 function reduceMiddle(

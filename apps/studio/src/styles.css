@@ -18,6 +18,7 @@
 }
 
 * { box-sizing: border-box; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 html, body, #root { height: 100%; margin: 0; }
 button, input { font: inherit; }
 button { color: inherit; }
@@ -205,6 +206,11 @@ button { color: inherit; }
 .scene-label, .axis-label { color: #edf2ff; background: rgba(5,8,22,0.68); border: 1px solid rgba(255,255,255,0.16); border-radius: 999px; padding: 3px 8px; font-size: 11px; white-space: nowrap; }
 .scene-label.green { color: #bcffe0; }
 .scene-label.blue { color: #dbe5ff; }
+.tally-result-label { color: #ffd5f7; border-color: rgba(255,79,216,0.5); background: rgba(55,4,45,0.82); }
+.tally-result-sign-legend { display: block; margin-top: 3px; color: var(--text); font-size: 0.68rem; }
+.tally-result-diagnostic { max-width: 280px; display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: rgba(7,11,22,0.92); font-size: 0.75rem; }
+.tally-result-diagnostic.warning { border-color: rgba(255,209,102,0.5); }
+.tally-result-diagnostic.info { border-color: rgba(0,229,255,0.4); }
 .axis-label { color: var(--text-muted); }
 
 .run-dock { height: 100%; display: grid; grid-template-rows: 42px 1fr; }
@@ -217,6 +223,14 @@ button { color: inherit; }
 .metric span { display: block; color: var(--text-muted); text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.06em; }
 .metric strong { display: block; margin-top: 5px; font-size: 1.05rem; }
 .run-session-details { display: grid; gap: 10px; margin-bottom: 10px; }
+.tally-results-panel { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tally-results-panel label { display: grid; gap: 4px; color: var(--text-muted); font-size: 0.76rem; }
+.tally-results-panel select { min-width: 220px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--bg-2); }
+.tally-bin-inspector { flex: 1 1 100%; max-height: 240px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.tally-bin-inspector table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+.tally-bin-inspector caption { padding: 7px; color: var(--text-muted); text-align: left; }
+.tally-bin-inspector th, .tally-bin-inspector td { padding: 5px 7px; border-top: 1px solid var(--line); text-align: left; }
+.tally-bin-pages { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 6px; background: var(--bg-1); }
 .run-session-header { display: flex; align-items: center; justify-content: space-between; }
 .run-session-header h3, .run-session-provenance h4 { margin: 0; }
 .run-session-status { padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--text-muted); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.08em; }

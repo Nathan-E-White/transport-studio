@@ -1,15 +1,18 @@
 import {Canvas} from "@react-three/fiber";
 import {Grid, Html, OrbitControls} from "@react-three/drei";
-import type {Project, SceneEntity, TrackSample} from "@transport/domain";
+import type {Diagnostic, Project, SceneEntity, TrackSample, TransportTallyDelta} from "@transport/domain";
 import type {EditorMode} from "../app/StudioApp";
 import {TrackLines} from "./TrackLines";
 import {type JSX} from "react";
 import type {VisibilityTable} from "../state/editor";
 import {getViewportEntityPresentation, pickViewportEntity, type ViewportEntityPresentation} from "./viewportEntityPresentation";
+import {createTallyResultPresentation, type TallyResultPresentation} from "./tallyResultPresentation";
 
 interface TransportViewportProps {
     readonly project: Project;
     readonly tracks: readonly TrackSample[];
+    readonly tallies: readonly TransportTallyDelta[];
+    readonly tallyDiagnostics: readonly Diagnostic[];
     readonly selectedEntityId?: string;
     readonly onSelect: (entityId: string) => void;
     readonly showTallies: boolean;
@@ -21,13 +24,17 @@ interface TransportViewportProps {
 export function TransportViewport({
                                       project,
                                       tracks,
+                                      tallies,
+                                      tallyDiagnostics,
                                       selectedEntityId,
                                       onSelect,
                                       showTallies,
                                       showAxes,
                                       mode,
-                                      visibility,
+                                  visibility,
                                   }: TransportViewportProps) {
+    const selectedEntity = project.scene.entities.find((entity) => entity.id === selectedEntityId);
+    const tallyPresentation = createTallyResultPresentation(selectedEntity, tallies, tallyDiagnostics);
     return (
         <Canvas camera={{position: [12, 9, 14], fov: 42}} shadows>
             <color attach="background" args={["#070b16"]}/>
@@ -53,10 +60,41 @@ export function TransportViewport({
 
             <TrackLines tracks={tracks}/>
             {tracks.length > 0 && <EventMarkers tracks={tracks}/>}
+            {showTallies && <TallyResultOverlay entity={selectedEntity} presentation={tallyPresentation}/>}
             {showAxes && <AxesOverlay/>}
             <OrbitControls makeDefault enableDamping dampingFactor={0.08}/>
         </Canvas>
     );
+}
+
+function TallyResultOverlay({entity, presentation}: {
+    readonly entity?: SceneEntity;
+    readonly presentation: TallyResultPresentation;
+}) {
+    if (!entity || entity.kind !== "tally" || presentation.status === "inactive") return null;
+    const position: [number, number, number] = [entity.transform.position.x, entity.transform.position.y, entity.transform.position.z];
+    if (presentation.status === "diagnostic") {
+        return <Html position={position} center>
+            <div className={`tally-result-diagnostic ${presentation.diagnostic.severity}`} role="status">
+                <strong>{presentation.diagnostic.code}</strong>{presentation.diagnostic.message}
+            </div>
+        </Html>;
+    }
+    const rotation = entity.transform.rotationEuler;
+    return <group position={position} rotation={[rotation.x, rotation.y, rotation.z]}
+        scale={[entity.transform.scale.x, entity.transform.scale.y, entity.transform.scale.z]}
+        userData={{visualizationKind: presentation.kind, tallyId: presentation.tallyId}}>
+        {presentation.cells.map((cell, index) => <mesh key={index} position={cell.position} scale={cell.scale}>
+            <boxGeometry args={[1, 1, 1]}/>
+            <meshBasicMaterial color={cell.sign === "negative" ? "#00c2ff" : cell.sign === "positive" ? "#ff4fd8" : "#9aa8c7"}
+                transparent={true} opacity={0.18 + cell.intensity * 0.68}/>
+        </mesh>)}
+        <Html distanceFactor={13} position={[0, 0.9, 0]} center className="scene-label tally-result-label">
+            <span aria-hidden="true">{presentation.label}</span>
+            <span className="tally-result-sign-legend" aria-hidden="true">− negative · 0 zero · + positive</span>
+            <span className="sr-only">{presentation.accessibleLabel}</span>
+        </Html>
+    </group>;
 }
 
 function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation}: {

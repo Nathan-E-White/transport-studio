@@ -1,5 +1,5 @@
-import type { Diagnostic, RunConfiguration, TrackSample } from "@transport/domain";
-import type {ReactNode} from "react";
+import type { Diagnostic, Project, RunConfiguration, TrackSample, TransportTallyDelta } from "@transport/domain";
+import {useState, type ReactNode} from "react";
 import type {
   RunRenderingBlock,
   RunResultView,
@@ -13,28 +13,37 @@ import {
 } from "../components/BottomDock/BottomDockTabs";
 import {useEditorStore, type EditorBottomDockTab} from "../state/editor";
 import {RunSessionDetails} from "./RunSessionDetails";
+import {createTallyResultPresentation} from "../viewport/tallyResultPresentation";
 
 interface RunPanelProps {
   readonly config: RunConfiguration;
+  readonly project: Project;
   readonly diagnostics: readonly Diagnostic[];
   readonly tracks: readonly TrackSample[];
+  readonly tallies: readonly TransportTallyDelta[];
+  readonly selectedTallyId?: string;
   readonly sceneStats: { geometry: number; materials: number; sources: number; tallies: number };
   readonly freshness: RunSessionFreshness;
   readonly renderingBlock: RunRenderingBlock | null;
   readonly resultView: RunResultView;
   readonly session: RunSessionState | null;
+  readonly onTallySelect: (tallyId: string) => void;
   readonly onResultViewChange: (view: RunResultView) => void;
 }
 
 export function RunPanel({
   config,
+  project,
   diagnostics,
   tracks,
+  tallies,
+  selectedTallyId,
   sceneStats,
   freshness,
   renderingBlock,
   resultView,
   session,
+  onTallySelect,
   onResultViewChange,
 }: RunPanelProps) {
   const {state} = useEditorStore();
@@ -47,6 +56,16 @@ export function RunPanel({
   const capturedAbsorbed = sessionTracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
   const renderableEscaped = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
   const renderableAbsorbed = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
+  const resultTallies = tallies.flatMap((result) => {
+    const entity = project.scene.entities.find((candidate) => candidate.kind === "tally" && candidate.id === result.tallyId);
+    return entity?.kind === "tally" ? [{entity, result}] : [];
+  });
+  const unmatchedTallies = tallies.filter((result) => !resultTallies.some(({result: matched}) => matched === result));
+  const tallyResultDiagnostics = runDiagnostics.filter((diagnostic) => diagnostic.code?.startsWith("run.tally."));
+  const selectedResult = resultTallies.find(({entity}) => entity.id === selectedTallyId);
+  const selectedPresentation = selectedResult
+    ? createTallyResultPresentation(selectedResult.entity, [selectedResult.result], tallyResultDiagnostics)
+    : undefined;
 
   return (
     <section className="run-dock">
@@ -75,7 +94,26 @@ export function RunPanel({
         </div>
       </DockPanel>
       <DockPanel tab="tallies" activeTab={activeTab}>
-        <div className="dock-copy">{sceneStats.tallies} tally entities are available. MVP visualization uses detector glyphs and a placeholder heat overlay.</div>
+        <div className="tally-results-panel">
+          <label>Statistical tally result<select aria-label="Statistical tally result" value={resultTallies.some(({entity}) => entity.id === selectedTallyId) ? selectedTallyId : ""}
+            onChange={(event) => {
+              const entity = resultTallies.find((candidate) => candidate.entity.id === event.currentTarget.value)?.entity;
+              if (entity) onTallySelect(entity.id);
+            }}>
+            <option value="">Select a result</option>
+            {resultTallies.map(({entity, result}) => <option key={entity.id} value={entity.id}>{entity.name} · {result.scores.length} values</option>)}
+          </select></label>
+          {tallies.length === 0 && tallyResultDiagnostics.length === 0 && <p className="muted">No statistical tally results have arrived.</p>}
+          {tallyResultDiagnostics.map((diagnostic) => <p className={`diagnostic-card ${diagnostic.severity}`} key={`${diagnostic.code}:${diagnostic.entityId ?? "run"}`}>{diagnostic.message}</p>)}
+          {unmatchedTallies.map((result) => <p className="diagnostic-card warning" key={result.tallyId}>tally.result.entity.missing: Result “{result.tallyId}” has no matching tally in this scene.</p>)}
+          <p className="muted">{sceneStats.tallies} modeled tally entities. Statistical tally results are separate from sampled tracks.</p>
+          {selectedPresentation?.status === "diagnostic" && (
+            <p className={`diagnostic-card ${selectedPresentation.diagnostic.severity}`}>{selectedPresentation.diagnostic.message}</p>
+          )}
+          {selectedResult && selectedPresentation?.status === "ready" && (
+            <TallyBinTable key={selectedResult.entity.id} entity={selectedResult.entity} result={selectedResult.result}/>
+          )}
+        </div>
       </DockPanel>
       <DockPanel tab="tracks" activeTab={activeTab}>
         <div className="dock-copy">Showing {tracks.length} sampled histories. Final event mix: {renderableEscaped} escaped, {renderableAbsorbed} absorbed.</div>
@@ -118,6 +156,41 @@ function DockPanel({
 
 function Metric({ label, value }: { readonly label: string; readonly value: string | number }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+const TALLY_TABLE_PAGE_SIZE = 32;
+
+function TallyBinTable({entity, result}: {
+  readonly entity: Extract<Project["scene"]["entities"][number], {readonly kind: "tally"}>;
+  readonly result: TransportTallyDelta;
+}) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(result.scores.length / TALLY_TABLE_PAGE_SIZE));
+  const start = page * TALLY_TABLE_PAGE_SIZE;
+  const values = result.scores.slice(start, start + TALLY_TABLE_PAGE_SIZE);
+  return <div className="tally-bin-inspector">
+    <table aria-label="Selected tally bin values">
+      <caption>{entity.name} bin values</caption>
+      <thead><tr><th scope="col">Bin</th><th scope="col">Coordinate</th><th scope="col">Sign</th><th scope="col">Value</th></tr></thead>
+      <tbody>{values.map((value, offset) => {
+        const index = start + offset;
+        const sign = value < 0 ? "negative" : value > 0 ? "positive" : "zero";
+        return <tr key={index}><th scope="row">{index}</th><td>{formatBinCoordinate(index, entity.bins)}</td>
+          <td>{value < 0 ? "−" : value > 0 ? "+" : "0"} {sign}</td><td>{value}</td></tr>;
+      })}</tbody>
+    </table>
+    {pageCount > 1 && <div className="tally-bin-pages">
+      <button type="button" disabled={page === 0} onClick={() => setPage((current) => current - 1)}>Previous bins</button>
+      <span>Page {page + 1} of {pageCount}</span>
+      <button type="button" disabled={page === pageCount - 1} onClick={() => setPage((current) => current + 1)}>Next bins</button>
+    </div>}
+  </div>;
+}
+
+function formatBinCoordinate(index: number, bins: readonly [number, number, number] | undefined): string {
+  if (!bins) return `index ${index}`;
+  const [nx, ny] = bins;
+  return `(${index % nx}, ${Math.floor(index / nx) % ny}, ${Math.floor(index / (nx * ny))})`;
 }
 
 function getConsoleStatus(session: RunSessionState | null, config: RunConfiguration, diagnostics: readonly Diagnostic[]): string {

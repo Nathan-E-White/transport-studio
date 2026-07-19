@@ -25,6 +25,7 @@ import {
     createRunSessionStore,
     selectCurrentRunSession,
     selectRenderableTracks,
+    selectRenderableTallies,
     selectRenderingBlock,
     selectResultView,
     selectRunBackend,
@@ -54,6 +55,7 @@ function StudioWorkbench() {
     }
     const runSessionStore = runSessionStoreRef.current;
     const tracks = useRunSessionSelector(runSessionStore, selectRenderableTracks);
+    const tallies = useRunSessionSelector(runSessionStore, selectRenderableTallies);
     const runDiagnostics = useRunSessionSelector(runSessionStore, selectRunDiagnostics);
     const runSession = useRunSessionSelector(runSessionStore, selectCurrentRunSession);
     const runBackend = useRunSessionSelector(runSessionStore, selectRunBackend);
@@ -65,6 +67,7 @@ function StudioWorkbench() {
     const [showTracks, setShowTracks] = useState(true);
     const [showTallies, setShowTallies] = useState(true);
     const [showAxes, setShowAxes] = useState(true);
+    const [selectedResultTallyId, setSelectedResultTallyId] = useState<string | undefined>();
     const mode = state.shell.activeMode;
     const {leftPanelOpen, rightPanelOpen, bottomDockOpen} = state.shell;
 
@@ -73,6 +76,10 @@ function StudioWorkbench() {
         ...compileDiagnostics,
         ...runDiagnostics,
     ], [project, compileDiagnostics, runDiagnostics]);
+    const tallyDiagnostics = useMemo(
+        () => runDiagnostics.filter((diagnostic) => diagnostic.code?.startsWith("run.tally.")),
+        [runDiagnostics],
+    );
     const runConfiguration = useMemo(() => ({
         ...project.runConfiguration,
         backend: runBackend,
@@ -80,7 +87,10 @@ function StudioWorkbench() {
     const presentationProject = resultView === "submitted" && renderingBlock && submittedProject
         ? submittedProject
         : project;
-    const selectedEntity = presentationProject.scene.entities.find((entity) => entity.id === selectedEntityId);
+    const presentationSelectedEntityId = resultView === "submitted" && selectedResultTallyId
+        ? selectedResultTallyId
+        : selectedEntityId;
+    const selectedEntity = presentationProject.scene.entities.find((entity) => entity.id === presentationSelectedEntityId);
     const sceneStats = useMemo(() => getSceneStats(presentationProject.scene.entities), [presentationProject]);
     const escapedCount = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
     const absorbedCount = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
@@ -88,6 +98,12 @@ function StudioWorkbench() {
     useEffect(() => {
         void runSessionStore.updateEditableScene(project);
     }, [project, runSessionStore]);
+
+    useEffect(() => {
+        if (resultView !== "current") return;
+        const selected = project.scene.entities.find((entity) => entity.id === selectedEntityId);
+        setSelectedResultTallyId(selected?.kind === "tally" ? selected.id : undefined);
+    }, [project.scene.entities, resultView, selectedEntityId]);
 
     async function runDemo() {
         await startCompiledRun(createToyExecutionAdapter({
@@ -130,6 +146,8 @@ function StudioWorkbench() {
     }
 
     function selectEntity(entityId: string | undefined) {
+        const presentationEntity = presentationProject.scene.entities.find((candidate) => candidate.id === entityId);
+        setSelectedResultTallyId(presentationEntity?.kind === "tally" ? presentationEntity.id : undefined);
         const entity = project.scene.entities.find((candidate) => candidate.id === entityId);
         dispatch(entity ? {type: "select-one", ref: {kind: entity.kind, id: entity.id}} : {type: "clear-selection"});
     }
@@ -172,7 +190,9 @@ function StudioWorkbench() {
                 <TransportViewport
                     project={presentationProject}
                     tracks={showTracks ? tracks : []}
-                    selectedEntityId={selectedEntityId}
+                    tallies={tallies}
+                    tallyDiagnostics={tallyDiagnostics}
+                    selectedEntityId={presentationSelectedEntityId}
                     onSelect={(entityId) => selectEntity(entityId)}
                     showTallies={showTallies}
                     showAxes={showAxes}
@@ -207,13 +227,17 @@ function StudioWorkbench() {
             <footer id={SHELL_PANEL_IDS.runDock} className="bottom-panel" hidden={!bottomDockOpen}>
                 <RunPanel
                     config={runConfiguration}
+                    project={presentationProject}
                     diagnostics={diagnostics}
                     tracks={tracks}
+                    tallies={tallies}
+                    selectedTallyId={selectedEntity?.kind === "tally" ? selectedEntity.id : undefined}
                     sceneStats={sceneStats}
                     freshness={freshness}
                     renderingBlock={renderingBlock}
                     resultView={resultView}
                     session={runSession}
+                    onTallySelect={(tallyId) => selectEntity(tallyId)}
                     onResultViewChange={(view) => runSessionStore.setResultView(view)}
                 />
             </footer>

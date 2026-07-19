@@ -111,7 +111,7 @@ describe("strict external Run Session store", () => {
         const repeatedStore = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
         await repeatedStore.start({project: fixtureProject(), problem: fixtureProblem(), adapter: adapterFrom(repeated)});
         expect(repeatedStore.getSnapshot().current).toMatchObject({status: "completed", phase: "terminal"});
-        expect(repeatedStore.getSnapshot().current?.tallies).toHaveLength(2);
+        expect(repeatedStore.getSnapshot().current?.tallies).toHaveLength(1);
         expect(repeatedStore.getSnapshot().current?.diagnostics.map((item) => item.code)).toEqual(["one", "two"]);
 
         const emptyStore = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
@@ -120,6 +120,57 @@ describe("strict external Run Session store", () => {
             adapter: adapterFrom([accepted(), started("session-1"), completed("session-1")]),
         });
         expect(emptyStore.getSnapshot().current?.status).toBe("completed");
+    });
+
+    it("exposes incrementally accumulated tally results and replaces their selected value", async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const adapter: RunExecutionAdapter = {
+            metadata,
+            async *execute() {
+                yield accepted();
+                yield started("session-1");
+                yield {type: "tallyDelta", runId: "session-1", delta: {tallyId: "t-1", scores: [1, 2]}};
+                await gate;
+                yield {type: "tallyDelta", runId: "session-1", delta: {tallyId: "t-1", scores: [3, 4]}};
+                yield completed("session-1");
+            },
+        };
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+        const running = store.start({project: fixtureProject(), problem: fixtureProblem(), adapter});
+
+        await vi.waitFor(() => expect(selectRenderableTallies(store.getSnapshot())).toEqual([
+            {tallyId: "t-1", scores: [1, 2]},
+        ]));
+        release();
+        await running;
+
+        expect(selectRenderableTallies(store.getSnapshot())).toEqual([{tallyId: "t-1", scores: [4, 6]}]);
+        expect(store.getSnapshot().current?.tallies).toHaveLength(1);
+    });
+
+    it("preserves and suppresses accumulated tally science when a later delta changes shape", async () => {
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+        await store.start({
+            project: fixtureProject(),
+            problem: fixtureProblem(),
+            adapter: adapterFrom([
+                accepted(),
+                started("session-1"),
+                {type: "tallyDelta", runId: "session-1", delta: {tallyId: "t-1", scores: [1, 2]}},
+                {type: "tallyDelta", runId: "session-1", delta: {tallyId: "t-1", scores: [3]}},
+                completed("session-1"),
+            ]),
+        });
+
+        expect(store.getSnapshot().current?.tallies).toEqual([{tallyId: "t-1", scores: [1, 2]}]);
+        expect(store.getSnapshot().current?.invalidTallyIds).toEqual(["t-1"]);
+        const renderable = selectRenderableTallies(store.getSnapshot());
+        expect(renderable).toEqual([]);
+        expect(selectRenderableTallies(store.getSnapshot())).toBe(renderable);
+        expect(store.getSnapshot().current?.diagnostics).toEqual(expect.arrayContaining([
+            expect.objectContaining({code: "run.tally.delta_shape_mismatch", severity: "error"}),
+        ]));
     });
 
     it("allows a caller-correlated early terminal failure", async () => {
