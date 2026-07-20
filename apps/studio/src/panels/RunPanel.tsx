@@ -2,6 +2,7 @@ import type { Diagnostic, Project, RunConfiguration, TrackSample, TransportTally
 import {useState, type ReactNode} from "react";
 import type {
   RunRenderingBlock,
+  RunConsoleEntry,
   RunResultView,
   RunSessionFreshness,
   RunSessionState,
@@ -124,7 +125,7 @@ export function RunPanel({
         </div>
       </DockPanel>
       <DockPanel tab="console" activeTab={activeTab}>
-        <div className="console-line">{getConsoleStatus(session, config, diagnostics)}</div>
+        <ConsolePanel session={session}/>
       </DockPanel>
     </section>
   );
@@ -193,24 +194,51 @@ function formatBinCoordinate(index: number, bins: readonly [number, number, numb
   return `(${index % nx}, ${Math.floor(index / nx) % ny}, ${Math.floor(index / (nx * ny))})`;
 }
 
-function getConsoleStatus(session: RunSessionState | null, config: RunConfiguration, diagnostics: readonly Diagnostic[]): string {
-  if (session) {
-    const histories = session.input.problem.settings.histories;
-    const terminal = session.status === "failed"
-      ? session.terminalFailure?.code ?? "run.session.failed"
-      : `${session.status} · ${session.phase}`;
-
-    return [
-      `${session.adapterMetadata.id} ${terminal}`,
-      `${session.tracks.length} tracks`,
-      `${histories.toLocaleString()} requested histories`,
-      `${session.diagnostics.length} run diagnostics`,
-    ].join(" · ");
+export function ConsolePanel({session}: {readonly session: RunSessionState | null}) {
+  if (!session) {
+    return <p className="console-empty">Console disconnected: no Run Session is selected.</p>;
   }
-
-  if (config.backend === "native") {
-    const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
-    return `tauri://run_photon_smoke idle · ${config.histories.toLocaleString()} configured histories · ${warnings.length} project warnings`;
+  const consoleState = session.console;
+  const lastEntry = consoleState.entries.at(-1);
+  const failureIsInProtocolStream = lastEntry?.terminal
+    && lastEntry.failureCode === session.terminalFailure?.code;
+  const terminalFailure = session.status === "failed" && !failureIsInProtocolStream
+    ? <p className="console-empty error" role="alert">Run Session {session.id} failed outside the protocol event stream: {session.terminalFailure?.message ?? "No failure diagnostic was recorded."}</p>
+    : null;
+  const journalFailure = session.journal.status === "incomplete"
+    ? <p className="console-retention" role="alert">Run journal capture is incomplete; protocol events below remain in received order.</p>
+    : null;
+  if (consoleState.entries.length === 0) {
+    return <div className="run-console">
+      {terminalFailure}
+      {journalFailure}
+      {!terminalFailure && <p className="console-empty">{session.status === "prepared" || session.status === "running"
+        ? `Connected to ${session.adapterMetadata.id}; awaiting the first Run Session protocol event.`
+        : `Run Session ${session.id} is ${session.status}, but no Console events were retained.`}</p>}
+    </div>;
   }
-  return "transport-worker:// idle · visual-ts backend armed · project graph clean";
+  return <div className="run-console">
+    {terminalFailure}
+    {journalFailure}
+    {consoleState.droppedCount > 0 && <p className="console-retention" role="status">
+      {consoleState.droppedCount} older {consoleState.droppedCount === 1 ? "event was" : "events were"} dropped by the {consoleState.capacity}-entry retention limit.
+    </p>}
+    <ol className="console-events" aria-label="Run Session console events">
+      {consoleState.entries.map((entry) => <ConsoleEntry key={entry.sequence} entry={entry}/>) }
+    </ol>
+  </div>;
+}
+
+function ConsoleEntry({entry}: {readonly entry: RunConsoleEntry}) {
+  return <li className={`console-event ${entry.severity}`}>
+    <header>
+      <span className="console-sequence">#{entry.sequence}</span>
+      <time dateTime={entry.observedAt}>{entry.observedAt}</time>
+      <span className="console-provenance">{entry.backendId} {entry.backendVersion}</span>
+      <strong>{entry.eventType}</strong>
+      <span className={`console-severity ${entry.severity}`}>{entry.severity}</span>
+      {entry.terminal && <span className="console-terminal">terminal</span>}
+    </header>
+    <p>{entry.message}</p>
+  </li>;
 }

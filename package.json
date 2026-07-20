@@ -29,7 +29,7 @@
     "test:unit": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
-    "test:e2e": "playwright test apps/studio/e2e/studio.smoke.spec.ts apps/studio/e2e/studio.project-tree.spec.ts",
+    "test:e2e": "playwright test apps/studio/e2e/studio.smoke.spec.ts apps/studio/e2e/studio.project-tree.spec.ts apps/studio/e2e/studio.console.spec.ts",
     "test:fuzz": "playwright test apps/studio/e2e/studio.fuzz.spec.ts",
     "test:mutation": "stryker run",
     "test:frontend": "bun run typecheck && bun run test:unit && bun run test:e2e",

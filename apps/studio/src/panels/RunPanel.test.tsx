@@ -6,7 +6,7 @@ import {toyBackendMetadata} from "../app/runExecutionAdapters";
 import type {RunSessionState} from "../app/runSession";
 import type {TransportTallyDelta} from "@transport/domain";
 import {EditorStoreProvider, getPrimarySelection, useEditorStore} from "../state/editor";
-import {RunPanel} from "./RunPanel";
+import {ConsolePanel, RunPanel} from "./RunPanel";
 
 function RunPanelHarness({tallies = []}: {readonly tallies?: readonly TransportTallyDelta[]}) {
   const {state, dispatch} = useEditorStore();
@@ -35,6 +35,66 @@ function RunPanelHarness({tallies = []}: {readonly tallies?: readonly TransportT
 }
 
 describe("RunPanel tabs", () => {
+  it("shows a truthful disconnected Console instead of synthesized backend status", () => {
+    render(
+      <EditorStoreProvider initialProject={createInitialProject()}>
+        <RunPanelHarness/>
+      </EditorStoreProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("tab", {name: "console"}));
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Console disconnected: no Run Session is selected.");
+    expect(screen.getByRole("tabpanel")).not.toHaveTextContent("transport-worker://");
+    expect(screen.getByRole("tabpanel")).not.toHaveTextContent("tauri://");
+  });
+
+  it("keeps out-of-stream failures and empty journal failures visible", () => {
+    const completedThenRejected = {
+      id: "session-1", status: "failed", adapterMetadata: toyBackendMetadata,
+      terminalFailure: {level: "error", code: "run.adapter.rejected", message: "run.adapter.rejected: stream broke", runId: "session-1"},
+      journal: {status: "disabled", finalSequence: 1},
+      console: {capacity: 200, droppedCount: 0, lastSequence: 1, entries: [{
+        sequence: 1, observedAt: "2026-07-19T12:00:01.000Z", eventType: "runCompleted",
+        severity: "info", backendId: toyBackendMetadata.id, backendVersion: toyBackendMetadata.version,
+        message: "Run session-1 completed.", terminal: true,
+      }]},
+    } as unknown as RunSessionState;
+    const view = render(<ConsolePanel session={completedThenRejected}/>);
+    expect(screen.getByRole("alert")).toHaveTextContent("failed outside the protocol event stream");
+    expect(screen.getByRole("alert")).toHaveTextContent("stream broke");
+    expect(screen.getByRole("listitem")).toHaveTextContent("runCompleted");
+
+    view.rerender(<ConsolePanel session={{
+      ...completedThenRejected,
+      terminalFailure: {level: "warning", code: "backend.stopped", message: "Backend stopped", runId: "session-1"},
+      console: {...completedThenRejected.console, entries: [{
+        ...completedThenRejected.console.entries[0]!, eventType: "runFailed", severity: "warning", message: "backend.stopped: Backend stopped",
+        failureCode: "backend.stopped",
+      }]},
+    }}/>);
+    expect(screen.queryByText(/failed outside the protocol event stream/)).not.toBeInTheDocument();
+    expect(screen.getByRole("listitem")).toHaveTextContent("warning");
+
+    view.rerender(<ConsolePanel session={{
+      ...completedThenRejected,
+      console: {...completedThenRejected.console, entries: [{
+        ...completedThenRejected.console.entries[0]!, eventType: "runFailed", severity: "error",
+        message: "backend.stopped: Backend stopped", failureCode: "backend.stopped",
+      }]},
+    }}/>);
+    expect(screen.getByRole("alert")).toHaveTextContent("stream broke");
+
+    view.rerender(<ConsolePanel session={{
+      ...completedThenRejected,
+      status: "prepared",
+      terminalFailure: null,
+      journal: {status: "incomplete", finalSequence: 0},
+      console: {capacity: 200, droppedCount: 0, lastSequence: 0, entries: []},
+    }}/>);
+    expect(screen.getByRole("alert")).toHaveTextContent("Run journal capture is incomplete");
+    expect(screen.getByText(/awaiting the first Run Session protocol event/)).toBeInTheDocument();
+  });
+
   it("links tabs to the visible panel and supports directional keyboard activation", () => {
     render(
       <EditorStoreProvider initialProject={createInitialProject()}>
@@ -110,6 +170,19 @@ describe("RunPanel tabs", () => {
         heavyAssets: [],
       },
       journal: {status: "complete", finalSequence: 8},
+      console: {
+        capacity: 200,
+        droppedCount: 3,
+        lastSequence: 5,
+        entries: [
+          {sequence: 4, observedAt: "2026-07-19T12:00:04.000Z", eventType: "diagnostic", severity: "warning",
+            backendId: toyBackendMetadata.id, backendVersion: toyBackendMetadata.version,
+            message: "run.submitted.warning: Submitted run warning.", terminal: false},
+          {sequence: 5, observedAt: "2026-07-19T12:00:05.000Z", eventType: "runCompleted", severity: "info",
+            backendId: toyBackendMetadata.id, backendVersion: toyBackendMetadata.version,
+            message: "Run session-1 completed 1,000/1,000 histories.", terminal: true},
+        ],
+      },
     };
     const editedConfig = {...submittedProject.runConfiguration, histories: 2_000, batchSize: 200};
 
@@ -147,8 +220,15 @@ describe("RunPanel tabs", () => {
     fireEvent.click(screen.getByRole("tab", {name: "tracks"}));
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Showing 0 sampled histories. Final event mix: 0 escaped, 0 absorbed.");
     fireEvent.click(screen.getByRole("tab", {name: "console"}));
-    expect(screen.getByRole("tabpanel")).toHaveTextContent("1,000 requested histories");
-    expect(screen.getByRole("tabpanel")).toHaveTextContent("1 run diagnostics");
+    const consoleEntries = within(screen.getByRole("list", {name: "Run Session console events"}));
+    expect(consoleEntries.getAllByRole("listitem")).toHaveLength(2);
+    expect(consoleEntries.getAllByRole("listitem")[0]).toHaveTextContent("#4");
+    expect(consoleEntries.getAllByRole("listitem")[0]).toHaveTextContent("diagnostic");
+    expect(consoleEntries.getAllByRole("listitem")[0]).toHaveTextContent("warning");
+    expect(consoleEntries.getAllByRole("listitem")[1]).toHaveTextContent("#5");
+    expect(consoleEntries.getAllByRole("listitem")[1]).toHaveTextContent("terminal");
+    expect(screen.getByRole("tabpanel")).toHaveTextContent(`${toyBackendMetadata.id} ${toyBackendMetadata.version}`);
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("3 older events were dropped by the 200-entry retention limit");
   });
 
   it("lists live tally results and selects their modeled tally without conflating tracks", () => {

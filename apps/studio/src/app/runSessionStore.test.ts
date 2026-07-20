@@ -3,6 +3,7 @@ import type {Project, TransportBackendEvent, TransportBackendMetadata} from "@tr
 import type {TransportProblem} from "@transport/domain/transport/TransportProblem";
 import {
     createRunSessionStore,
+    RUN_CONSOLE_CAPACITY,
     selectPresentationProject,
     selectRenderableTallies,
     selectRenderableTracks,
@@ -16,6 +17,143 @@ import {
 } from "./runSession";
 
 describe("strict external Run Session store", () => {
+    it("retains real protocol events incrementally with order, time, severity, and backend provenance", async () => {
+        const releases: (() => void)[] = [];
+        const gates = Array.from({length: 3}, () => new Promise<void>((resolve) => { releases.push(resolve); }));
+        const adapter: RunExecutionAdapter = {
+            metadata,
+            async *execute() {
+                yield accepted();
+                await gates[0];
+                yield started("session-1");
+                await gates[1];
+                yield progress("session-1");
+                await gates[2];
+                yield completed("session-1");
+            },
+        };
+        const store = createRunSessionStore({
+            initialProject: fixtureProject(),
+            createSessionId: () => "session-1",
+            now: sequenceClock(),
+        });
+
+        const running = store.start({project: fixtureProject(), problem: fixtureProblem(), adapter});
+        await vi.waitFor(() => expect(store.getSnapshot().current?.console.entries).toHaveLength(1));
+        releases[0]!();
+        await vi.waitFor(() => expect(store.getSnapshot().current?.console.entries).toHaveLength(2));
+        releases[1]!();
+        await vi.waitFor(() => expect(store.getSnapshot().current?.console.entries).toHaveLength(3));
+        expect(store.getSnapshot().current?.console).toMatchObject({capacity: RUN_CONSOLE_CAPACITY, droppedCount: 0, lastSequence: 3});
+        expect(store.getSnapshot().current?.console.entries).toEqual([
+            expect.objectContaining({sequence: 1, eventType: "problemAccepted", severity: "info", backendId: "fixture-backend", backendVersion: "1", terminal: false}),
+            expect.objectContaining({sequence: 2, eventType: "runStarted", severity: "info", backendId: "fixture-backend", backendVersion: "1", terminal: false}),
+            expect.objectContaining({sequence: 3, eventType: "runProgress", severity: "info", backendId: "fixture-backend", backendVersion: "1", terminal: false}),
+        ]);
+        expect(store.getSnapshot().current?.console.entries.map((entry) => entry.observedAt)).toEqual([
+            "2026-07-13T00:00:01.000Z", "2026-07-13T00:00:02.000Z", "2026-07-13T00:00:03.000Z",
+        ]);
+
+        releases[2]!();
+        await running;
+        expect(store.getSnapshot().current?.console.entries.at(-1)).toMatchObject({sequence: 4, eventType: "runCompleted", terminal: true});
+    });
+
+    it("presents a rejected terminal protocol event as a terminal error, not a completion", async () => {
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+        await store.start({project: fixtureProject(), problem: fixtureProblem(), adapter: adapterFrom([
+            accepted(), started("session-1"), completed("wrong-session"),
+        ])});
+
+        expect(store.getSnapshot().current).toMatchObject({status: "failed"});
+        expect(store.getSnapshot().current?.console.entries.at(-1)).toMatchObject({
+            eventType: "runCompleted", severity: "error", terminal: true,
+            message: expect.stringContaining("Rejected runCompleted: run.session.protocol_violation"),
+        });
+        expect(store.getSnapshot().current?.console.entries.at(-1)?.message).not.toContain("completed 1/1 histories");
+    });
+
+    it("preserves a post-completion adapter rejection outside the protocol event list", async () => {
+        const adapter: RunExecutionAdapter = {
+            metadata,
+            async *execute() {
+                yield accepted();
+                yield started("session-1");
+                yield completed("session-1");
+                throw new Error("stream broke after completion");
+            },
+        };
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+        await store.start({project: fixtureProject(), problem: fixtureProblem(), adapter});
+
+        expect(store.getSnapshot().current).toMatchObject({
+            status: "failed",
+            terminalFailure: {code: "run.adapter.rejected", message: "run.adapter.rejected: stream broke after completion"},
+        });
+        expect(store.getSnapshot().current?.console.entries.at(-1)).toMatchObject({
+            eventType: "runCompleted", severity: "info", terminal: true,
+        });
+
+        const failedThenRejected = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-2"});
+        await failedThenRejected.start({project: fixtureProject(), problem: fixtureProblem(), adapter: {
+            metadata,
+            async *execute() {
+                yield accepted();
+                yield started("session-2");
+                yield {type: "runFailed", runId: "session-2", diagnostic: {
+                    level: "error", code: "backend.stopped", message: "Backend stopped.",
+                }} as const;
+                throw new Error("stream broke after failure");
+            },
+        }});
+        expect(failedThenRejected.getSnapshot().current).toMatchObject({
+            status: "failed", terminalFailure: {code: "run.adapter.rejected"},
+        });
+        expect(failedThenRejected.getSnapshot().current?.console.entries.at(-1)).toMatchObject({
+            eventType: "runFailed", terminal: true, failureCode: "backend.stopped",
+        });
+    });
+
+    it("bounds high-volume console retention without losing sequence identity or terminal meaning", async () => {
+        const events: TransportBackendEvent[] = [accepted(), started("session-1")];
+        for (let index = 0; index < RUN_CONSOLE_CAPACITY + 5; index += 1) {
+            events.push({type: "runProgress", runId: "session-1", completedHistories: index, totalHistories: RUN_CONSOLE_CAPACITY + 5});
+        }
+        events.push(completed("session-1"));
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+
+        await store.start({project: fixtureProject(), problem: fixtureProblem(), adapter: adapterFrom(events)});
+
+        const consoleState = store.getSnapshot().current?.console;
+        expect(consoleState?.entries).toHaveLength(RUN_CONSOLE_CAPACITY);
+        expect(consoleState?.droppedCount).toBe(8);
+        expect(consoleState?.entries[0]?.sequence).toBe(9);
+        expect(consoleState?.entries.at(-1)).toMatchObject({sequence: RUN_CONSOLE_CAPACITY + 8, eventType: "runCompleted", terminal: true});
+    });
+
+    it("preserves terminal failure and replaces console history when a new session starts", async () => {
+        const sessionIds = ["failed-session", "replacement-session"];
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => sessionIds.shift()!});
+        await store.start({
+            project: fixtureProject(), problem: fixtureProblem(), adapter: adapterFrom([
+                accepted(), started("failed-session"),
+                {type: "runFailed", runId: "failed-session", diagnostic: {level: "error", code: "fixture.failed", message: "Backend stopped."}},
+            ]),
+        });
+        expect(store.getSnapshot().current?.console.entries.at(-1)).toMatchObject({
+            eventType: "runFailed", severity: "error", terminal: true, message: expect.stringContaining("fixture.failed"),
+        });
+
+        await store.start({
+            project: fixtureProject(), problem: fixtureProblem(), adapter: adapterFrom([
+                accepted(), started("replacement-session"), completed("replacement-session"),
+            ]),
+        });
+        expect(store.getSnapshot().current?.id).toBe("replacement-session");
+        expect(store.getSnapshot().current?.console.entries[0]).toMatchObject({sequence: 1, eventType: "problemAccepted"});
+        expect(store.getSnapshot().current?.console.entries.some((entry) => entry.message.includes("fixture.failed"))).toBe(false);
+    });
+
     it("assigns identity, preserves exact input, and consumes one asynchronous adapter contract", async () => {
         const project = fixtureProject();
         const problem = fixtureProblem();

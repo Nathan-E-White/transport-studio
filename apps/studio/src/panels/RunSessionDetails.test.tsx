@@ -33,6 +33,7 @@ const preparedSession: RunSessionState = {
     heavyAssets: [],
   },
   journal: {status: "capturing", finalSequence: 1},
+  console: {entries: [], capacity: 200, droppedCount: 0, lastSequence: 0},
 };
 
 const provenance = {
