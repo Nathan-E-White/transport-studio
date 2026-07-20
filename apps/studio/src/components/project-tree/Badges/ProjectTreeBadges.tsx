@@ -11,8 +11,7 @@ export function ProjectTreeBadges({node}: ProjectTreeBadgesProps) {
     const badges = getProjectTreeBadges({
         node,
         visibility: selectVisibility(state),
-        validationErrors: state.validation.errors,
-        validationWarnings: state.validation.warnings,
+        validationDiagnostics: state.validation.diagnostics,
         staleReasons: state.stale.reasons,
     });
 

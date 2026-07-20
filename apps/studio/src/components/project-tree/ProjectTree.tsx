@@ -1,10 +1,12 @@
-import {useCallback, useEffect, useMemo, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {Diagnostic, SceneEntity} from "@transport/domain";
 import {
   EditorDiagnostic,
   EditorEntityMetadata,
   EditorEntityRef,
   buildProjectTree,
+  getEditorModeBehavior,
+  getModeEditingDisabledReason,
   getPrimarySelection,
   selectProjectTreeMetadata,
   selectVisibility,
@@ -13,6 +15,7 @@ import {
 import {ProjectTreeEmptyState} from "./EmptyState/ProjectTreeEmptyState";
 import {ProjectTreeGroup, ProjectTreeMetadataDraft} from "./Group/ProjectTreeGroup";
 import {ProjectTreeBoundary} from "./ProjectTreeBoundary";
+import {ProjectSettingsDialog} from "./ProjectSettingsDialog";
 
 export interface ProjectTreeProps {
   readonly diagnostics: readonly Diagnostic[];
@@ -35,10 +38,19 @@ function ProjectTreeInner({
   const project = state.scene.project;
   if (!project) throw new Error("Project Tree requires an Editable Scene project");
   const selectedEntityId = getPrimarySelection(state.selection)?.id;
-  const visibility = useMemo(() => selectVisibility(state), [state.scene.project]);
+  const modeBehavior = getEditorModeBehavior(state.shell.activeMode);
+  const modeEditingDisabledReason = getModeEditingDisabledReason(state.shell.activeMode);
+  const visibility = useMemo(() => selectVisibility(state), [state.visibility]);
   const [searchQuery, setSearchQuery] = useState("");
   const [editingEntityId, setEditingEntityId] = useState<string | undefined>();
   const [drafts, setDrafts] = useState<Record<string, ProjectTreeMetadataDraft>>({});
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    settingsButtonRef.current?.focus();
+  }, []);
 
   const entitiesById = useMemo(
     () => new Map<string, SceneEntity>(project.scene.entities.map((entity) => [entity.id, entity])),
@@ -46,24 +58,18 @@ function ProjectTreeInner({
   );
 
   useEffect(() => {
-    const errors: EditorDiagnostic[] = [];
-    const warnings: EditorDiagnostic[] = [];
-
-    for (const diagnostic of diagnostics) {
-      const normalized = normalizeDiagnostic(diagnostic, project.scene.entities);
-      if (!normalized) {
-        continue;
-      }
-
-      if (normalized.severity === "error") {
-        errors.push(normalized);
-      } else if (normalized.severity === "warning") {
-        warnings.push(normalized);
-      }
-    }
-
-    dispatch({type: "set-validation-result", errors, warnings});
+    dispatch({
+      type: "set-validation-result",
+      diagnostics: diagnostics.map((diagnostic) => normalizeDiagnostic(diagnostic, project.scene.entities)),
+    });
   }, [diagnostics, dispatch, project.scene.entities]);
+
+  useEffect(() => {
+    if (modeBehavior.editingEnabled) return;
+    setEditingEntityId(undefined);
+    setDrafts({});
+    setSettingsOpen(false);
+  }, [modeBehavior.editingEnabled]);
 
   const filteredMetadata = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -124,7 +130,10 @@ function ProjectTreeInner({
                 <h2>{project.name}</h2>
                 <p className="muted compact">{project.metadata.physicsModelVersion}</p>
               </div>
-              <button className="icon-button" type="button" title="Project settings">⚙</button>
+              <button ref={settingsButtonRef} className="icon-button" type="button"
+                title={modeEditingDisabledReason ?? "Project settings"}
+                aria-label="Project settings" disabled={!modeBehavior.editingEnabled}
+                onClick={() => setSettingsOpen(true)}>⚙</button>
             </div>
 
             <div className="stat-grid">
@@ -136,11 +145,14 @@ function ProjectTreeInner({
 
             <div className="project-tree-create" aria-label="Create entities">
               {CREATE_KINDS.map((kind) => (
-                <button key={kind} type="button" onClick={() => dispatch({type: "create-project-entity", kind})}>
+                <button key={kind} type="button" disabled={!modeBehavior.editingEnabled}
+                  title={modeEditingDisabledReason}
+                  onClick={() => dispatch({type: "create-project-entity", kind})}>
                   + {labelForKind(kind)}
                 </button>
               ))}
             </div>
+            {!modeBehavior.editingEnabled && <p className="mode-action-explanation" role="status">{modeEditingDisabledReason}</p>}
 
             <label className="asset-search">
               <span>Search entities</span>
@@ -181,6 +193,12 @@ function ProjectTreeInner({
                   ))
               )}
             </div>
+            {settingsOpen && (
+              <ProjectSettingsDialog project={project} onCancel={closeSettings} onSave={(settings) => {
+                dispatch({type: "update-project-settings", settings});
+                closeSettings();
+              }}/>
+            )}
           </section>
     </>
   );
@@ -209,7 +227,7 @@ function entityRefForEntity(entity: SceneEntity): EditorEntityRef {
 function normalizeDiagnostic(
   diagnostic: Diagnostic,
   entities: readonly SceneEntity[],
-): EditorDiagnostic | null {
+): EditorDiagnostic {
   const entity = diagnostic.entityId
     ? entities.find((candidate) => candidate.id === diagnostic.entityId)
     : undefined;
@@ -217,6 +235,7 @@ function normalizeDiagnostic(
   return {
     id: `${diagnostic.severity}:${diagnostic.entityId ?? "project"}:${diagnostic.message}`,
     severity: diagnostic.severity,
+    code: diagnostic.code,
     message: diagnostic.message,
     entity: entity ? entityRefForEntity(entity) : undefined,
   };

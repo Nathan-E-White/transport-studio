@@ -123,6 +123,7 @@ export interface TallyDelta {
 
 export interface Diagnostic {
   readonly severity: "info" | "warning" | "error";
+  readonly code?: string;
   readonly message: string;
   readonly entityId?: EntityId;
 }

@@ -11,6 +11,7 @@ export interface ProjectTreeActionProps {
   readonly helperOnly: boolean;
   readonly allowDelete?: boolean;
   readonly onRequestEdit: (ref: EditorEntityRef) => void;
+  readonly manipulationDisabledReason?: string;
 }
 
 export function ProjectTreeAction(props: Readonly<ProjectTreeActionProps>) {
@@ -40,13 +41,17 @@ export function ProjectTreeAction(props: Readonly<ProjectTreeActionProps>) {
   }
 
   return <span className="project-tree-actions" aria-label="Project tree actions">
-    {actions.map((action) => <button key={action.kind} type="button" className={action.className}
-      title={action.title} aria-label={action.title} aria-pressed={action.pressed}
-      disabled={action.disabled} data-action-kind={action.kind} data-action-tone={action.tone}
+    {actions.map((action) => {
+      const disabled = action.disabled || Boolean(props.manipulationDisabledReason);
+      const title = props.manipulationDisabledReason ?? action.title;
+      return <button key={action.kind} type="button" className={action.className}
+      title={title} aria-label={action.title} aria-pressed={action.pressed}
+      disabled={disabled} data-action-kind={action.kind} data-action-tone={action.tone}
       onClick={(event: MouseEvent<HTMLButtonElement>) => {event.stopPropagation(); dispatchAction(action);}}
       onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => event.stopPropagation()}>
       <span className="project-tree-action__glyph" aria-hidden="true">{action.glyph}</span>
       <span className="project-tree-action__label">{action.label}</span>
-    </button>)}
+    </button>;
+    })}
   </span>;
 }

@@ -97,7 +97,7 @@ function buildCommands(): fc.Arbitrary<AsyncCommand<StudioModel, StudioReal>>[] 
         await expect(real.page.locator(".viewport-hud.top-left")).toContainText(`${mode.toUpperCase()} MODE`);
       })),
     ),
-    ...(["Tracks", "Tallies", "Diagnostics"] as const).map((label) =>
+    ...(["Tracks", "Tallies", "Axes"] as const).map((label) =>
       fc.constant(command(`toggleOverlay:${label}`, () => true, async (_model, real) => {
         await real.page.getByRole("checkbox", {name: label}).click();
       })),

@@ -12,8 +12,27 @@ test("project tree drives real editor CRUD state", async ({page}) => {
 
   await gotoStudio(page, failures);
 
+  const settingsButton = page.getByRole("button", {name: "Project settings"});
+  await settingsButton.click();
+  await expect(page.getByRole("dialog", {name: "Project Settings"})).toBeVisible();
+  await expect(page.getByLabel("Project name")).toBeFocused();
+  await page.getByLabel("Project name").fill("Discarded Browser Project");
+  await page.getByRole("button", {name: "Cancel"}).click();
+  await expect(page.getByRole("heading", {name: "Photon Shielding Sandbox"})).toBeVisible();
+  await expect(settingsButton).toBeFocused();
+
+  await settingsButton.click();
+  await page.getByLabel("Project name").fill("Browser Project");
+  await page.getByLabel("Histories").fill("250");
+  await page.getByRole("button", {name: "Save Project Settings"}).click();
+  await expect(page.getByRole("heading", {name: "Browser Project"})).toBeVisible();
+
+  await entityRow(page, "Detector Plane", "tally").click();
+  await expect(page.getByText(/No statistical result is available yet/)).toBeVisible();
+
   await entityRow(page, "Shield Slab", "geometry").click();
   await expect(page.getByRole("heading", {name: "Shield Slab"})).toBeVisible();
+  await expect(page.getByLabel("Rotation value")).toContainText("0.00, 0.00, 0.00");
 
   await clickRowAction(page, "Shield Slab", "Edit entity metadata");
   await page.getByLabel("Name").fill("Shield Plate");
@@ -51,6 +70,10 @@ test("project tree drives real editor CRUD state", async ({page}) => {
 
   await clickRowAction(page, "New Source", "Delete this entity");
   await expect(entityRow(page, "New Source", "source")).toHaveCount(0);
+
+  await page.getByRole("button", {name: "+ Geometry"}).click();
+  await expect(entityRow(page, "New Geometry", "geometry").locator('[data-badge-kind="missing-material"]')).toBeVisible();
+  await clickRowAction(page, "New Geometry", "Delete this entity");
 
   await page.getByRole("button", {name: /Run Toy Photons/}).click();
   await expect(page.locator(".viewport-hud.top-left")).toContainText(/64 sampled tracks/);

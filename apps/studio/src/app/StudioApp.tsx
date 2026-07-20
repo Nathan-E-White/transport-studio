@@ -9,19 +9,25 @@ import {createInitialProject} from "./createInitialProject";
 import {createTauriNativePhotonSmokeBridge} from "./nativePhotonSmokeTauriBridge";
 import {ProjectTree} from "../components/project-tree/ProjectTree";
 import {StyleSelectorBoundary} from "../components/style-selector/StyleSelectorBoundary";
+import {ModeSwitcher} from "../components/project-tree/ModeSwitcher/ModeSwitcher";
+import {SHELL_PANEL_IDS, ShellPanelControls} from "../components/ShellPanelControls";
 import {InspectorPanel} from "../panels/InspectorPanel";
 import {RunPanel} from "../panels/RunPanel";
 import {TransportViewport} from "../viewport/TransportViewport";
 import {
     EditorStateRoot,
     getPrimarySelection,
+    getEditorModeBehavior,
+    getModeEditingDisabledReason,
+    selectVisibility,
     useEditorStore,
-    type EditorBottomDockTab,
     type EditorMode as StoreEditorMode,
 } from "../state/editor";
 import {
     createRunSessionStore,
+    selectCurrentRunSession,
     selectRenderableTracks,
+    selectRenderableTallies,
     selectRenderingBlock,
     selectResultView,
     selectRunBackend,
@@ -34,9 +40,6 @@ import {
 import {createNativeExecutionAdapter, createToyExecutionAdapter} from "./runExecutionAdapters";
 
 export type EditorMode = StoreEditorMode;
-export type BottomTab = EditorBottomDockTab;
-
-const modes: readonly EditorMode[] = ["design", "probe", "run", "analyze", "debug"];
 
 export function StudioApp() {
     return <EditorStateRoot initialProject={createInitialProject()}><StudioWorkbench/></EditorStateRoot>;
@@ -47,13 +50,16 @@ function StudioWorkbench() {
     const {state, dispatch} = useEditorStore();
     const project = state.scene.project!;
     const selectedEntityId = getPrimarySelection(state.selection)?.id;
+    const visibility = selectVisibility(state);
     const runSessionStoreRef = useRef<RunSessionStore | null>(null);
     if (runSessionStoreRef.current === null) {
         runSessionStoreRef.current = createRunSessionStore({initialProject: project});
     }
     const runSessionStore = runSessionStoreRef.current;
     const tracks = useRunSessionSelector(runSessionStore, selectRenderableTracks);
+    const tallies = useRunSessionSelector(runSessionStore, selectRenderableTallies);
     const runDiagnostics = useRunSessionSelector(runSessionStore, selectRunDiagnostics);
+    const runSession = useRunSessionSelector(runSessionStore, selectCurrentRunSession);
     const runBackend = useRunSessionSelector(runSessionStore, selectRunBackend);
     const freshness = useRunSessionSelector(runSessionStore, selectRunFreshness);
     const renderingBlock = useRunSessionSelector(runSessionStore, selectRenderingBlock);
@@ -62,15 +68,21 @@ function StudioWorkbench() {
     const [compileDiagnostics, setCompileDiagnostics] = useState<readonly Diagnostic[]>([]);
     const [showTracks, setShowTracks] = useState(true);
     const [showTallies, setShowTallies] = useState(true);
-    const [showDiagnostics, setShowDiagnostics] = useState(true);
+    const [showAxes, setShowAxes] = useState(true);
+    const [selectedResultTallyId, setSelectedResultTallyId] = useState<string | undefined>();
     const mode = state.shell.activeMode;
-    const bottomTab = state.shell.bottomDockTab;
+    const modeBehavior = getEditorModeBehavior(mode);
+    const {leftPanelOpen, rightPanelOpen, bottomDockOpen} = state.shell;
 
     const diagnostics = useMemo<readonly Diagnostic[]>(() => [
         ...validateProject(project),
         ...compileDiagnostics,
         ...runDiagnostics,
     ], [project, compileDiagnostics, runDiagnostics]);
+    const tallyDiagnostics = useMemo(
+        () => runDiagnostics.filter((diagnostic) => diagnostic.code?.startsWith("run.tally.")),
+        [runDiagnostics],
+    );
     const runConfiguration = useMemo(() => ({
         ...project.runConfiguration,
         backend: runBackend,
@@ -78,7 +90,10 @@ function StudioWorkbench() {
     const presentationProject = resultView === "submitted" && renderingBlock && submittedProject
         ? submittedProject
         : project;
-    const selectedEntity = presentationProject.scene.entities.find((entity) => entity.id === selectedEntityId);
+    const presentationSelectedEntityId = resultView === "submitted" && selectedResultTallyId
+        ? selectedResultTallyId
+        : selectedEntityId;
+    const selectedEntity = presentationProject.scene.entities.find((entity) => entity.id === presentationSelectedEntityId);
     const sceneStats = useMemo(() => getSceneStats(presentationProject.scene.entities), [presentationProject]);
     const escapedCount = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
     const absorbedCount = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
@@ -86,6 +101,12 @@ function StudioWorkbench() {
     useEffect(() => {
         void runSessionStore.updateEditableScene(project);
     }, [project, runSessionStore]);
+
+    useEffect(() => {
+        if (resultView !== "current") return;
+        const selected = project.scene.entities.find((entity) => entity.id === selectedEntityId);
+        setSelectedResultTallyId(selected?.kind === "tally" ? selected.id : undefined);
+    }, [project.scene.entities, resultView, selectedEntityId]);
 
     async function runDemo() {
         await startCompiledRun(createToyExecutionAdapter({
@@ -102,6 +123,7 @@ function StudioWorkbench() {
         const compileResult = compileTransportProblem(project);
         setCompileDiagnostics(compileResult.diagnostics.map((item) => ({
             severity: item.level,
+            code: item.code,
             message: `${item.code}: ${item.message}`,
             entityId: item.entityId as Diagnostic["entityId"],
         })));
@@ -127,13 +149,20 @@ function StudioWorkbench() {
     }
 
     function selectEntity(entityId: string | undefined) {
+        const presentationEntity = presentationProject.scene.entities.find((candidate) => candidate.id === entityId);
+        setSelectedResultTallyId(presentationEntity?.kind === "tally" ? presentationEntity.id : undefined);
         const entity = project.scene.entities.find((candidate) => candidate.id === entityId);
         dispatch(entity ? {type: "select-one", ref: {kind: entity.kind, id: entity.id}} : {type: "clear-selection"});
     }
 
     return (
 
-        <div className="studio-shell">
+        <div
+            className="studio-shell"
+            data-left-panel-open={leftPanelOpen}
+            data-right-panel-open={rightPanelOpen}
+            data-bottom-panel-open={bottomDockOpen}
+        >
             <header className="toolbar">
                 <div className="brand-lockup">
                     <div className="brand-mark">τ</div>
@@ -143,17 +172,10 @@ function StudioWorkbench() {
                     </div>
                 </div>
 
-                <nav className="mode-switcher" aria-label="Editor modes">
-                    {modes.map((candidateMode) => (
-                        <button
-                            key={candidateMode}
-                            className={candidateMode === mode ? "mode-button active" : "mode-button"}
-                            onClick={() => dispatch({type: "set-mode", mode: candidateMode})}
-                        >
-                            {candidateMode}
-                        </button>
-                    ))}
-                </nav>
+                <button className="viewport-focus-shortcut" type="button"
+                    onClick={() => document.getElementById("transport-viewport")?.focus()}>Focus viewport</button>
+
+                <ModeSwitcher/>
 
                 <div className="toolbar-actions">
                     <StyleSelectorBoundary/>
@@ -163,25 +185,31 @@ function StudioWorkbench() {
                 </div>
             </header>
 
-            <aside className="left-panel">
+            <aside id={SHELL_PANEL_IDS.projectTree} className="left-panel" hidden={!leftPanelOpen}>
                 <ProjectTree
                     diagnostics={diagnostics}
                 />
             </aside>
 
             <main className="viewport-region">
+                <ShellPanelControls/>
                 <TransportViewport
                     project={presentationProject}
                     tracks={showTracks ? tracks : []}
-                    selectedEntityId={selectedEntityId}
+                    tallies={tallies}
+                    tallyDiagnostics={tallyDiagnostics}
+                    selectedEntityId={presentationSelectedEntityId}
                     onSelect={(entityId) => selectEntity(entityId)}
                     showTallies={showTallies}
-                    showDiagnostics={showDiagnostics}
+                    showAxes={showAxes}
                     mode={mode}
+                    visibility={visibility}
                 />
                 <div className="viewport-hud top-left">
                     <span className="hud-kicker">{mode.toUpperCase()} MODE</span>
                     <strong>{selectedEntity?.name ?? "No entity selected"}</strong>
+                    <span>{modeBehavior.description}</span>
+                    <span>Emphasis: {modeBehavior.viewportEmphasis}</span>
                     <span>{tracks.length} sampled tracks · {escapedCount} escaped · {absorbedCount} absorbed</span>
                 </div>
                 <div className="viewport-hud bottom-right">
@@ -189,27 +217,35 @@ function StudioWorkbench() {
                                   onChange={(event) => setShowTracks(event.target.checked)}/> Tracks</label>
                     <label><input type="checkbox" checked={showTallies}
                                   onChange={(event) => setShowTallies(event.target.checked)}/> Tallies</label>
-                    <label><input type="checkbox" checked={showDiagnostics}
-                                  onChange={(event) => setShowDiagnostics(event.target.checked)}/> Diagnostics</label>
+                    <label><input type="checkbox" checked={showAxes}
+                                  onChange={(event) => setShowAxes(event.target.checked)}/> Axes</label>
                 </div>
             </main>
 
-            <aside className="right-panel">
+            <aside id={SHELL_PANEL_IDS.inspector} className="right-panel" hidden={!rightPanelOpen}>
                 <InspectorPanel entity={selectedEntity} diagnostics={diagnostics} tracks={tracks}
-                                project={presentationProject}/>
+                                project={presentationProject}
+                                editDiagnostics={state.inspectorEditDiagnostics}
+                                editingDisabledReason={resultView === "submitted"
+                                    ? "Submitted run snapshots are read-only. Return to the current scene to edit."
+                                    : getModeEditingDisabledReason(mode)}
+                                onEntityChange={(baseline, candidate) => dispatch({type: "apply-inspector-edit", baseline, candidate})}/>
             </aside>
 
-            <footer className="bottom-panel">
+            <footer id={SHELL_PANEL_IDS.runDock} className="bottom-panel" hidden={!bottomDockOpen}>
                 <RunPanel
                     config={runConfiguration}
+                    project={presentationProject}
                     diagnostics={diagnostics}
                     tracks={tracks}
-                    activeTab={bottomTab}
-                    onTabChange={(tab) => dispatch({type: "set-bottom-dock-tab", tab})}
+                    tallies={tallies}
+                    selectedTallyId={selectedEntity?.kind === "tally" ? selectedEntity.id : undefined}
                     sceneStats={sceneStats}
                     freshness={freshness}
                     renderingBlock={renderingBlock}
                     resultView={resultView}
+                    session={runSession}
+                    onTallySelect={(tallyId) => selectEntity(tallyId)}
                     onResultViewChange={(view) => runSessionStore.setResultView(view)}
                 />
             </footer>

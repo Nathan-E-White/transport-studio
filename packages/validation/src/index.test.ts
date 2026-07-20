@@ -37,6 +37,7 @@ describe("validateProject", () => {
     expect(validateProject(projectWith([geometry, source, tally]))).toEqual([
       {
         severity: "warning",
+        code: "missing-material",
         message: "Geometry 'Shield' has no material assigned.",
         entityId: "shield",
       },

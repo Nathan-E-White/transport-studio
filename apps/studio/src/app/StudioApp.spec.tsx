@@ -1,6 +1,6 @@
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import type {Project, TransportBackendEvent, TransportBackendMetadata} from "@transport/domain";
+import type {Project, SceneEntity, TransportBackendEvent, TransportBackendMetadata} from "@transport/domain";
 import type {NativePhotonSmokeBridge} from "@transport/transport-worker";
 import {StudioApp} from "./StudioApp";
 import {getPrimarySelection, useEditorStore} from "../state/editor";
@@ -210,6 +210,7 @@ function ProjectTreeMock() {
             <p>tree selected entity: {selectedEntityId ?? "none"}</p>
             <p>tree shield visible: {String(shield?.visible ?? false)}</p>
             <p>tree shield included: {String(shield?.includedInCompile ?? true)}</p>
+            <p>tree shield x: {shield?.transform.position.x}</p>
             <p>
                 scene
                 stats: {stats.geometry} geometry, {stats.materials} materials, {stats.sources} sources, {stats.tallies} tallies
@@ -218,6 +219,7 @@ function ProjectTreeMock() {
             <button type="button" onClick={() => dispatch({type: "select-one", ref: ref("dose-1")})}>Select Dose Tally</button>
             <button type="button" onClick={() => dispatch({type: "set-visible", ref: ref("shield-1"), visible: false})}>Hide Shield Slab</button>
             <button type="button" onClick={() => dispatch({type: "set-included-in-compile", ref: ref("shield-1"), includedInCompile: false})}>Exclude Shield Slab</button>
+            <button type="button" onClick={() => dispatch({type: "delete-project-entity", ref: ref("dose-1")})}>Delete Dose Tally</button>
         </section>
     );
 }
@@ -236,69 +238,88 @@ vi.mock("../components/style-selector/StyleSelectorBoundary", () => ({
 
 vi.mock("../panels/InspectorPanel", () => ({
     InspectorPanel: (props: {
-        entity?: { name: string };
+        entity?: SceneEntity;
         diagnostics: readonly unknown[];
-        tracks: readonly unknown[]
+        tracks: readonly unknown[];
+        project: {scene: {entities: readonly {id: string; name: string; kind: string}[]}};
+        onEntityChange: (baseline: SceneEntity, candidate: SceneEntity) => void;
     }) => (
         <section aria-label="Inspector panel">
             <h2>Inspector panel</h2>
             <p>inspector entity: {props.entity?.name ?? "none"}</p>
             <p>inspector diagnostics: {props.diagnostics.length}</p>
             <p>inspector tracks: {props.tracks.length}</p>
+            <p>inspector position x: {props.entity?.transform.position.x ?? "none"}</p>
+            {props.entity && <button type="button" onClick={() => props.onEntityChange(props.entity!, {
+                ...props.entity!,
+                transform: {...props.entity!.transform, position: {...props.entity!.transform.position, x: 9}},
+            })}>Move Inspector Entity</button>}
         </section>
     )
 }));
 
 vi.mock("../panels/RunPanel", () => ({
     RunPanel: (props: {
-        activeTab: string;
-        onTabChange: (tab: "run" | "tallies" | "tracks" | "diagnostics" | "console") => void;
         config: { backend: string };
+        project: {scene: {entities: readonly {id: string; name: string; kind: string}[]}};
         tracks: readonly unknown[];
+        tallies: readonly unknown[];
+        tallyDiagnostics: readonly unknown[];
         diagnostics: readonly { message: string }[];
         sceneStats: { geometry: number; materials: number; sources: number; tallies: number };
         freshness: "empty" | "fresh" | "stale";
         renderingBlock: {message: string} | null;
         resultView: "current" | "submitted";
+        session: unknown;
         onResultViewChange: (view: "current" | "submitted") => void;
-    }) => (
-        <section aria-label="Run panel">
+        onTallySelect: (tallyId: string) => void;
+    }) => {
+        const {state, dispatch} = useEditorStore();
+        return <section aria-label="Run panel">
             <h2>Run panel</h2>
-            <p>active run tab: {props.activeTab}</p>
+            <p>active run tab: {state.shell.bottomDockTab}</p>
             <p>run panel backend: {props.config.backend}</p>
             <p>run panel tracks: {props.tracks.length}</p>
+            <p>run panel tallies: {props.tallies.length}</p>
+            <p>run panel project tally: {props.project.scene.entities.find((entity) => entity.kind === "tally")?.name ?? "none"}</p>
             <p>run panel diagnostics: {props.diagnostics.length}</p>
             <p>run results freshness: {props.freshness === "fresh" ? "current" : props.freshness}</p>
             {props.renderingBlock && <p>{props.renderingBlock.message}</p>}
             {props.renderingBlock && props.resultView === "current" && (
                 <button type="button" onClick={() => props.onResultViewChange("submitted")}>View submitted scene</button>
             )}
+            {props.tallies.length > 0 && <button type="button" onClick={() => props.onTallySelect("dose-1")}>Select Submitted Tally Result</button>}
             {props.diagnostics.map((diagnostic) => <p key={diagnostic.message}>{diagnostic.message}</p>)}
             <p>run panel scene
                 stats: {props.sceneStats.geometry}/{props.sceneStats.materials}/{props.sceneStats.sources}/{props.sceneStats.tallies}</p>
-            <button type="button" onClick={() => props.onTabChange("tracks")}>Open Tracks Tab</button>
-            <button type="button" onClick={() => props.onTabChange("diagnostics")}>Open Diagnostics Tab</button>
+            <button type="button" onClick={() => dispatch({type: "set-bottom-dock-tab", tab: "tracks"})}>Open Tracks Tab</button>
+            <button type="button" onClick={() => dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"})}>Open Diagnostics Tab</button>
         </section>
-    )
+    }
 }));
 
 vi.mock("../viewport/TransportViewport", () => ({
     TransportViewport: (props: {
         tracks: readonly unknown[];
+        tallies: readonly unknown[];
         selectedEntityId?: string;
         showTallies: boolean;
-        showDiagnostics: boolean;
+        showAxes: boolean;
         mode: string;
-        project: {scene: {entities: readonly {id: string; visible: boolean}[]}};
+        visibility: unknown;
+        project: {scene: {entities: readonly {id: string; name: string; visible: boolean; transform: {position: {x: number}}}[]}};
     }) => (
         <section aria-label="Transport viewport">
             <h2>Transport viewport</h2>
             <p>viewport mode: {props.mode}</p>
             <p>viewport selected entity: {props.selectedEntityId ?? "none"}</p>
             <p>viewport tracks: {props.tracks.length}</p>
+            <p>viewport tally results: {props.tallies.length}</p>
             <p>viewport tallies visible: {String(props.showTallies)}</p>
-            <p>viewport diagnostics visible: {String(props.showDiagnostics)}</p>
+            <p>viewport axes visible: {String(props.showAxes)}</p>
             <p>viewport shield visible: {String(props.project.scene.entities.find((entity) => entity.id === "shield-1")?.visible)}</p>
+            <p>viewport shield x: {props.project.scene.entities.find((entity) => entity.id === "shield-1")?.transform.position.x}</p>
+            <p>viewport presented tally: {props.project.scene.entities.find((entity) => entity.id === "dose-1")?.name ?? "none"}</p>
         </section>
     )
 }));
@@ -349,15 +370,51 @@ describe("StudioApp spec", () => {
     it("lets the user change work modes without running the transport simulation", () => {
         render(<StudioApp/>);
 
+        expect(screen.getByRole("button", {name: "design"})).toHaveAttribute("aria-pressed", "true");
         fireEvent.click(screen.getByRole("button", {name: "probe"}));
         expect(screen.getByText("PROBE MODE")).toBeTruthy();
         expect(screen.getByText("viewport mode: probe")).toBeTruthy();
+        expect(screen.getByRole("button", {name: "probe"})).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByRole("button", {name: "design"})).toHaveAttribute("aria-pressed", "false");
 
         fireEvent.click(screen.getByRole("button", {name: "analyze"}));
         expect(screen.getByText("ANALYZE MODE")).toBeTruthy();
         expect(screen.getByText("viewport mode: analyze")).toBeTruthy();
 
         expect(mocks.runToyPhotonTransport).not.toHaveBeenCalled();
+    });
+
+    it("collapses and restores shell panels without losing unrelated editor state", () => {
+        render(<StudioApp/>);
+
+        fireEvent.click(screen.getByRole("button", {name: "Select Dose Tally"}));
+        fireEvent.click(screen.getByRole("button", {name: "probe"}));
+
+        const projectTreeToggle = screen.getByRole("button", {name: "Project Tree"});
+        const inspectorToggle = screen.getByRole("button", {name: "Inspector"});
+        const runDockToggle = screen.getByRole("button", {name: "Run Dock"});
+        expect(projectTreeToggle).toHaveAttribute("aria-expanded", "true");
+        expect(inspectorToggle).toHaveAttribute("aria-expanded", "true");
+        expect(runDockToggle).toHaveAttribute("aria-expanded", "true");
+
+        fireEvent.click(projectTreeToggle);
+        fireEvent.click(inspectorToggle);
+        fireEvent.click(runDockToggle);
+
+        expect(projectTreeToggle).toHaveAttribute("aria-expanded", "false");
+        expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
+        expect(runDockToggle).toHaveAttribute("aria-expanded", "false");
+        expect(document.getElementById("studio-project-tree-panel")).toHaveAttribute("hidden");
+        expect(document.getElementById("studio-inspector-panel")).toHaveAttribute("hidden");
+        expect(document.getElementById("studio-run-dock-panel")).toHaveAttribute("hidden");
+
+        fireEvent.click(projectTreeToggle);
+        fireEvent.click(inspectorToggle);
+        fireEvent.click(runDockToggle);
+
+        expect(screen.getByText("tree selected entity: dose-1")).toBeTruthy();
+        expect(screen.getByText("inspector entity: Dose Tally")).toBeTruthy();
+        expect(screen.getByText("PROBE MODE")).toBeTruthy();
     });
 
     it("keeps entity selection synchronized between the project tree, viewport, inspector, and title HUD", () => {
@@ -376,6 +433,17 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("tree selected entity: dose-1")).toBeTruthy();
         expect(screen.getByText("viewport selected entity: dose-1")).toBeTruthy();
         expect(screen.getByText("inspector entity: Dose Tally")).toBeTruthy();
+    });
+
+    it("propagates accepted Inspector edits through the authoritative Editable Scene", () => {
+        render(<StudioApp/>);
+
+        expect(screen.getByText("inspector entity: Shield Slab")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", {name: "Move Inspector Entity"}));
+
+        expect(screen.getByText("tree shield x: 9")).toBeInTheDocument();
+        expect(screen.getByText("viewport shield x: 9")).toBeInTheDocument();
+        expect(screen.getByText("inspector position x: 9")).toBeInTheDocument();
     });
 
     it("runs the toy photon simulation, enters run mode, and summarizes terminal track outcomes", async () => {
@@ -440,6 +508,7 @@ describe("StudioApp spec", () => {
         expect(hiddenShield).toMatchObject({id: "shield-1", visible: false});
         expect(hiddenShield?.includedInCompile).toBeUndefined();
 
+        fireEvent.click(screen.getByRole("button", {name: "design"}));
         fireEvent.click(screen.getByRole("button", {name: "Exclude Shield Slab"}));
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
@@ -458,6 +527,7 @@ describe("StudioApp spec", () => {
         await waitFor(() => expect(screen.getByText("run results freshness: current")).toBeTruthy());
         expect(screen.getByText("run panel tracks: 4")).toBeTruthy();
 
+        fireEvent.click(screen.getByRole("button", {name: "design"}));
         fireEvent.click(screen.getByRole("button", {name: "Hide Shield Slab"}));
 
         await waitFor(() => expect(screen.getByText("run results freshness: stale")).toBeTruthy());
@@ -548,6 +618,11 @@ describe("StudioApp spec", () => {
                 ]
             },
             {
+                type: "tallyDelta",
+                runId: "native-314159",
+                delta: {tallyId: "dose-1", scores: [7]}
+            },
+            {
                 type: "runCompleted",
                 runId: "native-314159",
                 summary: {
@@ -567,6 +642,8 @@ describe("StudioApp spec", () => {
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
         await waitFor(() => expect(screen.getByText("run panel tracks: 1")).toBeTruthy());
+        expect(screen.getByText("run panel tallies: 1")).toBeTruthy();
+        expect(screen.getByText("viewport tally results: 1")).toBeTruthy();
         expect(mocks.runNativePhotonSmokeBackend).toHaveBeenCalledWith({
             id: "compiled-current-scene",
             status: "compiled",
@@ -580,6 +657,15 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("physics_data.simple_coefficients: Native photon backend used simple coefficients because tabular cross-section data was not supplied.")).toBeTruthy();
         expect(screen.getByText("1 sampled tracks · 0 escaped · 1 absorbed")).toBeTruthy();
         expect(screen.getByText("active run tab: run")).toBeTruthy();
+
+        fireEvent.click(screen.getByRole("button", {name: "design"}));
+        fireEvent.click(screen.getByRole("button", {name: "Delete Dose Tally"}));
+        await waitFor(() => expect(screen.getByText(/Results were submitted from Editable Scene revision/)).toBeTruthy());
+        fireEvent.click(screen.getByRole("button", {name: "View submitted scene"}));
+        expect(screen.getByText("run panel project tally: Dose Tally")).toBeTruthy();
+        fireEvent.click(screen.getByRole("button", {name: "Select Submitted Tally Result"}));
+        expect(screen.getByText("viewport selected entity: dose-1")).toBeTruthy();
+        expect(screen.getByText("viewport presented tally: Dose Tally")).toBeTruthy();
     });
 
     it("lets the user inspect run-panel tabs without rerunning transport", async () => {
@@ -604,15 +690,15 @@ describe("StudioApp spec", () => {
         fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
         await waitFor(() => expect(screen.getByText("viewport tracks: 4")).toBeTruthy());
         expect(screen.getByText("viewport tallies visible: true")).toBeTruthy();
-        expect(screen.getByText("viewport diagnostics visible: true")).toBeTruthy();
+        expect(screen.getByText("viewport axes visible: true")).toBeTruthy();
 
         fireEvent.click(screen.getByRole("checkbox", {name: "Tracks"}));
         fireEvent.click(screen.getByRole("checkbox", {name: "Tallies"}));
-        fireEvent.click(screen.getByRole("checkbox", {name: "Diagnostics"}));
+        fireEvent.click(screen.getByRole("checkbox", {name: "Axes"}));
 
         expect(screen.getByText("viewport tracks: 0")).toBeTruthy();
         expect(screen.getByText("viewport tallies visible: false")).toBeTruthy();
-        expect(screen.getByText("viewport diagnostics visible: false")).toBeTruthy();
+        expect(screen.getByText("viewport axes visible: false")).toBeTruthy();
         expect(screen.getByText("inspector tracks: 4")).toBeTruthy();
         expect(screen.getByText("run panel tracks: 4")).toBeTruthy();
         expect(screen.getByText("4 sampled tracks · 1 escaped · 1 absorbed")).toBeTruthy();

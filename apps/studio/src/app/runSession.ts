@@ -36,6 +36,28 @@ export interface RunSessionProgress {
     readonly totalHistories: number;
 }
 
+export type RunConsoleEventType = TransportBackendEvent["type"];
+
+export interface RunConsoleEntry {
+    readonly sequence: number;
+    readonly observedAt: string;
+    readonly eventType: RunConsoleEventType;
+    readonly severity: "info" | "warning" | "error";
+    readonly backendId: string;
+    readonly backendVersion: string;
+    readonly message: string;
+    readonly terminal: boolean;
+    readonly rejected?: boolean;
+    readonly failureCode?: string;
+}
+
+export interface RunConsoleState {
+    readonly entries: readonly RunConsoleEntry[];
+    readonly capacity: number;
+    readonly droppedCount: number;
+    readonly lastSequence: number;
+}
+
 export interface HeavyAssetReference {
     readonly reference: string;
     readonly fingerprint: string;
@@ -61,6 +83,7 @@ export interface RunSessionState {
     readonly diagnostics: readonly RunSessionDiagnostic[];
     readonly tracks: readonly TrackSample[];
     readonly tallies: readonly TransportTallyDelta[];
+    readonly invalidTallyIds?: readonly string[];
     readonly provenance: TransportRunProvenance | null;
     readonly summary: TransportRunSummary | null;
     readonly terminalFailure: TransportBackendDiagnostic | null;
@@ -70,6 +93,7 @@ export interface RunSessionState {
         readonly finalSequence: number;
     };
     readonly phase: RunSessionPhase;
+    readonly console: RunConsoleState;
 }
 
 export interface RunRenderingBlock {
@@ -135,6 +159,15 @@ export interface CreateRunSessionStoreOptions {
 const EMPTY_TRACKS: readonly TrackSample[] = Object.freeze([]);
 const EMPTY_TALLIES: readonly TransportTallyDelta[] = Object.freeze([]);
 const EMPTY_DIAGNOSTICS: readonly RunSessionDiagnostic[] = Object.freeze([]);
+const EMPTY_CONSOLE_ENTRIES: readonly RunConsoleEntry[] = Object.freeze([]);
+export const RUN_CONSOLE_CAPACITY = 200;
+const EMPTY_CONSOLE: RunConsoleState = Object.freeze({
+    entries: EMPTY_CONSOLE_ENTRIES,
+    capacity: RUN_CONSOLE_CAPACITY,
+    droppedCount: 0,
+    lastSequence: 0,
+});
+const RENDERABLE_TALLY_CACHE = new WeakMap<RunSessionState, readonly TransportTallyDelta[]>();
 const JOURNAL_VERSION = "1.0.0" as const;
 
 export function createRunSessionStore(options: CreateRunSessionStoreOptions): RunSessionStore {
@@ -213,12 +246,14 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
             diagnostics: EMPTY_DIAGNOSTICS,
             tracks: EMPTY_TRACKS,
             tallies: EMPTY_TALLIES,
+            invalidTallyIds: Object.freeze([]),
             provenance: null,
             summary: null,
             terminalFailure: null,
             input,
             journal: Object.freeze({status: run.sink ? "capturing" : "disabled", finalSequence: 0}),
             phase: "awaiting-acceptance",
+            console: EMPTY_CONSOLE,
         });
         publish({...snapshot, sceneFingerprint: input.sourceSceneFingerprint, current: session, resultView: "current", renderingBlock: null});
         const publishSession = () => snapshot.current?.id === sessionId
@@ -234,11 +269,18 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
 
         try {
             for await (const event of run.adapter.execute({sessionId, problem: input.problem})) {
-                const journalFailure = await journal.event(event);
-                if (journalFailure && session.journal.status !== "incomplete") {
-                    session = withJournalFailure(session, journalFailure, journal.sequence());
+                const observed = await journal.event(event);
+                if (observed.failure && session.journal.status !== "incomplete") {
+                    session = withJournalFailure(session, observed.failure, journal.sequence());
                 }
-                session = reduceBackendEvent(session, event);
+                const beforeReduction = session;
+                const reduced = reduceBackendEvent(session, event);
+                const rejected = reduced.status === "failed"
+                    && reduced.terminalFailure?.code === "run.session.protocol_violation"
+                    && beforeReduction.terminalFailure?.code !== "run.session.protocol_violation";
+                session = rejected
+                    ? appendRejectedProtocolConsoleEntry(reduced, event, observed.observedAt)
+                    : appendProtocolConsoleEntry(reduced, event, observed.observedAt);
                 publishSession();
                 if (session.status === "failed" && session.terminalFailure?.code === "run.session.protocol_violation") break;
             }
@@ -320,12 +362,22 @@ export function selectRenderableTracks(snapshot: RunSessionStoreSnapshot): reado
 }
 
 export function selectRenderableTallies(snapshot: RunSessionStoreSnapshot): readonly TransportTallyDelta[] {
-    if (!snapshot.current) return EMPTY_TALLIES;
-    return canRenderResults(snapshot) ? snapshot.current.tallies : EMPTY_TALLIES;
+    if (!snapshot.current || !canRenderResults(snapshot)) return EMPTY_TALLIES;
+    const invalid = snapshot.current.invalidTallyIds ?? [];
+    if (invalid.length === 0) return snapshot.current.tallies;
+    const cached = RENDERABLE_TALLY_CACHE.get(snapshot.current);
+    if (cached) return cached;
+    const renderable = Object.freeze(snapshot.current.tallies.filter((result) => !invalid.includes(result.tallyId)));
+    RENDERABLE_TALLY_CACHE.set(snapshot.current, renderable);
+    return renderable;
 }
 
 export function selectRunDiagnostics(snapshot: RunSessionStoreSnapshot): readonly RunSessionDiagnostic[] {
     return snapshot.current?.diagnostics ?? EMPTY_DIAGNOSTICS;
+}
+
+export function selectCurrentRunSession(snapshot: RunSessionStoreSnapshot): RunSessionState | null {
+    return snapshot.current;
 }
 
 export function selectRunBackend(snapshot: RunSessionStoreSnapshot): Project["runConfiguration"]["backend"] {
@@ -423,10 +475,23 @@ function reduceBackendEvent(state: RunSessionState, event: TransportBackendEvent
             return reduceMiddle(state, event, "tracks", {
                 tracks: deepFreeze([...state.tracks, ...event.samples.map(convertTransportTrackSample)]),
             });
-        case "tallyDelta":
-            return reduceMiddle(state, event, "tallies", {
-                tallies: deepFreeze([...state.tallies, structuredClone(event.delta)]),
+        case "tallyDelta": {
+            const accumulation = accumulateTallyDelta(state.tallies, event.delta);
+            const nextState = accumulation.shapeMismatch
+                ? appendDiagnostics(state, [{
+                    level: "error",
+                    code: "run.tally.delta_shape_mismatch",
+                    message: `Tally '${event.delta.tallyId}' changed score length from ${accumulation.existingLength} to ${event.delta.scores.length}; its accumulated result was suppressed.`,
+                    entityId: event.delta.tallyId,
+                }])
+                : state;
+            return reduceMiddle(nextState, event, "tallies", {
+                tallies: accumulation.tallies,
+                invalidTallyIds: accumulation.shapeMismatch
+                    ? Object.freeze([...new Set([...(state.invalidTallyIds ?? []), event.delta.tallyId])])
+                    : state.invalidTallyIds,
             });
+        }
         case "diagnostic":
             return reduceMiddle(appendDiagnostics(state, [event.diagnostic]), event, "diagnostics", {});
         case "runCompleted":
@@ -451,6 +516,20 @@ function reduceBackendEvent(state: RunSessionState, event: TransportBackendEvent
                 phase: "terminal",
             });
     }
+}
+
+function accumulateTallyDelta(
+    current: readonly TransportTallyDelta[],
+    delta: TransportTallyDelta,
+): {readonly tallies: readonly TransportTallyDelta[]; readonly shapeMismatch: boolean; readonly existingLength?: number} {
+    const existingIndex = current.findIndex((result) => result.tallyId === delta.tallyId);
+    if (existingIndex < 0) return {tallies: deepFreeze([...current, structuredClone(delta)]), shapeMismatch: false};
+    const existing = current[existingIndex];
+    if (existing.scores.length !== delta.scores.length) {
+        return {tallies: current, shapeMismatch: true, existingLength: existing.scores.length};
+    }
+    const next = {tallyId: delta.tallyId, scores: existing.scores.map((score, index) => score + delta.scores[index])};
+    return {tallies: deepFreeze(current.map((result, index) => index === existingIndex ? next : result)), shapeMismatch: false};
 }
 
 function reduceMiddle(
@@ -497,6 +576,111 @@ function appendDiagnostics(
             ...diagnostics.map((item) => diagnostic(item.code, item.message, item.level, item.entityId)),
         ]),
     });
+}
+
+function appendProtocolConsoleEntry(
+    state: RunSessionState,
+    event: TransportBackendEvent,
+    observedAt: string,
+): RunSessionState {
+    const base: Omit<RunConsoleEntry, "sequence" | "message"> = {
+        eventType: event.type,
+        observedAt,
+        severity: "info",
+        backendId: state.provenance?.backendId ?? state.adapterMetadata.id,
+        backendVersion: state.provenance?.backendVersion ?? state.adapterMetadata.version,
+        terminal: false,
+    };
+    switch (event.type) {
+        case "backendMetadata":
+            return appendConsoleEntry(state, {...base,
+                backendId: event.metadata.id,
+                backendVersion: event.metadata.version,
+                message: `Backend metadata received for ${event.metadata.name} (${event.metadata.id} ${event.metadata.version}).`,
+            });
+        case "problemAccepted":
+            return appendConsoleEntry(state, {...base,
+                severity: highestDiagnosticSeverity(event.diagnostics),
+                message: `Problem ${event.problemId} accepted with ${event.diagnostics.length} diagnostics.`,
+            });
+        case "runStarted":
+            return appendConsoleEntry(state, {...base,
+                backendId: event.provenance.backendId,
+                backendVersion: event.provenance.backendVersion,
+                message: `Run ${event.runId} started for problem ${event.problemId} with seed ${event.provenance.seed}.`,
+            });
+        case "runProgress":
+            return appendConsoleEntry(state, {...base,
+                message: `Progress ${event.completedHistories}/${event.totalHistories} histories.`,
+            });
+        case "trackSamples":
+            return appendConsoleEntry(state, {...base, message: `Received ${event.samples.length} sampled tracks.`});
+        case "tallyDelta":
+            return appendConsoleEntry(state, {...base,
+                message: `Received ${event.delta.scores.length} scores for tally ${event.delta.tallyId}.`,
+            });
+        case "diagnostic":
+            return appendConsoleEntry(state, {...base,
+                severity: highestDiagnosticSeverity([event.diagnostic]),
+                message: `${event.diagnostic.code}: ${event.diagnostic.message}`,
+            });
+        case "runCompleted":
+            return appendConsoleEntry(state, {...base,
+                severity: highestDiagnosticSeverity(event.summary.diagnostics),
+                message: `Run ${event.runId} completed ${event.summary.completedHistories}/${event.summary.totalHistories} histories with ${event.summary.sampledTrackCount} sampled tracks and ${event.summary.tallyCount} tallies.`,
+                terminal: true,
+            });
+        case "runFailed":
+            return appendConsoleEntry(state, {...base,
+                severity: highestDiagnosticSeverity([event.diagnostic]),
+                message: `${event.diagnostic.code}: ${event.diagnostic.message}`,
+                terminal: true,
+                failureCode: event.diagnostic.code,
+            });
+    }
+}
+
+function appendRejectedProtocolConsoleEntry(
+    state: RunSessionState,
+    event: TransportBackendEvent,
+    observedAt: string,
+): RunSessionState {
+    return appendConsoleEntry(state, {
+        eventType: event.type,
+        observedAt,
+        severity: "error",
+        backendId: state.provenance?.backendId ?? state.adapterMetadata.id,
+        backendVersion: state.provenance?.backendVersion ?? state.adapterMetadata.version,
+        message: `Rejected ${event.type}: ${state.terminalFailure?.message ?? "Run Session protocol violation."}`,
+        terminal: true,
+        rejected: true,
+        failureCode: state.terminalFailure?.code,
+    });
+}
+
+function appendConsoleEntry(
+    state: RunSessionState,
+    entry: Omit<RunConsoleEntry, "sequence">,
+): RunSessionState {
+    const current = state.console;
+    const sequence = current.lastSequence + 1;
+    const retained = [...current.entries, Object.freeze({...entry, sequence})];
+    const overflow = Math.max(0, retained.length - RUN_CONSOLE_CAPACITY);
+    return Object.freeze({
+        ...state,
+        console: Object.freeze({
+            entries: Object.freeze(overflow > 0 ? retained.slice(overflow) : retained),
+            capacity: RUN_CONSOLE_CAPACITY,
+            droppedCount: current.droppedCount + overflow,
+            lastSequence: sequence,
+        }),
+    });
+}
+
+function highestDiagnosticSeverity(diagnostics: readonly TransportBackendDiagnostic[]): RunConsoleEntry["severity"] {
+    if (diagnostics.some((item) => item.level === "error")) return "error";
+    if (diagnostics.some((item) => item.level === "warning")) return "warning";
+    return "info";
 }
 
 function withJournalFailure(state: RunSessionState, failure: Error, sequence: number): RunSessionState {
@@ -547,7 +731,9 @@ function createJournal(
         }),
         async event(event: TransportBackendEvent) {
             sequence += 1;
-            return write({journalVersion: JOURNAL_VERSION, recordType: "event", sessionId, sequence, observedAt: now(), event});
+            const observedAt = now();
+            const failure = await write({journalVersion: JOURNAL_VERSION, recordType: "event", sessionId, sequence, observedAt, event});
+            return {failure, observedAt};
         },
         async close(state: RunSessionState): Promise<Error | null> {
             if (!active || !sink) return null;
