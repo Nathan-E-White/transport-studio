@@ -4,6 +4,7 @@ import type {Project} from "@transport/domain";
 import {IDENTITY_TRANSFORM} from "@transport/shared";
 import {ProjectTree, ProjectTreeProps} from "./ProjectTree";
 import {EditorStoreProvider, type VisibilityTable, useEditorStore} from "../../state/editor";
+import {createEditorFailureJournal} from "../../app/editorFailureJournal";
 
 const project: Project = {
   id: "project-1" as Project["id"],
@@ -80,6 +81,7 @@ const project: Project = {
 function renderProjectTree(overrides: Partial<ProjectTreeProps> = {}) {
   const props: ProjectTreeProps = {
     diagnostics: [],
+    failureJournal: createEditorFailureJournal(),
     ...overrides,
   };
 
@@ -106,11 +108,17 @@ function SetProbeMode() {
 describe("ProjectTree", () => {
   it("reports actionable failures through the consolidated public boundary", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    render(<EditorStoreProvider><ProjectTree diagnostics={[]}/></EditorStoreProvider>);
+    const failureJournal = createEditorFailureJournal();
+    render(<EditorStoreProvider><ProjectTree diagnostics={[]} failureJournal={failureJournal}/></EditorStoreProvider>);
 
     expect(screen.getByRole("alert")).toHaveTextContent("Project tree unavailable.");
-    expect(screen.getByTitle("Project Tree requires an Editable Scene project")).toBeInTheDocument();
-    expect(consoleError).toHaveBeenCalledWith("Project tree crashed", expect.any(Error), expect.any(Object));
+    expect(failureJournal.getSnapshot().diagnostics[0]).toMatchObject({
+      code: "editor.ui.render-failure",
+      message: "Project tree render failure (retryable): Project Tree requires an Editable Scene project",
+    });
+    expect(consoleError).toHaveBeenCalledWith("editor.ui.render-failure: project-tree (retryable)");
+    fireEvent.click(screen.getByRole("button", {name: "Retry project tree"}));
+    expect(failureJournal.getSnapshot().consoleEntries[0]?.occurrences).toBe(2);
     consoleError.mockRestore();
   });
 
@@ -217,7 +225,7 @@ describe("ProjectTree", () => {
     };
     render(
       <EditorStoreProvider initialProject={project} initialVisibility={visibility}>
-        <ProjectTree diagnostics={[]}/>
+        <ProjectTree diagnostics={[]} failureJournal={createEditorFailureJournal()}/>
       </EditorStoreProvider>,
     );
 
@@ -247,7 +255,7 @@ describe("ProjectTree", () => {
     render(
       <EditorStoreProvider initialProject={project}>
         <MakeGeometryNonSelectable/>
-        <ProjectTree diagnostics={[]}/>
+        <ProjectTree diagnostics={[]} failureJournal={createEditorFailureJournal()}/>
       </EditorStoreProvider>,
     );
     const selectable = screen.getByRole("treeitem", {name: "Shield Slab, geometry"});
@@ -274,7 +282,7 @@ describe("ProjectTree", () => {
     render(
       <EditorStoreProvider initialProject={project}>
         <SetProbeMode/>
-        <ProjectTree diagnostics={[]}/>
+        <ProjectTree diagnostics={[]} failureJournal={createEditorFailureJournal()}/>
       </EditorStoreProvider>,
     );
 
@@ -298,7 +306,7 @@ describe("ProjectTree", () => {
     render(
       <EditorStoreProvider initialProject={project}>
         <SetProbeMode/>
-        <ProjectTree diagnostics={[]}/>
+        <ProjectTree diagnostics={[]} failureJournal={createEditorFailureJournal()}/>
       </EditorStoreProvider>,
     );
     const geometry = screen.getByRole("treeitem", {name: "Shield Slab, geometry"});

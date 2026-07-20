@@ -4,6 +4,7 @@ import type {Project, SceneEntity, TransportBackendEvent, TransportBackendMetada
 import type {NativePhotonSmokeBridge} from "@transport/transport-worker";
 import {StudioApp} from "./StudioApp";
 import {getPrimarySelection, useEditorStore} from "../state/editor";
+import {createEditorFailureJournal} from "./editorFailureJournal";
 
 const mocks = vi.hoisted(() => {
     const nativeBackendMetadata: TransportBackendMetadata = {
@@ -339,6 +340,19 @@ describe("StudioApp spec", () => {
             ))
         ));
         mocks.createTauriNativePhotonSmokeBridge.mockReturnValue(undefined);
+    });
+
+    it("keeps captured editor failures visible in the workbench diagnostics", () => {
+        const failureJournal = createEditorFailureJournal({now: () => "2026-07-20T12:00:00.000Z"});
+        failureJournal.capture({
+            surface: "project-tree",
+            recoverability: "retryable",
+            error: new Error("Project tree failed safely"),
+        });
+
+        render(<StudioApp failureJournal={failureJournal}/>);
+
+        expect(screen.getByText("inspector diagnostics: 2")).toBeTruthy();
     });
 
     it("opens as a visual Monte Carlo workbench with a default project, selected entity, and empty run state", () => {

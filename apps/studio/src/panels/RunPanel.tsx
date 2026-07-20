@@ -15,6 +15,7 @@ import {
 import {useEditorStore, type EditorBottomDockTab} from "../state/editor";
 import {RunSessionDetails} from "./RunSessionDetails";
 import {createTallyResultPresentation} from "../viewport/tallyResultPresentation";
+import type {EditorFailureConsoleEntry} from "../app/editorFailureJournal";
 
 interface RunPanelProps {
   readonly config: RunConfiguration;
@@ -28,6 +29,7 @@ interface RunPanelProps {
   readonly renderingBlock: RunRenderingBlock | null;
   readonly resultView: RunResultView;
   readonly session: RunSessionState | null;
+  readonly editorConsoleEntries?: readonly EditorFailureConsoleEntry[];
   readonly onTallySelect: (tallyId: string) => void;
   readonly onResultViewChange: (view: RunResultView) => void;
 }
@@ -44,6 +46,7 @@ export function RunPanel({
   renderingBlock,
   resultView,
   session,
+  editorConsoleEntries = [],
   onTallySelect,
   onResultViewChange,
 }: RunPanelProps) {
@@ -125,7 +128,7 @@ export function RunPanel({
         </div>
       </DockPanel>
       <DockPanel tab="console" activeTab={activeTab}>
-        <ConsolePanel session={session}/>
+        <ConsolePanel session={session} editorEntries={editorConsoleEntries}/>
       </DockPanel>
     </section>
   );
@@ -194,7 +197,17 @@ function formatBinCoordinate(index: number, bins: readonly [number, number, numb
   return `(${index % nx}, ${Math.floor(index / nx) % ny}, ${Math.floor(index / (nx * ny))})`;
 }
 
-export function ConsolePanel({session}: {readonly session: RunSessionState | null}) {
+export function ConsolePanel({session, editorEntries = []}: {
+  readonly session: RunSessionState | null;
+  readonly editorEntries?: readonly EditorFailureConsoleEntry[];
+}) {
+  return <div className="run-console">
+    <EditorConsoleEntries entries={editorEntries}/>
+    <RunSessionConsole session={session}/>
+  </div>;
+}
+
+function RunSessionConsole({session}: {readonly session: RunSessionState | null}) {
   if (!session) {
     return <p className="console-empty">Console disconnected: no Run Session is selected.</p>;
   }
@@ -209,15 +222,15 @@ export function ConsolePanel({session}: {readonly session: RunSessionState | nul
     ? <p className="console-retention" role="alert">Run journal capture is incomplete; protocol events below remain in received order.</p>
     : null;
   if (consoleState.entries.length === 0) {
-    return <div className="run-console">
+    return <>
       {terminalFailure}
       {journalFailure}
       {!terminalFailure && <p className="console-empty">{session.status === "prepared" || session.status === "running"
         ? `Connected to ${session.adapterMetadata.id}; awaiting the first Run Session protocol event.`
         : `Run Session ${session.id} is ${session.status}, but no Console events were retained.`}</p>}
-    </div>;
+    </>;
   }
-  return <div className="run-console">
+  return <>
     {terminalFailure}
     {journalFailure}
     {consoleState.droppedCount > 0 && <p className="console-retention" role="status">
@@ -226,7 +239,24 @@ export function ConsolePanel({session}: {readonly session: RunSessionState | nul
     <ol className="console-events" aria-label="Run Session console events">
       {consoleState.entries.map((entry) => <ConsoleEntry key={entry.sequence} entry={entry}/>) }
     </ol>
-  </div>;
+  </>;
+}
+
+function EditorConsoleEntries({entries}: {readonly entries: readonly EditorFailureConsoleEntry[]}) {
+  if (entries.length === 0) return null;
+  return <ol className="console-events" aria-label="Editor console events">
+    {entries.map((entry) => <li className="console-event error" key={entry.id}>
+      <header>
+        <time dateTime={entry.observedAt}>{entry.observedAt}</time>
+        <strong>{entry.classification}</strong>
+        <span>{entry.surface}</span>
+        <span>{entry.recoverability}</span>
+        {entry.occurrences > 1 && <span>{entry.occurrences} occurrences</span>}
+      </header>
+      <p>{entry.errorName}: {entry.message}</p>
+      {entry.componentPath.length > 0 && <p>Surface path: {entry.componentPath.join(" → ")}</p>}
+    </li>)}
+  </ol>;
 }
 
 function ConsoleEntry({entry}: {readonly entry: RunConsoleEntry}) {
