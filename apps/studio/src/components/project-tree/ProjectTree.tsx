@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {Diagnostic, SceneEntity} from "@transport/domain";
 import {
   EditorDiagnostic,
@@ -6,8 +6,10 @@ import {
   EditorEntityRef,
   buildProjectTree,
   getEditorModeBehavior,
+  getEntityViewFlags,
   getModeEditingDisabledReason,
   getPrimarySelection,
+  isEntityKindSelectableInMode,
   selectProjectTreeMetadata,
   selectVisibility,
   useEditorStore,
@@ -20,6 +22,10 @@ import {ProjectSettingsDialog} from "./ProjectSettingsDialog";
 export interface ProjectTreeProps {
   readonly diagnostics: readonly Diagnostic[];
 }
+
+type ProjectTreeFocusTarget =
+  | {readonly kind: "row"; readonly id: string}
+  | {readonly kind: "group"; readonly id: string};
 
 const CREATE_KINDS: readonly SceneEntity["kind"][] = ["geometry", "material", "source", "tally"];
 
@@ -45,6 +51,9 @@ function ProjectTreeInner({
   const [editingEntityId, setEditingEntityId] = useState<string | undefined>();
   const [drafts, setDrafts] = useState<Record<string, ProjectTreeMetadataDraft>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [activeRowId, setActiveRowId] = useState<string | undefined>();
+  const [pendingFocusTarget, setPendingFocusTarget] = useState<ProjectTreeFocusTarget | undefined>();
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   const closeSettings = useCallback(() => {
@@ -88,7 +97,48 @@ function ProjectTreeInner({
   );
 
   const stats = useMemo(() => getSceneStats(project.scene.entities), [project.scene.entities]);
-  const visibleRows = groups.reduce((count, group) => count + (group.children?.length ?? 0), 0);
+  const displayedGroups = useMemo(
+    () => groups.filter((group) => !searchQuery.trim() || (group.children?.length ?? 0) > 0),
+    [groups, searchQuery],
+  );
+  const isExpanded = useCallback((groupId: string) => expandedGroups[groupId] !== false, [expandedGroups]);
+  const visibleNodes = useMemo(
+    () => displayedGroups.flatMap((group) => isExpanded(group.id) ? group.children ?? [] : []),
+    [displayedGroups, isExpanded],
+  );
+  const eligibleRowIds = useMemo(
+    () => visibleNodes.filter((node) => {
+      if (!node.entityRef) return false;
+      return getEntityViewFlags(visibility, node.entityRef).selectable
+        && isEntityKindSelectableInMode(state.shell.activeMode, node.entityRef.kind);
+    }).map((node) => node.id),
+    [state.shell.activeMode, visibility, visibleNodes],
+  );
+  const rovingRowId = eligibleRowIds.includes(activeRowId ?? "") ? activeRowId : eligibleRowIds[0];
+  const visibleRows = visibleNodes.length;
+
+  useEffect(() => {
+    if (rovingRowId === activeRowId) return;
+    setActiveRowId(rovingRowId);
+    if (activeRowId && rovingRowId) setPendingFocusTarget({kind: "row", id: rovingRowId});
+  }, [activeRowId, rovingRowId]);
+
+  useEffect(() => {
+    if (!pendingFocusTarget) return;
+    const prefix = pendingFocusTarget.kind === "row" ? "project-tree-row" : "project-tree-group";
+    document.getElementById(`${prefix}-${pendingFocusTarget.id}`)?.focus();
+    setPendingFocusTarget(undefined);
+  }, [pendingFocusTarget]);
+
+  const focusRow = useCallback((rowId: string | undefined) => {
+    if (!rowId) return;
+    setActiveRowId(rowId);
+    setPendingFocusTarget({kind: "row", id: rowId});
+  }, []);
+
+  const focusGroup = useCallback((groupId: string) => {
+    setPendingFocusTarget({kind: "group", id: groupId});
+  }, []);
 
   const requestEdit = useCallback((ref: EditorEntityRef) => {
     const entity = entitiesById.get(ref.id);
@@ -102,6 +152,11 @@ function ProjectTreeInner({
       [ref.id]: draftForEntity(entity),
     }));
   }, [entitiesById]);
+
+  const finishEdit = useCallback((ref: EditorEntityRef) => {
+    setEditingEntityId(undefined);
+    focusRow(`entity:${ref.kind}:${ref.id}`);
+  }, [focusRow]);
 
   const saveDraft = useCallback((node: {readonly entityRef?: EditorEntityRef}) => {
     const ref = node.entityRef;
@@ -119,8 +174,48 @@ function ProjectTreeInner({
       description: draft.description.trim(),
       tags: parseTags(draft.tags),
     }});
-    setEditingEntityId(undefined);
-  }, [dispatch, drafts]);
+    finishEdit(ref);
+  }, [dispatch, drafts, finishEdit]);
+
+  const handleRowKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>, node: {readonly id: string; readonly entityRef?: EditorEntityRef}) => {
+    const index = eligibleRowIds.indexOf(node.id);
+    const focusAt = (target: number) => {
+      event.preventDefault();
+      focusRow(eligibleRowIds[target]);
+    };
+
+    switch (event.key) {
+      case "ArrowDown":
+        if (index >= 0 && index < eligibleRowIds.length - 1) focusAt(index + 1);
+        return;
+      case "ArrowUp":
+        if (index > 0) focusAt(index - 1);
+        return;
+      case "Home":
+        if (eligibleRowIds.length > 0) focusAt(0);
+        return;
+      case "End":
+        if (eligibleRowIds.length > 0) focusAt(eligibleRowIds.length - 1);
+        return;
+      case "ArrowLeft": {
+        const group = displayedGroups.find((candidate) => candidate.children?.some((child) => child.id === node.id));
+        if (!group || !isExpanded(group.id)) return;
+        event.preventDefault();
+        setExpandedGroups((current) => ({...current, [group.id]: false}));
+        focusGroup(group.id);
+      }
+    }
+  }, [displayedGroups, eligibleRowIds, focusGroup, focusRow, isExpanded]);
+
+  const handleGroupKeyDown = useCallback((event: KeyboardEvent<HTMLButtonElement>, group: {readonly id: string; readonly children?: readonly {readonly id: string; readonly entityRef?: EditorEntityRef}[]}) => {
+    if (event.key !== "ArrowRight" || isExpanded(group.id)) return;
+    const firstEligibleChild = group.children?.find((child) => child.entityRef
+      && getEntityViewFlags(visibility, child.entityRef).selectable
+      && isEntityKindSelectableInMode(state.shell.activeMode, child.entityRef.kind));
+    event.preventDefault();
+    setExpandedGroups((current) => ({...current, [group.id]: true}));
+    focusRow(firstEligibleChild?.id);
+  }, [focusRow, isExpanded, state.shell.activeMode, visibility]);
 
   return (
     <>
@@ -167,9 +262,7 @@ function ProjectTreeInner({
               {visibleRows === 0 ? (
                 <ProjectTreeEmptyState searchQuery={searchQuery}/>
               ) : (
-                groups
-                  .filter((group) => !searchQuery.trim() || (group.children?.length ?? 0) > 0)
-                  .map((group) => (
+                displayedGroups.map((group) => (
                     <ProjectTreeGroup
                       key={group.id}
                       node={group}
@@ -187,8 +280,17 @@ function ProjectTreeInner({
                         setDrafts((current) => ({...current, [ref.id]: draft}));
                       }}
                       onSaveDraft={saveDraft}
-                      onCancelDraft={() => setEditingEntityId(undefined)}
+                      onCancelDraft={(node) => {
+                        if (node.entityRef) finishEdit(node.entityRef);
+                        else setEditingEntityId(undefined);
+                      }}
                       onRequestEdit={requestEdit}
+                      expanded={isExpanded(group.id)}
+                      rovingRowId={rovingRowId}
+                      onToggleExpanded={() => setExpandedGroups((current) => ({...current, [group.id]: !isExpanded(group.id)}))}
+                      onRowFocus={(node) => setActiveRowId(node.id)}
+                      onRowKeyDown={handleRowKeyDown}
+                      onGroupKeyDown={handleGroupKeyDown}
                     />
                   ))
               )}

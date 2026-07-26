@@ -149,8 +149,11 @@ button { color: inherit; }
 .project-tree__groups { display: grid; gap: 10px; }
 .project-tree__empty { color: var(--text-muted); border: 1px solid var(--line); border-radius: 12px; padding: 12px; text-align: center; }
 .project-tree-group { display: grid; gap: 7px; }
-.project-tree-group__heading { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 8px 0 0; }
-.project-tree-group__heading em { margin-left: auto; font-style: normal; color: #65738f; }
+.project-tree-group__heading { margin: 8px 0 0; }
+.project-tree-group__toggle { display: flex; width: 100%; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; background: transparent; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.project-tree-group__toggle::before { content: "▾"; color: var(--cyan); }
+.project-tree-group__toggle[aria-expanded="false"]::before { content: "▸"; }
+.project-tree-group__toggle em { margin-left: auto; font-style: normal; color: #65738f; }
 .project-tree-group__rows { display: grid; gap: 7px; }
 .project-tree-group__row-shell { display: grid; gap: 7px; }
 .project-tree-icon { display: inline-grid; place-items: center; width: 18px; height: 18px; color: var(--cyan); }
