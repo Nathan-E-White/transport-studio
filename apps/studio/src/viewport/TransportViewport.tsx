@@ -17,7 +17,10 @@ interface TransportViewportProps {
     readonly tallies: readonly TransportTallyDelta[];
     readonly tallyDiagnostics: readonly Diagnostic[];
     readonly selectedEntityId?: string;
-    readonly onSelect: (entityId: string) => void;
+    readonly selectedEntityIds?: readonly string[];
+    readonly hoveredEntityId?: string;
+    readonly onSelect: (entityId: string, toggle?: boolean) => void;
+    readonly onHover: (entityId: string | undefined) => void;
     readonly showTallies: boolean;
     readonly showAxes: boolean;
     readonly mode: EditorMode;
@@ -30,7 +33,10 @@ export function TransportViewport({
                                       tallies,
                                       tallyDiagnostics,
                                       selectedEntityId,
+                                      selectedEntityIds = selectedEntityId ? [selectedEntityId] : [],
+                                      hoveredEntityId,
                                       onSelect,
+                                      onHover,
                                       showTallies,
                                       showAxes,
                                       mode,
@@ -100,8 +106,10 @@ export function TransportViewport({
                 <EntityMesh
                     key={entity.id}
                     entity={entity}
-                    selected={entity.id === selectedEntityId}
+                    selected={selectedEntityIds.includes(entity.id)}
+                    hovered={entity.id === hoveredEntityId}
                     onSelect={onSelect}
+                    onHover={onHover}
                     showTallies={showTallies}
                     mode={mode}
                     presentation={presentation}
@@ -220,10 +228,12 @@ function TallyResultOverlay({entity, presentation}: {
     </group>;
 }
 
-function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation}: {
+function EntityMesh({entity, selected, hovered, onSelect, onHover, showTallies, mode, presentation}: {
     readonly entity: SceneEntity;
     readonly selected: boolean;
-    readonly onSelect: (id: string) => void;
+    readonly hovered: boolean;
+    readonly onSelect: (id: string, toggle?: boolean) => void;
+    readonly onHover: (id: string | undefined) => void;
     readonly showTallies: boolean;
     readonly mode: EditorMode;
     readonly presentation: ViewportEntityPresentation;
@@ -233,7 +243,7 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation
     const s = entity.transform.scale;
     const position: [number, number, number] = [p.x, p.y, p.z];
     const scale: [number, number, number] = [s.x, s.y, s.z];
-    const select = () => pickViewportEntity(entity, presentation, onSelect);
+    const select = (toggle = false) => pickViewportEntity(entity, presentation, onSelect, toggle);
     const emphasis = getModeEntityEmphasis(mode, entity.kind);
 
     if (entity.kind === "material") return null;
@@ -243,11 +253,11 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation
         return (
             <group position={position} onClick={(event) => {
                 event.stopPropagation();
-                select();
-            }} userData={presentation}>
+                select(event.nativeEvent.ctrlKey || event.nativeEvent.metaKey);
+            }} onPointerOver={(event) => { event.stopPropagation(); onHover(entity.id); }} onPointerOut={() => onHover(undefined)} userData={presentation}>
                 <mesh rotation={[0, 0, -Math.PI / 2]}>
                     <coneGeometry args={[0.38, 1.15, 32]}/>
-                    <meshStandardMaterial color={selected ? "#ffd166" : "#00e5ff"}
+                    <meshStandardMaterial color={selected ? "#ffd166" : hovered ? "#8be9fd" : "#00e5ff"}
                                           emissive={selected ? "#5a3d00" : "#003844"} emissiveIntensity={0.8}
                                           transparent={true} opacity={0.35 + emphasis * 0.65}
                                           wireframe={presentation.helperOnly || mode === "debug"}/>
@@ -267,11 +277,11 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation
         return (
             <group position={position} scale={scale} onClick={(event) => {
                 event.stopPropagation();
-                select();
-            }} userData={presentation}>
+                select(event.nativeEvent.ctrlKey || event.nativeEvent.metaKey);
+            }} onPointerOver={(event) => { event.stopPropagation(); onHover(entity.id); }} onPointerOut={() => onHover(undefined)} userData={presentation}>
                 <mesh>
                     <boxGeometry args={[1, 1, 1]}/>
-                    <meshStandardMaterial color={selected ? "#ffd166" : "#3ddc97"} transparent={true}
+                    <meshStandardMaterial color={selected ? "#ffd166" : hovered ? "#8be9fd" : "#3ddc97"} transparent={true}
                                           opacity={selected ? 0.48 : 0.12 + emphasis * 0.3}
                                           wireframe={mode === "debug"}/>
                 </mesh>
@@ -298,15 +308,15 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode, presentation
         return (
             <group position={position} scale={scale} onClick={(event): void => {
                 event.stopPropagation();
-                select();
-            }} userData={presentation}>
+                select(event.nativeEvent.ctrlKey || event.nativeEvent.metaKey);
+            }} onPointerOver={(event) => { event.stopPropagation(); onHover(entity.id); }} onPointerOut={() => onHover(undefined)} userData={presentation}>
                 <mesh castShadow={true} receiveShadow={true}>
                     {
                         entity.primitive === "sphere" ? sg :
                             entity.primitive === "cylinder" ? cg :
                                 bg
                     }
-                    <meshStandardMaterial color={selected ? "#ffd166" : "#7aa2ff"} transparent={true}
+                    <meshStandardMaterial color={selected ? "#ffd166" : hovered ? "#8be9fd" : "#7aa2ff"} transparent={true}
                                           opacity={presentation.helperOnly ? 0.24 : selected ? 0.68 : 0.12 + emphasis * 0.42}
                                           roughness={0.4} metalness={0.08} wireframe={presentation.helperOnly || mode === "debug"}/>
                 </mesh>

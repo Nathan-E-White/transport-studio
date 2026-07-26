@@ -24,9 +24,11 @@ export function getViewportEntityPresentation(
 export function pickViewportEntity(
   entity: SceneEntity,
   presentation: ViewportEntityPresentation,
-  onSelect: (entityId: string) => void,
+  onSelect: (entityId: string, toggle?: boolean) => void,
+  toggle = false,
 ): boolean {
   if (!presentation.visible || !presentation.selectable) return false;
-  onSelect(entity.id);
+  if (toggle) onSelect(entity.id, true);
+  else onSelect(entity.id);
   return true;
 }

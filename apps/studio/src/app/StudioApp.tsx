@@ -16,6 +16,7 @@ import {RunPanel} from "../panels/RunPanel";
 import {TransportViewport} from "../viewport/TransportViewport";
 import {
     EditorStateRoot,
+    EditorEntityRef,
     getPrimarySelection,
     getEditorModeBehavior,
     getModeEditingDisabledReason,
@@ -115,6 +116,8 @@ function StudioWorkbench({failureJournal}: {readonly failureJournal: EditorFailu
         ? selectedResultTallyId
         : selectedEntityId;
     const selectedEntity = presentationProject.scene.entities.find((entity) => entity.id === presentationSelectedEntityId);
+    const inspectorEntityId = state.selection.inspectorFocus?.id;
+    const inspectorEntity = presentationProject.scene.entities.find((entity) => entity.id === inspectorEntityId);
     const sceneStats = useMemo(() => getSceneStats(presentationProject.scene.entities), [presentationProject]);
     const escapedCount = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
     const absorbedCount = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
@@ -189,11 +192,16 @@ function StudioWorkbench({failureJournal}: {readonly failureJournal: EditorFailu
         dispatch({type: "set-bottom-dock-tab", tab: "run"});
     }
 
-    function selectEntity(entityId: string | undefined) {
+    function selectEntity(entityId: string | undefined, toggle = false) {
         const presentationEntity = presentationProject.scene.entities.find((candidate) => candidate.id === entityId);
         setSelectedResultTallyId(presentationEntity?.kind === "tally" ? presentationEntity.id : undefined);
         const entity = project.scene.entities.find((candidate) => candidate.id === entityId);
-        dispatch(entity ? {type: "select-one", ref: {kind: entity.kind, id: entity.id}} : {type: "clear-selection"});
+        if (!entity) {
+            dispatch({type: "clear-selection"});
+            return;
+        }
+        const ref: EditorEntityRef = {kind: entity.kind, id: entity.id};
+        dispatch(toggle ? {type: "toggle-selected", ref} : {type: "select-one", ref});
     }
 
     return (
@@ -245,7 +253,13 @@ function StudioWorkbench({failureJournal}: {readonly failureJournal: EditorFailu
                     tallies={tallies}
                     tallyDiagnostics={tallyDiagnostics}
                     selectedEntityId={presentationSelectedEntityId}
-                    onSelect={(entityId) => selectEntity(entityId)}
+                    selectedEntityIds={state.selection.selected.map((ref) => ref.id)}
+                    hoveredEntityId={state.selection.hovered?.id}
+                    onSelect={selectEntity}
+                    onHover={(entityId) => {
+                        const entity = project.scene.entities.find((candidate) => candidate.id === entityId);
+                        dispatch({type: "set-hovered", ref: entity ? {kind: entity.kind, id: entity.id} : null});
+                    }}
                     showTallies={showTallies}
                     showAxes={showAxes}
                     mode={mode}
@@ -269,7 +283,7 @@ function StudioWorkbench({failureJournal}: {readonly failureJournal: EditorFailu
             </main>
 
             <aside id={SHELL_PANEL_IDS.inspector} className="right-panel" hidden={!rightPanelOpen}>
-                <InspectorPanel entity={selectedEntity} diagnostics={diagnostics} tracks={tracks}
+                <InspectorPanel entity={inspectorEntity} diagnostics={diagnostics} tracks={tracks}
                                 project={presentationProject}
                                 editDiagnostics={state.inspectorEditDiagnostics}
                                 editingDisabledReason={resultView === "submitted"

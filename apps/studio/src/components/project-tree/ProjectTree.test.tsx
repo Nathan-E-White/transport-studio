@@ -321,6 +321,40 @@ describe("ProjectTree", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Probe mode is read-only");
   });
 
+  it("supports toggle selection without replacing the committed set", () => {
+    renderProjectTree();
+    const water = screen.getByRole("treeitem", {name: "Water, material"});
+    const source = screen.getByRole("treeitem", {name: "Photon Beam, source"});
+
+    fireEvent.click(water);
+    fireEvent.click(source, {ctrlKey: true});
+
+    expect(water).toHaveAttribute("aria-selected", "true");
+    expect(source).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.keyDown(source, {key: " ", ctrlKey: true});
+
+    expect(water).toHaveAttribute("aria-selected", "true");
+    expect(source).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("shares hover while keeping inspector focus independent from selection", () => {
+    renderProjectTree();
+    const water = screen.getByRole("treeitem", {name: "Water, material"});
+    const source = screen.getByRole("treeitem", {name: "Photon Beam, source"});
+
+    fireEvent.click(water);
+    fireEvent.mouseEnter(source);
+    fireEvent.focus(source);
+
+    expect(water).toHaveAttribute("aria-selected", "true");
+    expect(source).toHaveAttribute("data-hovered", "true");
+    expect(source).toHaveAttribute("data-focused", "true");
+
+    fireEvent.mouseLeave(source);
+    expect(source).not.toHaveAttribute("data-hovered");
+  });
+
   it("opens and saves the metadata editor", () => {
     renderProjectTree();
     const row = screen.getByRole("treeitem", {name: "Shield Slab, geometry"});
