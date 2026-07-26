@@ -80,3 +80,56 @@ test("project tree drives real editor CRUD state", async ({page}) => {
 
   await assertNoPageFailures(failures);
 });
+
+test("project tree supports roving focus, collapsed groups, and inline edit keyboard flow", async ({page}) => {
+  const failures = recordPageFailures(page);
+  await gotoStudio(page, failures);
+
+  const tree = page.getByRole("tree", {name: "Project entities"});
+  const geometry = entityRow(page, "Shield Slab", "geometry");
+  const material = entityRow(page, "Toy Shield", "material");
+
+  await expect(tree.getByRole("treeitem")).toHaveCount(4);
+  await expect(tree.locator('[tabindex="0"]')).toHaveCount(1);
+
+  await geometry.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(material).toBeFocused();
+  await page.keyboard.press("Control+Space");
+  await expect(material).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Home");
+  await expect(geometry).toBeFocused();
+  await expect(material).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("End");
+  await expect(entityRow(page, "Detector Plane", "tally")).toBeFocused();
+
+  await page.getByRole("button", {name: "Collapse Geometry"}).click();
+  await expect(geometry).toHaveCount(0);
+  await material.focus();
+  await page.keyboard.press("Home");
+  await expect(material).toBeFocused();
+  const geometryToggle = page.getByRole("button", {name: "Expand Geometry"});
+  await geometryToggle.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(geometry).toBeFocused();
+
+  await clickRowAction(page, "Shield Slab", "Edit entity metadata");
+  const name = page.getByLabel("Name");
+  await expect(name).toBeFocused();
+  await name.fill("Discarded Shield");
+  await page.keyboard.press("Escape");
+  await expect(name).toHaveCount(0);
+  await expect(geometry).toBeFocused();
+  await expect(geometry).toHaveAccessibleName("Shield Slab, geometry");
+
+  await clickRowAction(page, "Shield Slab", "Edit entity metadata");
+  await page.getByLabel("Name").fill("Keyboard Shield");
+  await page.keyboard.press("Enter");
+  const renamedGeometry = entityRow(page, "Keyboard Shield", "geometry");
+  await expect(renamedGeometry).toBeFocused();
+  await clickRowAction(page, "Keyboard Shield", "Delete this entity");
+  await expect(renamedGeometry).toHaveCount(0);
+  await expect(material).toBeFocused();
+
+  await assertNoPageFailures(failures);
+});
