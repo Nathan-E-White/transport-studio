@@ -7,6 +7,7 @@ import type {RunSessionState} from "../app/runSession";
 import type {TransportTallyDelta} from "@transport/domain";
 import {EditorStoreProvider, getPrimarySelection, useEditorStore} from "../state/editor";
 import {ConsolePanel, RunPanel} from "./RunPanel";
+import {createEditorFailureJournal} from "../app/editorFailureJournal";
 
 function RunPanelHarness({tallies = []}: {readonly tallies?: readonly TransportTallyDelta[]}) {
   const {state, dispatch} = useEditorStore();
@@ -46,6 +47,24 @@ describe("RunPanel tabs", () => {
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Console disconnected: no Run Session is selected.");
     expect(screen.getByRole("tabpanel")).not.toHaveTextContent("transport-worker://");
     expect(screen.getByRole("tabpanel")).not.toHaveTextContent("tauri://");
+  });
+
+  it("shows captured editor failures in Console without inventing a Run Session", () => {
+    const journal = createEditorFailureJournal({now: () => "2026-07-20T12:00:00.000Z"});
+    journal.capture({
+      surface: "project-tree",
+      recoverability: "retryable",
+      error: new Error("Project tree failed safely"),
+    });
+
+    render(<ConsolePanel session={null} editorEntries={journal.getSnapshot().consoleEntries}/>);
+
+    const entry = screen.getByRole("listitem");
+    expect(entry).toHaveTextContent("editor.ui.render-failure");
+    expect(entry).toHaveTextContent("project-tree");
+    expect(entry).toHaveTextContent("retryable");
+    expect(entry).toHaveTextContent("Project tree failed safely");
+    expect(screen.getByText("Console disconnected: no Run Session is selected.")).toBeInTheDocument();
   });
 
   it("keeps out-of-stream failures and empty journal failures visible", () => {

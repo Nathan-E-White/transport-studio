@@ -18,9 +18,11 @@ import {ProjectTreeEmptyState} from "./EmptyState/ProjectTreeEmptyState";
 import {ProjectTreeGroup, ProjectTreeMetadataDraft} from "./Group/ProjectTreeGroup";
 import {ProjectTreeBoundary} from "./ProjectTreeBoundary";
 import {ProjectSettingsDialog} from "./ProjectSettingsDialog";
+import type {EditorFailureJournal} from "../../app/editorFailureJournal";
 
 export interface ProjectTreeProps {
   readonly diagnostics: readonly Diagnostic[];
+  readonly failureJournal: EditorFailureJournal;
 }
 
 type ProjectTreeFocusTarget =
@@ -30,16 +32,17 @@ type ProjectTreeFocusTarget =
 const CREATE_KINDS: readonly SceneEntity["kind"][] = ["geometry", "material", "source", "tally"];
 
 export function ProjectTree(props: Readonly<ProjectTreeProps>) {
+  const {failureJournal, ...innerProps} = props;
   return (
-    <ProjectTreeBoundary>
-      <ProjectTreeInner {...props}/>
+    <ProjectTreeBoundary failureJournal={failureJournal}>
+      <ProjectTreeInner {...innerProps}/>
     </ProjectTreeBoundary>
   );
 }
 
 function ProjectTreeInner({
   diagnostics,
-}: Readonly<ProjectTreeProps>) {
+}: Readonly<Pick<ProjectTreeProps, "diagnostics">>) {
   const {state, dispatch} = useEditorStore();
   const project = state.scene.project;
   if (!project) throw new Error("Project Tree requires an Editable Scene project");

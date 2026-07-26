@@ -38,14 +38,26 @@ import {
     type RunSessionStoreSnapshot,
 } from "./runSession";
 import {createNativeExecutionAdapter, createToyExecutionAdapter} from "./runExecutionAdapters";
+import {
+    createEditorFailureJournal,
+    type EditorFailureJournal,
+} from "./editorFailureJournal";
 
 export type EditorMode = StoreEditorMode;
 
-export function StudioApp() {
-    return <EditorStateRoot initialProject={createInitialProject()}><StudioWorkbench/></EditorStateRoot>;
+export interface StudioAppProps {
+    readonly failureJournal?: EditorFailureJournal;
 }
 
-function StudioWorkbench() {
+export function StudioApp({failureJournal: injectedFailureJournal}: StudioAppProps = {}) {
+    const [ownedFailureJournal] = useState(() => createEditorFailureJournal());
+    const failureJournal = injectedFailureJournal ?? ownedFailureJournal;
+    return <EditorStateRoot initialProject={createInitialProject()} failureJournal={failureJournal}>
+        <StudioWorkbench failureJournal={failureJournal}/>
+    </EditorStateRoot>;
+}
+
+function StudioWorkbench({failureJournal}: {readonly failureJournal: EditorFailureJournal}) {
 
     const {state, dispatch} = useEditorStore();
     const project = state.scene.project!;
@@ -65,6 +77,11 @@ function StudioWorkbench() {
     const renderingBlock = useRunSessionSelector(runSessionStore, selectRenderingBlock);
     const resultView = useRunSessionSelector(runSessionStore, selectResultView);
     const submittedProject = useRunSessionSelector(runSessionStore, selectSubmittedProject);
+    const editorFailures = useSyncExternalStore(
+        failureJournal.subscribe,
+        failureJournal.getSnapshot,
+        failureJournal.getSnapshot,
+    );
     const [compileDiagnostics, setCompileDiagnostics] = useState<readonly Diagnostic[]>([]);
     const [showTracks, setShowTracks] = useState(true);
     const [showTallies, setShowTallies] = useState(true);
@@ -78,7 +95,8 @@ function StudioWorkbench() {
         ...validateProject(project),
         ...compileDiagnostics,
         ...runDiagnostics,
-    ], [project, compileDiagnostics, runDiagnostics]);
+        ...editorFailures.diagnostics,
+    ], [project, compileDiagnostics, runDiagnostics, editorFailures.diagnostics]);
     const tallyDiagnostics = useMemo(
         () => runDiagnostics.filter((diagnostic) => diagnostic.code?.startsWith("run.tally.")),
         [runDiagnostics],
@@ -188,6 +206,7 @@ function StudioWorkbench() {
             <aside id={SHELL_PANEL_IDS.projectTree} className="left-panel" hidden={!leftPanelOpen}>
                 <ProjectTree
                     diagnostics={diagnostics}
+                    failureJournal={failureJournal}
                 />
             </aside>
 
@@ -245,6 +264,7 @@ function StudioWorkbench() {
                     renderingBlock={renderingBlock}
                     resultView={resultView}
                     session={runSession}
+                    editorConsoleEntries={editorFailures.consoleEntries}
                     onTallySelect={(tallyId) => selectEntity(tallyId)}
                     onResultViewChange={(view) => runSessionStore.setResultView(view)}
                 />
