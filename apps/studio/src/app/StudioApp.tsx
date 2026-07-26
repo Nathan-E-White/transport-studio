@@ -83,6 +83,9 @@ function StudioWorkbench({failureJournal}: {readonly failureJournal: EditorFailu
         failureJournal.getSnapshot,
     );
     const [compileDiagnostics, setCompileDiagnostics] = useState<readonly Diagnostic[]>([]);
+    const [runStarting, setRunStarting] = useState(false);
+    const [cancellationRequested, setCancellationRequested] = useState(false);
+    const runActivationInProgress = useRef(false);
     const [showTracks, setShowTracks] = useState(true);
     const [showTallies, setShowTallies] = useState(true);
     const [showAxes, setShowAxes] = useState(true);
@@ -115,10 +118,16 @@ function StudioWorkbench({failureJournal}: {readonly failureJournal: EditorFailu
     const sceneStats = useMemo(() => getSceneStats(presentationProject.scene.entities), [presentationProject]);
     const escapedCount = tracks.filter((track) => track.events.at(-1)?.type === "escape").length;
     const absorbedCount = tracks.filter((track) => track.events.at(-1)?.type === "absorb").length;
+    const runBusy = runStarting || runSession?.status === "prepared" || runSession?.status === "running";
+    const canCancel = runSessionStore.canCancel();
 
     useEffect(() => {
         void runSessionStore.updateEditableScene(project);
     }, [project, runSessionStore]);
+
+    useEffect(() => {
+        if (!runBusy && cancellationRequested) setCancellationRequested(false);
+    }, [runBusy, cancellationRequested]);
 
     useEffect(() => {
         if (resultView !== "current") return;
@@ -137,27 +146,41 @@ function StudioWorkbench({failureJournal}: {readonly failureJournal: EditorFailu
     }
 
     async function startCompiledRun(adapter: ReturnType<typeof createToyExecutionAdapter>) {
-        await runSessionStore.updateEditableScene(project);
-        const compileResult = compileTransportProblem(project);
-        setCompileDiagnostics(compileResult.diagnostics.map((item) => ({
-            severity: item.level,
-            code: item.code,
-            message: `${item.code}: ${item.message}`,
-            entityId: item.entityId as Diagnostic["entityId"],
-        })));
-        if (!compileResult.ok || !compileResult.value) {
-            dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
-            return;
+        if (runActivationInProgress.current) return;
+        runActivationInProgress.current = true;
+        setRunStarting(true);
+        try {
+            await runSessionStore.updateEditableScene(project);
+            const compileResult = compileTransportProblem(project);
+            setCompileDiagnostics(compileResult.diagnostics.map((item) => ({
+                severity: item.level,
+                code: item.code,
+                message: `${item.code}: ${item.message}`,
+                entityId: item.entityId as Diagnostic["entityId"],
+            })));
+            if (!compileResult.ok || !compileResult.value) {
+                dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
+                return;
+            }
+            dispatch({type: "set-mode", mode: "run"});
+            dispatch({type: "set-bottom-dock-tab", tab: "run"});
+            const result = await runSessionStore.start({project, problem: compileResult.value, adapter});
+            if (!result.started && "diagnostic" in result) {
+                setCompileDiagnostics((current) => [...current, result.diagnostic]);
+                dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
+            } else if (runSessionStore.getSnapshot().current?.status === "failed") {
+                dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
+            }
+        } finally {
+            runActivationInProgress.current = false;
+            setRunStarting(false);
         }
-        dispatch({type: "set-mode", mode: "run"});
-        dispatch({type: "set-bottom-dock-tab", tab: "run"});
-        const result = await runSessionStore.start({project, problem: compileResult.value, adapter});
-        if (!result.started) {
-            setCompileDiagnostics((current) => [...current, result.diagnostic]);
-            dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
-        } else if (runSessionStore.getSnapshot().current?.status === "failed") {
-            dispatch({type: "set-bottom-dock-tab", tab: "diagnostics"});
-        }
+    }
+
+    async function cancelRun() {
+        setCancellationRequested(true);
+        const result = await runSessionStore.cancel();
+        if (!result.cancelled) setCancellationRequested(false);
     }
 
     function clearResults() {
@@ -197,9 +220,13 @@ function StudioWorkbench({failureJournal}: {readonly failureJournal: EditorFailu
 
                 <div className="toolbar-actions">
                     <StyleSelectorBoundary/>
-                    <button className="primary-button" onClick={() => void runDemo()}>▶ Run Toy Photons</button>
-                    <button onClick={() => void runNative()}>Run Native Rust</button>
-                    <button onClick={clearResults}>Clear</button>
+                    <button className="primary-button" disabled={runBusy} onClick={() => void runDemo()}>▶ Run Toy Photons</button>
+                    <button disabled={runBusy} onClick={() => void runNative()}>Run Native Rust</button>
+                    <button disabled={runBusy} onClick={clearResults}>Clear</button>
+                    {(canCancel || cancellationRequested) && <button disabled={cancellationRequested} onClick={() => void cancelRun()}>
+                        {cancellationRequested ? "Cancelling run…" : "Cancel run"}
+                    </button>}
+                    {runBusy && <p className="run-progress" role="status" aria-label="Run progress">{describeRunProgress(runStarting, cancellationRequested, runSession)}</p>}
                 </div>
             </header>
 
@@ -292,4 +319,13 @@ function getSceneStats(entities: readonly SceneEntity[]) {
         sources: entities.filter((entity) => entity.kind === "source").length,
         tallies: entities.filter((entity) => entity.kind === "tally").length
     };
+}
+
+function describeRunProgress(starting: boolean, cancelling: boolean, session: ReturnType<typeof selectCurrentRunSession>): string {
+    if (cancelling) return "Cancelling run";
+    if (starting && !session) return "Starting run";
+    if (!session) return "Starting run";
+    const progress = session.progress;
+    const progressText = progress ? ` · ${progress.completedHistories.toLocaleString()} / ${progress.totalHistories.toLocaleString()}` : "";
+    return `Run ${session.phase.replaceAll("-", " ")}${progressText}`;
 }
