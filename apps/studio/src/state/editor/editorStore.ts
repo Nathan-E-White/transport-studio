@@ -228,22 +228,22 @@ export function editorStoreReducer(
         }
 
         case "select-one":
-            return {
+            return canSelect(state, action.ref) ? {
                 ...state,
                 selection: selectOne(state.selection, action.ref),
-            };
+            } : state;
 
         case "select-many":
             return {
                 ...state,
-                selection: selectMany(state.selection, action.refs),
+                selection: selectMany(state.selection, action.refs.filter((ref) => canSelect(state, ref))),
             };
 
         case "toggle-selected":
-            return {
+            return canSelect(state, action.ref) ? {
                 ...state,
                 selection: toggleSelected(state.selection, action.ref),
-            };
+            } : state;
 
         case "clear-selection":
             return {
@@ -254,20 +254,24 @@ export function editorStoreReducer(
         case "set-hovered":
             return {
                 ...state,
-                selection: setHovered(state.selection, action.ref),
+                selection: setHovered(state.selection, action.ref && canSelect(state, action.ref) ? action.ref : null),
             };
 
         case "set-inspector-focus":
             return {
                 ...state,
-                selection: setInspectorFocus(state.selection, action.ref),
+                selection: setInspectorFocus(state.selection, action.ref && canSelect(state, action.ref) ? action.ref : null),
             };
 
-        case "set-visible":
+        case "set-visible": {
+            const project = state.scene.project;
+            if (!project) return state;
+            const next = setEntityVisible(project, action.ref.id, action.visible);
             return markProjectChanged({
-                ...state,
-                scene: state.scene.project ? {...state.scene, project: setEntityVisible(state.scene.project, action.ref.id, action.visible)} : state.scene,
+                ...syncProject(state, next),
+                selection: reconcileSelection(state.selection, next),
             }, "visibility-changed");
+        }
 
         case "set-locked":
             return markProjectChanged({
@@ -353,8 +357,29 @@ export function selectProjectTreeMetadata(state: EditorStoreState) {
 export function selectVisibility(state: EditorStoreState): VisibilityTable {
     return Object.fromEntries((state.scene.project?.scene.entities ?? []).map((entity) => [
         entityKey({kind: entity.kind, id: entity.id}),
-        {visible: entity.visible, locked: entity.locked, selectable: true, includedInCompile: entity.includedInCompile ?? true, helperOnly: false},
+        {visible: entity.visible, locked: entity.locked, selectable: entity.visible, includedInCompile: entity.includedInCompile ?? true, helperOnly: false},
     ]));
+}
+
+function canSelect(state: EditorStoreState, ref: EditorEntityRef): boolean {
+    return state.scene.project?.scene.entities.some((entity) => (
+        entity.id === ref.id && entity.kind === ref.kind && entity.visible
+    )) ?? false;
+}
+
+function reconcileSelection(selection: EditorSelectionState, project: Project): EditorSelectionState {
+    const selectable = new Set(project.scene.entities
+        .filter((entity) => entity.visible)
+        .map((entity) => entityKey({kind: entity.kind, id: entity.id})));
+    const keep = (ref: EditorEntityRef | null) => ref && selectable.has(entityKey(ref)) ? ref : null;
+    const selected = selection.selected.filter((ref) => selectable.has(entityKey(ref)));
+    const inspectorFocus = keep(selection.inspectorFocus);
+
+    return {
+        selected,
+        hovered: keep(selection.hovered),
+        inspectorFocus: inspectorFocus ?? selected[0] ?? null,
+    };
 }
 
 function dirtyReasonForEntityKind(kind: EditorEntityKind): EditorDirtyReason {

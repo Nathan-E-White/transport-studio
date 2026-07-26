@@ -51,4 +51,16 @@ describe("Editable Scene authoritative store", () => {
         expect(deleted.selection.selected).toEqual([]);
         expect(deleted.scene.project!.scene.entities.some((candidate) => candidate.id === entity.id)).toBe(false);
     });
+
+    it("reconciles selected, hovered, and inspector-focused entities when they become hidden", () => {
+        const initial = createEditorStoreState(createInitialProject());
+        const entity = initial.scene.project!.scene.entities[0];
+        const ref = {kind: entity.kind, id: entity.id};
+        const selected = editorStoreReducer(initial, {type: "select-one", ref});
+        const hovered = editorStoreReducer(selected, {type: "set-hovered", ref});
+
+        const hidden = editorStoreReducer(hovered, {type: "set-visible", ref, visible: false});
+
+        expect(hidden.selection).toEqual({selected: [], hovered: null, inspectorFocus: null});
+    });
 });

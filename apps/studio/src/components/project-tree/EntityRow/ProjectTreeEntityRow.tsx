@@ -1,4 +1,4 @@
-import {KeyboardEvent, useMemo} from "react";
+import {KeyboardEvent, MouseEvent, useMemo} from "react";
 import {EditorEntityRef, ProjectTreeNode, selectVisibility, useEditorStore} from "../../../state/editor";
 import {ProjectTreeBadges} from "../Badges/ProjectTreeBadges";
 import {ProjectTreeAction} from "../Actions/ProjectTreeAction";
@@ -17,8 +17,17 @@ export function ProjectTreeEntityRow({node, allowDelete = true, onRequestEdit}: 
   const row = useMemo(() => buildProjectTreeEntityRowModel({node, selection: state.selection, visibility}), [node, state.selection, visibility]);
   if (!row) return null;
   const icon = buildEntityIconModel(row.ref.kind);
-  const selectRow = () => { if (row.selectable) dispatch({type: "select-one", ref: row.ref}); };
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => { if (event.key === "Enter" || event.key === " ") {event.preventDefault(); selectRow();} };
+  const selectRow = (toggle: boolean) => {
+    if (!row.selectable) return;
+    dispatch(toggle ? {type: "toggle-selected", ref: row.ref} : {type: "select-one", ref: row.ref});
+  };
+  const onClick = (event: MouseEvent<HTMLDivElement>) => selectRow(event.metaKey || event.ctrlKey);
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectRow(event.metaKey || event.ctrlKey);
+    }
+  };
 
   return <div role="treeitem" tabIndex={row.selectable ? 0 : -1} aria-selected={row.selected}
     aria-label={row.ariaLabel} className={row.className} data-entity-kind={row.ref.kind}
@@ -26,7 +35,7 @@ export function ProjectTreeEntityRow({node, allowDelete = true, onRequestEdit}: 
     data-hovered={row.hovered || undefined} data-focused={row.focused || undefined}
     data-visible={row.visible} data-selectable={row.selectable} data-locked={row.locked}
     data-included-in-compile={row.includedInCompile} data-helper-only={row.helperOnly || undefined}
-    onClick={selectRow} onKeyDown={onKeyDown}
+    onClick={onClick} onKeyDown={onKeyDown}
     onMouseEnter={() => dispatch({type: "set-hovered", ref: row.ref})}
     onMouseLeave={() => dispatch({type: "set-hovered", ref: null})}
     onFocus={() => dispatch({type: "set-inspector-focus", ref: row.ref})}>

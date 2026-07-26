@@ -9,7 +9,10 @@ interface TransportViewportProps {
     readonly project: Project;
     readonly tracks: readonly TrackSample[];
     readonly selectedEntityId?: string;
-    readonly onSelect: (entityId: string) => void;
+    readonly selectedEntityIds?: readonly string[];
+    readonly hoveredEntityId?: string;
+    readonly onSelect: (entityId: string, toggle?: boolean) => void;
+    readonly onHover: (entityId: string | undefined) => void;
     readonly showTallies: boolean;
     readonly showDiagnostics: boolean;
     readonly mode: EditorMode;
@@ -19,7 +22,10 @@ export function TransportViewport({
                                       project,
                                       tracks,
                                       selectedEntityId,
+                                      selectedEntityIds = selectedEntityId ? [selectedEntityId] : [],
+                                      hoveredEntityId,
                                       onSelect,
+                                      onHover,
                                       showTallies,
                                       showDiagnostics,
                                       mode
@@ -37,8 +43,10 @@ export function TransportViewport({
                 <EntityMesh
                     key={entity.id}
                     entity={entity}
-                    selected={entity.id === selectedEntityId}
+                    selected={selectedEntityIds.includes(entity.id)}
+                    hovered={entity.id === hoveredEntityId}
                     onSelect={onSelect}
+                    onHover={onHover}
                     showTallies={showTallies}
                     mode={mode}
                 />
@@ -52,10 +60,12 @@ export function TransportViewport({
     );
 }
 
-function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
+function EntityMesh({entity, selected, hovered, onSelect, onHover, showTallies, mode}: {
     readonly entity: SceneEntity;
     readonly selected: boolean;
-    readonly onSelect: (id: string) => void;
+    readonly hovered: boolean;
+    readonly onSelect: (id: string, toggle?: boolean) => void;
+    readonly onHover: (id: string | undefined) => void;
     readonly showTallies: boolean;
     readonly mode: EditorMode
 }) {
@@ -72,11 +82,11 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
         return (
             <group position={position} onClick={(event) => {
                 event.stopPropagation();
-                onSelect(entity.id);
-            }}>
+                onSelect(entity.id, event.nativeEvent.ctrlKey || event.nativeEvent.metaKey);
+            }} onPointerOver={(event) => { event.stopPropagation(); onHover(entity.id); }} onPointerOut={() => onHover(undefined)}>
                 <mesh rotation={[0, 0, -Math.PI / 2]}>
                     <coneGeometry args={[0.38, 1.15, 32]}/>
-                    <meshStandardMaterial color={selected ? "#ffd166" : "#00e5ff"}
+                    <meshStandardMaterial color={selected ? "#ffd166" : hovered ? "#8be9fd" : "#00e5ff"}
                                           emissive={selected ? "#5a3d00" : "#003844"} emissiveIntensity={0.8}/>
                 </mesh>
                 <BeamGuide length={5.5} selected={selected}/>
@@ -92,11 +102,11 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
         return (
             <group position={position} scale={scale} onClick={(event) => {
                 event.stopPropagation();
-                onSelect(entity.id);
-            }}>
+                onSelect(entity.id, event.nativeEvent.ctrlKey || event.nativeEvent.metaKey);
+            }} onPointerOver={(event) => { event.stopPropagation(); onHover(entity.id); }} onPointerOut={() => onHover(undefined)}>
                 <mesh>
                     <boxGeometry args={[1, 1, 1]}/>
-                    <meshStandardMaterial color={selected ? "#ffd166" : "#3ddc97"} transparent={true}
+                    <meshStandardMaterial color={selected ? "#ffd166" : hovered ? "#8be9fd" : "#3ddc97"} transparent={true}
                                           opacity={mode === "probe" || selected ? 0.35 : 0.22}
                                           wireframe={mode === "debug"}/>
                 </mesh>
@@ -121,15 +131,15 @@ function EntityMesh({entity, selected, onSelect, showTallies, mode}: {
         return (
             <group position={position} scale={scale} onClick={(event): void => {
                 event.stopPropagation();
-                onSelect(entity.id);
-            }}>
+                onSelect(entity.id, event.nativeEvent.ctrlKey || event.nativeEvent.metaKey);
+            }} onPointerOver={(event) => { event.stopPropagation(); onHover(entity.id); }} onPointerOut={() => onHover(undefined)}>
                 <mesh castShadow={true} receiveShadow={true}>
                     {
                         entity.primitive === "sphere" ? sg :
                             entity.primitive === "cylinder" ? cg :
                                 bg
                     }
-                    <meshStandardMaterial color={selected ? "#ffd166" : "#7aa2ff"} transparent={true}
+                    <meshStandardMaterial color={selected ? "#ffd166" : hovered ? "#8be9fd" : "#7aa2ff"} transparent={true}
                                           opacity={selected ? 0.68 : 0.48} roughness={0.4} metalness={0.08}/>
                 </mesh>
                 {selected && <SelectionBox/>}
