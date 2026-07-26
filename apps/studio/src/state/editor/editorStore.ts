@@ -349,23 +349,27 @@ export function editorStoreReducer(
             if (action.ref && !isEntityKindSelectableInMode(state.shell.activeMode, action.ref.kind)) return state;
             return {
                 ...state,
-                selection: setHovered(state.selection, action.ref),
+                selection: setHovered(state.selection, action.ref && isSelectable(state, action.ref) ? action.ref : null),
             };
 
         case "set-inspector-focus":
             if (action.ref && !isEntityKindSelectableInMode(state.shell.activeMode, action.ref.kind)) return state;
             return {
                 ...state,
-                selection: setInspectorFocus(state.selection, action.ref),
+                selection: setInspectorFocus(state.selection, action.ref && isSelectable(state, action.ref) ? action.ref : null),
             };
 
-        case "set-visible":
+        case "set-visible": {
             if (!canEditScene(state)) return state;
+            const project = state.scene.project;
+            if (!project) return state;
+            const nextProject = setEntityVisible(project, action.ref.id, action.visible);
+            const nextVisibility = setViewVisible(state.visibility, action.ref, action.visible);
             return markProjectChanged({
-                ...state,
-                scene: state.scene.project ? {...state.scene, project: setEntityVisible(state.scene.project, action.ref.id, action.visible)} : state.scene,
-                visibility: setViewVisible(state.visibility, action.ref, action.visible),
+                ...syncProject(state, nextProject),
+                visibility: nextVisibility,
             }, "visibility-changed");
+        }
 
         case "set-locked":
             if (!canEditScene(state)) return state;
@@ -513,7 +517,8 @@ function reconcileProjectViewFlags(project: Project, visibility: VisibilityTable
 
 function isSelectable(state: EditorStoreState, ref: EditorEntityRef): boolean {
     const exists = state.scene.project?.scene.entities.some((entity) => entity.id === ref.id && entity.kind === ref.kind) ?? false;
-    return exists && getEntityViewFlags(state.visibility, ref).selectable;
+    const flags = getEntityViewFlags(state.visibility, ref);
+    return exists && flags.selectable;
 }
 
 function dirtyReasonForEntityKind(kind: EditorEntityKind): EditorDirtyReason {

@@ -197,4 +197,17 @@ describe("Editable Scene authoritative store", () => {
         expect(rejectedVisibility).toBe(analyze);
         expect(analyze.scene.project).toBe(unchangedProject);
     });
+
+    it("reconciles selected, hovered, and inspector-focused entities when they become non-selectable", () => {
+        const initial = createEditorStoreState(createInitialProject());
+        const entity = initial.scene.project!.scene.entities[0];
+        const ref = {kind: entity.kind, id: entity.id};
+        const selected = editorStoreReducer(initial, {type: "select-one", ref});
+        const hovered = editorStoreReducer(selected, {type: "set-hovered", ref});
+        const focused = editorStoreReducer(hovered, {type: "set-inspector-focus", ref});
+
+        const ineligible = editorStoreReducer(focused, {type: "set-selectable", ref, selectable: false});
+
+        expect(ineligible.selection).toEqual({selected: [], hovered: null, inspectorFocus: null});
+    });
 });
