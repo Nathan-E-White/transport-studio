@@ -116,6 +116,7 @@ export interface RunExecutionAdapter {
         readonly sessionId: string;
         readonly problem: TransportProblem;
     }) => AsyncIterable<TransportBackendEvent>;
+    readonly cancel?: (request: {readonly sessionId: string}) => Promise<void>;
 }
 
 export interface RunEventSink {
@@ -134,7 +135,12 @@ export interface StartRunOptions {
 
 export type StartRunResult =
     | {readonly started: true; readonly sessionId: string}
-    | {readonly started: false; readonly diagnostic: RunSessionDiagnostic};
+    | {readonly started: false; readonly diagnostic: RunSessionDiagnostic}
+    | {readonly started: false; readonly ignored: true};
+
+export type CancelRunResult =
+    | {readonly cancelled: true}
+    | {readonly cancelled: false; readonly diagnostic: RunSessionDiagnostic};
 
 export interface RunSessionStore {
     readonly getSnapshot: () => RunSessionStoreSnapshot;
@@ -145,6 +151,8 @@ export interface RunSessionStore {
         isEqual?: (left: T, right: T) => boolean,
     ) => () => void;
     readonly start: (options: StartRunOptions) => Promise<StartRunResult>;
+    readonly canCancel: () => boolean;
+    readonly cancel: () => Promise<CancelRunResult>;
     readonly updateEditableScene: (project: Project) => Promise<RunSessionStoreSnapshot>;
     readonly setResultView: (view: RunResultView) => RunSessionStoreSnapshot;
     readonly clear: () => RunSessionStoreSnapshot;
@@ -176,6 +184,9 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
     const now = options.now ?? (() => new Date().toISOString());
     let sceneCanonical = stableSerialize(options.initialProject.scene);
     let executionActive = false;
+    let activeCancellation: {readonly sessionId: string; readonly adapter: RunExecutionAdapter} | null = null;
+    let cancellationRequested = false;
+    let cancellationFailure: RunSessionDiagnostic | null = null;
     let snapshot: RunSessionStoreSnapshot = Object.freeze({
         sceneRevision: 0,
         sceneFingerprint: "",
@@ -206,13 +217,7 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
             };
         }
         if (executionActive) {
-            return {
-                started: false,
-                diagnostic: diagnostic(
-                    "run.session.concurrent_unsupported",
-                    "A Run Session is already executing; concurrent sessions are outside the current contract.",
-                ),
-            };
+            return {started: false, ignored: true};
         }
         executionActive = true;
         if (run.sink) {
@@ -255,6 +260,9 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
             phase: "awaiting-acceptance",
             console: EMPTY_CONSOLE,
         });
+        activeCancellation = {sessionId, adapter: run.adapter};
+        cancellationRequested = false;
+        cancellationFailure = null;
         publish({...snapshot, sceneFingerprint: input.sourceSceneFingerprint, current: session, resultView: "current", renderingBlock: null});
         const publishSession = () => snapshot.current?.id === sessionId
             ? publishCurrent(session)
@@ -269,6 +277,11 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
 
         try {
             for await (const event of run.adapter.execute({sessionId, problem: input.problem})) {
+                if (cancellationFailure) {
+                    session = failSession(session, cancellationFailure);
+                    publishSession();
+                    break;
+                }
                 const observed = await journal.event(event);
                 if (observed.failure && session.journal.status !== "incomplete") {
                     session = withJournalFailure(session, observed.failure, journal.sequence());
@@ -311,6 +324,8 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
         }
         publishSession();
         executionActive = false;
+        if (activeCancellation?.sessionId === sessionId) activeCancellation = null;
+        cancellationFailure = null;
         return {started: true, sessionId};
     }
 
@@ -345,6 +360,44 @@ export function createRunSessionStore(options: CreateRunSessionStoreOptions): Ru
             return () => listeners.delete(notify);
         },
         start,
+        canCancel() {
+            const active = activeCancellation;
+            return !cancellationRequested
+                && active !== null
+                && snapshot.current?.id === active?.sessionId
+                && snapshot.current?.status === "running"
+                && active.adapter.metadata.capabilities.lifecycle.includes("cancel")
+                && active.adapter.cancel !== undefined;
+        },
+        async cancel() {
+            if (!this.canCancel()) {
+                return {
+                    cancelled: false,
+                    diagnostic: diagnostic(
+                        "run.session.cancel_unsupported",
+                        "The active Run Session backend does not support cancellation.",
+                    ),
+                };
+            }
+            const active = activeCancellation!;
+            cancellationRequested = true;
+            try {
+                await active.adapter.cancel!({sessionId: active.sessionId});
+                return {cancelled: true};
+            } catch (error) {
+                cancellationRequested = false;
+                const failure = diagnostic(
+                    "run.session.cancel_rejected",
+                    errorMessage(error, "The backend rejected cancellation."),
+                );
+                cancellationFailure = failure;
+                if (snapshot.current?.id === active.sessionId) publishCurrent(failSession(snapshot.current, failure));
+                return {
+                    cancelled: false,
+                    diagnostic: failure,
+                };
+            }
+        },
         updateEditableScene,
         setResultView(view) {
             if (view === snapshot.resultView) return snapshot;

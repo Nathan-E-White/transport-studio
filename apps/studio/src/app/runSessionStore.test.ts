@@ -341,7 +341,7 @@ describe("strict external Run Session store", () => {
         expect(store.getSnapshot().current).toBeNull();
     });
 
-    it("rejects concurrent starts while retaining one current session", async () => {
+    it("ignores concurrent programmatic starts while retaining one current session", async () => {
         let release!: () => void;
         const gate = new Promise<void>((resolve) => { release = resolve; });
         const slowAdapter: RunExecutionAdapter = {
@@ -357,9 +357,78 @@ describe("strict external Run Session store", () => {
         const first = store.start({project: fixtureProject(), problem: fixtureProblem(), adapter: slowAdapter});
         await vi.waitFor(() => expect(store.getSnapshot().current?.status).toBe("prepared"));
         const second = await store.start({project: fixtureProject(), problem: fixtureProblem(), adapter: slowAdapter});
-        expect(second).toMatchObject({started: false, diagnostic: {code: "run.session.concurrent_unsupported"}});
+        expect(second).toEqual({started: false, ignored: true});
         release();
         await first;
+    });
+
+    it("cancels an active session only when its adapter contract supports cancellation", async () => {
+        let cancelled = false;
+        const cancel = vi.fn(async ({sessionId}: {readonly sessionId: string}) => {
+            expect(sessionId).toBe("session-1");
+            cancelled = true;
+        });
+        const cancellableAdapter: RunExecutionAdapter = {
+            metadata: {...metadata, capabilities: {...metadata.capabilities, lifecycle: ["submit", "start", "cancel"]}},
+            cancel,
+            async *execute() {
+                yield accepted();
+                yield started("session-1");
+                await vi.waitFor(() => expect(cancelled).toBe(true));
+                yield {type: "runFailed", runId: "session-1", diagnostic: {
+                    level: "info", code: "run.cancelled", message: "Run cancelled by the user.",
+                }};
+            },
+        };
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+
+        const running = store.start({project: fixtureProject(), problem: fixtureProblem(), adapter: cancellableAdapter});
+        await vi.waitFor(() => expect(store.getSnapshot().current?.status).toBe("running"));
+        expect(store.canCancel()).toBe(true);
+
+        await expect(store.cancel()).resolves.toEqual({cancelled: true});
+        expect(cancel).toHaveBeenCalledTimes(1);
+        await running;
+        expect(store.getSnapshot().current).toMatchObject({
+            status: "failed",
+            terminalFailure: {code: "run.cancelled", message: "Run cancelled by the user."},
+        });
+
+        const unsupportedStore = createRunSessionStore({initialProject: fixtureProject()});
+        expect(unsupportedStore.canCancel()).toBe(false);
+        await expect(unsupportedStore.cancel()).resolves.toMatchObject({
+            cancelled: false,
+            diagnostic: {code: "run.session.cancel_unsupported"},
+        });
+    });
+
+    it("turns a supported cancellation rejection into a terminal Run Session failure", async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const adapter: RunExecutionAdapter = {
+            metadata: {...metadata, capabilities: {...metadata.capabilities, lifecycle: ["submit", "start", "cancel"]}},
+            cancel: async () => { throw new Error("Cancellation was refused."); },
+            async *execute() {
+                yield accepted();
+                yield started("session-1");
+                await gate;
+                yield completed("session-1");
+            },
+        };
+        const store = createRunSessionStore({initialProject: fixtureProject(), createSessionId: () => "session-1"});
+        const running = store.start({project: fixtureProject(), problem: fixtureProblem(), adapter});
+        await vi.waitFor(() => expect(store.getSnapshot().current?.status).toBe("running"));
+
+        await expect(store.cancel()).resolves.toMatchObject({
+            cancelled: false,
+            diagnostic: {code: "run.session.cancel_rejected", message: "run.session.cancel_rejected: Cancellation was refused."},
+        });
+        expect(store.getSnapshot().current).toMatchObject({
+            status: "failed",
+            terminalFailure: {code: "run.session.cancel_rejected"},
+        });
+        release();
+        await running;
     });
 
     it("does not resurrect an active session after clear releases it", async () => {

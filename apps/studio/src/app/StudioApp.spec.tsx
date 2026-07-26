@@ -484,6 +484,20 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("run panel backend: visual-ts")).toBeTruthy();
     });
 
+    it("disables both run entries immediately so rapid activation compiles and starts one session", async () => {
+        render(<StudioApp/>);
+
+        const toy = screen.getByRole("button", {name: "▶ Run Toy Photons"});
+        fireEvent.click(toy);
+        expect(toy).toBeDisabled();
+        expect(screen.getByRole("button", {name: "Run Native Rust"})).toBeDisabled();
+        expect(screen.getByRole("status", {name: "Run progress"})).toHaveTextContent("Starting run");
+        fireEvent.click(toy);
+
+        await waitFor(() => expect(mocks.runToyPhotonTransport).toHaveBeenCalledTimes(1));
+        expect(mocks.compileTransportProblem).toHaveBeenCalledTimes(1);
+    });
+
     it("wires the native action to the compiled current scene and reports bridge diagnostics", async () => {
         render(<StudioApp/>);
 
@@ -517,6 +531,7 @@ describe("StudioApp spec", () => {
         fireEvent.click(screen.getByRole("button", {name: "Run Native Rust"}));
 
         await waitFor(() => expect(mocks.compileTransportProblem).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByRole("button", {name: "Run Native Rust"})).not.toBeDisabled());
         const hiddenProject = mocks.compileTransportProblem.mock.calls[0]?.[0] as Project;
         const hiddenShield = hiddenProject.scene.entities.find((entity) => entity.id === "shield-1");
         expect(hiddenShield).toMatchObject({id: "shield-1", visible: false});
@@ -718,10 +733,11 @@ describe("StudioApp spec", () => {
         expect(screen.getByText("4 sampled tracks · 1 escaped · 1 absorbed")).toBeTruthy();
     });
 
-    it("clears run results and returns the bottom panel to the run tab", () => {
+    it("clears run results and returns the bottom panel to the run tab", async () => {
         render(<StudioApp/>);
 
         fireEvent.click(screen.getByRole("button", {name: "▶ Run Toy Photons"}));
+        await waitFor(() => expect(screen.getByText("run panel tracks: 4")).toBeTruthy());
         fireEvent.click(screen.getByRole("button", {name: "Open Tracks Tab"}));
         expect(screen.getByText("active run tab: tracks")).toBeTruthy();
 
