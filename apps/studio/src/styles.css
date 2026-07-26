@@ -289,7 +289,19 @@ button { color: inherit; }
 .diagnostic-list-horizontal { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 @media (max-width: 1100px) {
-  .studio-shell { --left-panel-width: 270px; --right-panel-width: 0px; grid-template-columns: var(--left-panel-width) 1fr; grid-template-areas: "toolbar toolbar" "left viewport" "bottom bottom"; }
-  .right-panel { display: none; }
+  .studio-shell {
+    --left-panel-width: 270px;
+    --right-panel-width: 0px;
+    --inspector-panel-height: 0px;
+    grid-template-columns: var(--left-panel-width) minmax(0, 1fr);
+    grid-template-rows: 64px minmax(0, 1fr) var(--inspector-panel-height) var(--bottom-panel-height);
+    grid-template-areas:
+      "toolbar toolbar"
+      "left viewport"
+      "inspector inspector"
+      "bottom bottom";
+  }
+  .studio-shell[data-right-panel-open="true"] { --inspector-panel-height: minmax(220px, 38vh); }
+  .right-panel { grid-area: inspector; border-top: 1px solid var(--line); border-left: 0; overflow: auto; }
   .run-metrics { grid-template-columns: repeat(3, minmax(110px, 1fr)); }
 }
