@@ -32,7 +32,7 @@
     "@theatre/core": "latest",
     "@theatre/r3f": "latest",
     "@tauri-apps/api": "latest",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "react": "latest",
     "react-dom": "latest",
     "three": "0.185.1",
